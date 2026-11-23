@@ -29,12 +29,7 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::transaction::memory::{
-    INIT_NATIVE_ACCT_VAULT_ROOT_PTR,
-    NATIVE_ACCT_VAULT_ROOT_PTR,
-    NOTE_MEM_SIZE,
-    OUTPUT_NOTE_SECTION_OFFSET,
-};
+use miden_protocol::transaction::memory::{NOTE_MEM_SIZE, OUTPUT_NOTE_SECTION_OFFSET};
 use miden_protocol::transaction::{
     LogTopic,
     TransactionEventId,
@@ -354,18 +349,7 @@ impl TransactionEvent {
                     }
                 })?;
                 let vault_root = process.get_vault_root(vault_root_ptr)?;
-
-                // The native account's current and initial vault can be read while a foreign
-                // account is active, so either of its vault root pointers identifies the native
-                // account. Any other pointer is the vault root pointer of the active account.
-                let vault_root_ptr = vault_root_ptr.as_canonical_u64();
-                let account_id = if vault_root_ptr == u64::from(NATIVE_ACCT_VAULT_ROOT_PTR)
-                    || vault_root_ptr == u64::from(INIT_NATIVE_ACCT_VAULT_ROOT_PTR)
-                {
-                    base_host.native_account_id()
-                } else {
-                    process.get_active_account_id()?
-                };
+                let account_id = process.get_vault_account_id(vault_root_ptr)?;
 
                 on_account_vault_asset_accessed(
                     base_host, process, account_id, asset_id, vault_root,
