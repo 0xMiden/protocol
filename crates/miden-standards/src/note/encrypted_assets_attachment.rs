@@ -290,25 +290,15 @@ impl EncryptedAssetsAttachment {
 ///
 /// where `public_key_i` are the elements of [`PublicKey::to_elements`].
 ///
-/// The account component the key converts into has no setter, so a faucet cannot rotate the key
-/// yet. If the issuer's secret key leaks, its holder can decrypt the attachments of all later
-/// private notes holding the faucet's assets until the faucet switches to another send policy or
-/// upgrades its code. A procedure that
-/// replaces these entries would rotate the key, while the issuer keeps its previous secret keys to
-/// decrypt the attachments built before the rotation. `build_attachment` applies the default
-/// expiration delta of `miden::standards::expiration`, so a transaction could encrypt to the
-/// previous key only until that many blocks after the rotation.
+/// The key converts into an account component that installs the slot and exports the
+/// `get_issuer_key` accessor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EncryptedAssetsIssuerKey {
     public_key: PublicKey,
 }
 
 impl EncryptedAssetsIssuerKey {
-    /// The name of the account component that the issuer key converts into, which installs the
-    /// key.
-    ///
-    /// The component exposes the call accessor `get_issuer_key` but no setter, so a compromised
-    /// issuer key cannot be rotated through it yet.
+    /// The name of the account component that the issuer key converts into.
     pub const NAME: &'static str = "miden::standards::attachments::encrypted_assets";
 
     /// Returns a new issuer key from the provided public key.
