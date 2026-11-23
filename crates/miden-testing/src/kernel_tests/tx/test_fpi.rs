@@ -2071,7 +2071,7 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Native-only procedures, including output note sealing, cannot be called from a foreign account:
+/// Native-only procedures cannot be called from a foreign account:
 /// invoking them from an FPI context fails via `memory::assert_native_account`. Reading an asset
 /// from the native account's vault fails if the foreign account is not the issuer of the asset.
 #[rstest::rstest]

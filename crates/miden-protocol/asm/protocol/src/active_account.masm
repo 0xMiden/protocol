@@ -293,7 +293,7 @@ end
 #!
 #! Invocation: exec
 pub proc get_asset(asset_id: AssetId) -> AssetValue
-    # push the flag indicating that the asset of the active account was requested
+    # request the asset of the active account
     push.0
     # => [is_native = 0, ASSET_ID]
 
