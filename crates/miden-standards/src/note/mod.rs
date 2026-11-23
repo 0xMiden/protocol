@@ -495,7 +495,8 @@ pub(crate) fn decode_optional_block_height(
 /// and block height.
 ///
 /// The status does not account for any authorization that may be required to consume the
-/// note, nor does it indicate whether the account has sufficient fees to consume it.
+/// note. It reports an account that cannot pay the transaction's fees only when the execution
+/// reaches the fee payment.
 #[derive(Debug)]
 pub enum NoteConsumptionStatus {
     /// The note can be consumed by the account at the specified block height.
@@ -504,6 +505,9 @@ pub enum NoteConsumptionStatus {
     ConsumableAfter(BlockNumber),
     /// The note can be consumed by the account if proper authorization is provided.
     ConsumableWithAuthorization,
+    /// The note executes, but the account's vault holds less of the fee asset than the
+    /// transaction's fees, so the note may be consumable once the account holds more of it.
+    InsufficientFee,
     /// The note cannot be consumed by the account at the specified conditions (i.e., block
     /// height and account state).
     UnconsumableConditions,
@@ -521,6 +525,7 @@ impl Clone for NoteConsumptionStatus {
             NoteConsumptionStatus::ConsumableWithAuthorization => {
                 NoteConsumptionStatus::ConsumableWithAuthorization
             },
+            NoteConsumptionStatus::InsufficientFee => NoteConsumptionStatus::InsufficientFee,
             NoteConsumptionStatus::UnconsumableConditions => {
                 NoteConsumptionStatus::UnconsumableConditions
             },
