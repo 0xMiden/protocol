@@ -4,6 +4,7 @@ use {
     Bool,
     NoteAssetsCommitment,
     NoteAttachmentCommitment,
+    NoteAttachmentScheme,
     NoteAttachmentsCommitment,
     NoteMetadata,
     NoteRecipient,
@@ -317,7 +318,7 @@ end
 #! - the note already has 4 attachments.
 #! - the output note is sealed.
 pub proc add_attachment(
-    attachment_scheme: u16,
+    attachment_scheme: NoteAttachmentScheme,
     attachment_commitment: NoteAttachmentCommitment,
     note_idx: u16
 )
@@ -580,7 +581,7 @@ end
 proc set_attachment_schemes(
     num_attachments: u8,
     note_ptr: ptr<OutputNoteData>,
-    attachment_scheme: u16
+    attachment_scheme: NoteAttachmentScheme
 )
     # the schemes are stored as follows in the third felt:
     # 3rd felt: [

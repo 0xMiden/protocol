@@ -25,11 +25,13 @@ use miden_protocol::asset::{
     NonFungibleAsset,
     NonFungibleAssetDetails,
 };
+use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_IS_NOT_NATIVE,
     ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT,
     ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT,
     ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED,
+    ERR_FOREIGN_ACCOUNT_NOT_ISSUER_OF_NATIVE_VAULT_ASSET,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
@@ -865,6 +867,163 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// Test that a foreign account can read the assets it issued from the current and initial vault
+/// of the native account, and that it still reads its own vault through `active_account`.
+///
+/// The native account moves part of the fungible asset into a note before the foreign procedures
+/// are invoked, so its current and initial vault differ. The foreign account's own vault does not
+/// hold the asset.
+#[tokio::test]
+async fn foreign_account_can_read_issued_assets_in_native_account_vault() -> anyhow::Result<()> {
+    let foreign_account_code_source = "
+        use miden::protocol::active_account
+        use miden::protocol::native_account
+
+        #! Inputs:  [ASSET_ID, pad(12)]
+        #! Outputs: [ASSET_VALUE, pad(12)]
+        @account_procedure
+        pub proc get_native_asset
+            exec.native_account::get_asset
+        end
+
+        #! Inputs:  [ASSET_ID, pad(12)]
+        #! Outputs: [ASSET_VALUE, pad(12)]
+        @account_procedure
+        pub proc get_initial_native_asset
+            exec.native_account::get_initial_asset
+        end
+
+        #! Inputs:  [ASSET_ID, pad(12)]
+        #! Outputs: [ASSET_VALUE, pad(12)]
+        @account_procedure
+        pub proc get_own_asset
+            exec.active_account::get_asset
+        end
+    ";
+    let foreign_account_component = AccountComponent::new(
+        CodeBuilder::default()
+            .compile_component_code("foreign_account", foreign_account_code_source)?,
+        vec![],
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
+    let foreign_account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
+        .with_component(foreign_account_component.clone())
+        .build_existing()?;
+
+    // The foreign account is the issuer of all assets in the native account's vault.
+    let issuer_id = foreign_account.id();
+    let initial_fungible_asset = Asset::from(FungibleAsset::new(issuer_id, 100)?);
+    let removed_fungible_asset = Asset::from(FungibleAsset::new(issuer_id, 30)?);
+    let current_fungible_asset = Asset::from(FungibleAsset::new(issuer_id, 70)?);
+    let [non_fungible_asset1, non_fungible_asset2] = [vec![1, 2, 3], vec![4, 5, 6]].map(|data| {
+        Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(issuer_id, data)))
+    });
+
+    let native_account = AccountBuilder::new(rand::random())
+        .with_components(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_empty_slots())
+        .with_assets(vec![initial_fungible_asset, non_fungible_asset1, non_fungible_asset2])
+        .account_type(AccountType::Public)
+        .build_existing()?;
+
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([native_account.clone(), foreign_account.clone()])?
+            .build()?;
+    mock_chain.prove_next_block()?;
+    let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.clone())?;
+
+    // Invokes a foreign procedure with an asset ID and asserts the returned asset value.
+    let assert_foreign_read = |procedure: &str, asset_id: Word, expected_value: Word| {
+        format!(
+            r#"
+            padw padw padw push.{asset_id}
+            procref.::foreign_account::{procedure}
+            push.{foreign_prefix} push.{foreign_suffix}
+            exec.tx::execute_foreign_procedure
+            # => [ASSET_VALUE, pad(12)]
+
+            push.{expected_value}
+            assert_eqw.err="{procedure} returned an unexpected asset value"
+            dropw dropw dropw
+            "#,
+            foreign_prefix = foreign_account.id().prefix().as_felt(),
+            foreign_suffix = foreign_account.id().suffix(),
+        )
+    };
+
+    let code = format!(
+        "
+        use miden::core::sys
+        use miden::protocol::tx
+        use mock::util
+
+        @transaction_script
+        pub proc main
+            # move part of the fungible asset out of the native account's vault
+            push.{REMOVED_FUNGIBLE_ASSET_VALUE} push.{FUNGIBLE_ASSET_ID}
+            exec.util::create_default_note_with_moved_asset
+            # => []
+
+            {current_fungible_read}
+            {initial_fungible_read}
+
+            # the transaction accesses the non-fungible assets for the first time here, one
+            # through the current and one through the initial vault
+            {current_non_fungible_read}
+            {initial_non_fungible_read}
+
+            {own_vault_read}
+
+            exec.sys::truncate_stack
+        end
+        ",
+        REMOVED_FUNGIBLE_ASSET_VALUE = removed_fungible_asset.to_value_word(),
+        FUNGIBLE_ASSET_ID = initial_fungible_asset.to_id_word(),
+        current_fungible_read = assert_foreign_read(
+            "get_native_asset",
+            initial_fungible_asset.to_id_word(),
+            current_fungible_asset.to_value_word(),
+        ),
+        initial_fungible_read = assert_foreign_read(
+            "get_initial_native_asset",
+            initial_fungible_asset.to_id_word(),
+            initial_fungible_asset.to_value_word(),
+        ),
+        current_non_fungible_read = assert_foreign_read(
+            "get_native_asset",
+            non_fungible_asset1.to_id_word(),
+            non_fungible_asset1.to_value_word(),
+        ),
+        initial_non_fungible_read = assert_foreign_read(
+            "get_initial_native_asset",
+            non_fungible_asset2.to_id_word(),
+            non_fungible_asset2.to_value_word(),
+        ),
+        own_vault_read =
+            assert_foreign_read("get_own_asset", initial_fungible_asset.to_id_word(), EMPTY_WORD),
+    );
+    let tx_script = CodeBuilder::with_mock_packages()
+        .with_dynamically_linked_package(foreign_account_component.component_code())?
+        .compile_tx_script(code)?;
+
+    let tx = mock_chain
+        .build_transaction(native_account.id())
+        .foreign_accounts([foreign_account_inputs])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    // The witnesses loaded while the foreign account was active must be in the native partial
+    // vault of the executed inputs.
+    let partial_vault = tx.tx_inputs().account().vault();
+    assert_eq!(partial_vault.get(non_fungible_asset1.id())?, Some(non_fungible_asset1));
+    assert_eq!(partial_vault.get(non_fungible_asset2.id())?, Some(non_fungible_asset2));
 
     Ok(())
 }
@@ -1912,16 +2071,42 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Native-only procedures, including output note sealing, cannot be called from a foreign account.
-/// Invoking them from an FPI context must fail via
-/// `memory::assert_native_account` with `ERR_ACCOUNT_IS_NOT_NATIVE`.
+/// Native-only procedures cannot be called from a foreign account:
+/// invoking them from an FPI context fails via `memory::assert_native_account`. Reading an asset
+/// from the native account's vault fails if the foreign account is not the issuer of the asset.
 #[rstest::rstest]
-#[case::get_initial_item("push.MOCK_VALUE_SLOT0[0..2] exec.native_account::get_initial_item")]
-#[case::seal_output_note("push.0 exec.::miden::protocol::output_note::seal")]
+#[case::get_initial_item(
+    "push.MOCK_VALUE_SLOT0[0..2] exec.native_account::get_initial_item",
+    ERR_ACCOUNT_IS_NOT_NATIVE
+)]
+#[case::seal_output_note(
+    "push.0 exec.::miden::protocol::output_note::seal",
+    ERR_ACCOUNT_IS_NOT_NATIVE
+)]
+#[case::add_asset("padw padw exec.native_account::add_asset", ERR_ACCOUNT_IS_NOT_NATIVE)]
+#[case::remove_asset("padw padw exec.native_account::remove_asset", ERR_ACCOUNT_IS_NOT_NATIVE)]
+#[case::get_initial_vault_root(
+    "exec.native_account::get_initial_vault_root",
+    ERR_ACCOUNT_IS_NOT_NATIVE
+)]
+#[case::get_asset_of_other_issuer(
+    "push.OTHER_ISSUER_ASSET_ID exec.native_account::get_asset",
+    ERR_FOREIGN_ACCOUNT_NOT_ISSUER_OF_NATIVE_VAULT_ASSET
+)]
+#[case::get_initial_asset_of_other_issuer(
+    "push.OTHER_ISSUER_ASSET_ID exec.native_account::get_initial_asset",
+    ERR_FOREIGN_ACCOUNT_NOT_ISSUER_OF_NATIVE_VAULT_ASSET
+)]
 #[tokio::test]
 async fn native_only_procedure_fails_for_foreign_account(
     #[case] native_call: &str,
+    #[case] expected_error: MasmError,
 ) -> anyhow::Result<()> {
+    let other_issuer_asset_id =
+        AssetId::new_fungible(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?).to_word();
+    let native_call =
+        native_call.replace("OTHER_ISSUER_ASSET_ID", &format!("{other_issuer_asset_id}"));
+
     let native_account = AccountBuilder::new(rand::random())
         .with_components(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
@@ -1998,7 +2183,7 @@ async fn native_only_procedure_fails_for_foreign_account(
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_NOT_NATIVE);
+    assert_transaction_executor_error!(result, expected_error);
 
     Ok(())
 }

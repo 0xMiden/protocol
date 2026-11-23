@@ -2,6 +2,7 @@ use {
     Asset,
     Bool,
     NoteAttachmentCommitment,
+    NoteAttachmentScheme,
     NoteAttachmentsCommitment,
     NoteId,
     NoteMetadata,
@@ -295,7 +296,7 @@ end
 #!
 #! Invocation: exec
 pub proc add_attachment(
-    attachment_scheme: u16,
+    attachment_scheme: NoteAttachmentScheme,
     attachment_commitment: NoteAttachmentCommitment,
     note_idx: u16
 )
@@ -338,7 +339,11 @@ end
 #!
 #! Invocation: exec
 @locals(4)
-pub proc add_word_attachment(attachment_scheme: u16, attachment: word, note_idx: u16)
+pub proc add_word_attachment(
+    attachment_scheme: NoteAttachmentScheme,
+    attachment: word,
+    note_idx: u16
+)
     # => [attachment_scheme, ATTACHMENT, note_idx]
 
     # Store ATTACHMENT to local memory for hashing and advice map insertion
@@ -400,7 +405,7 @@ end
 #!
 #! Invocation: exec
 pub proc add_attachment_from_memory(
-    attachment_scheme: u16,
+    attachment_scheme: NoteAttachmentScheme,
     num_words: u16,
     attachment_ptr: ptr<word>,
     note_idx: u16
@@ -561,7 +566,7 @@ end
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: exec
-pub proc find_attachment(attachment_scheme: u16, note_index: u16) -> (Bool, u8)
+pub proc find_attachment(attachment_scheme: NoteAttachmentScheme, note_index: u16) -> (Bool, u8)
     swap exec.get_metadata
     # => [METADATA, attachment_scheme]
 
