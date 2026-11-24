@@ -113,6 +113,32 @@ async fn ies_seal_derives_a_secret_per_request(
     Ok(())
 }
 
+/// Tests that sealing another plaintext with the same seed, recipient, context and request index
+/// derives another ephemeral secret.
+#[tokio::test]
+async fn ies_seal_secret_depends_on_plaintext() -> anyhow::Result<()> {
+    let recipient_secret = secret_key(1);
+    let recipient = recipient_secret.public_key();
+    let executed_tx = execute_sealing_transaction(&[recipient], SealingAccount::Native).await?;
+
+    let mut other_plaintext = felts(PLAINTEXT);
+    other_plaintext[0] = Felt::from(99_u32);
+    let code = format!(
+        "{}\npush.{} push.{PLAINTEXT_PTR} mem_store\n{}",
+        store_inputs(),
+        other_plaintext[0],
+        seal_to_public_key(&recipient.to_elements(), 0),
+    );
+    let other_tx = execute(None, compile_tx_script(&code, 1, None)?).await?;
+
+    let other_envelope = envelope(&other_tx, 0)?;
+    let plaintext = ecgfp5_eidos::open(&recipient_secret, &felts(CONTEXT), &other_envelope)?;
+    assert_eq!(plaintext, other_plaintext);
+    assert_ne!(other_envelope.ephemeral_key(), envelope(&executed_tx, 0)?.ephemeral_key());
+
+    Ok(())
+}
+
 /// Tests that the signed execution of a two-pass authentication flow with the same transaction
 /// arguments reproduces the summary the signers approved, and that the summary depends on the IES
 /// seal seed.
@@ -176,20 +202,53 @@ async fn signed_execution_reproduces_unauthorized_summary() -> anyhow::Result<()
     Ok(())
 }
 
-/// Tests that the host rejects a public key that is not a valid EcGFp5 point.
-#[tokio::test]
-async fn ies_seal_rejects_invalid_public_key() -> anyhow::Result<()> {
+/// Tests that the host rejects an IES seal request it cannot answer: one with a public key that is
+/// not a valid EcGFp5 point, one without an IES seal seed, and a call to the core library's `seal`
+/// that does not go through `miden::protocol::ies::seal`.
+#[rstest]
+#[case::invalid_public_key(
     // The all-zero encoding is the identity, which is not a valid public key.
-    let code = format!("{}\n{}", store_inputs(), seal_to_public_key(&[ZERO; 5], 0));
-    let result = execute(None, compile_tx_script(&code, 1, None)?).await;
+    seal_to_public_key(&[ZERO; 5], 0),
+    Some(IesSealSeed::new([1; 32])),
+    |error: &TransactionKernelError| {
+        matches!(error, TransactionKernelError::IesPublicKeyInvalid(_))
+    },
+)]
+#[case::missing_seed(
+    seal_to_public_key(&secret_key(1).public_key().to_elements(), 0),
+    None,
+    |error: &TransactionKernelError| matches!(error, TransactionKernelError::IesSealSeedMissing),
+)]
+#[case::core_seal(
+    seal_to_commitment(secret_key(1).public_key().to_commitment(), 0),
+    Some(IesSealSeed::new([1; 32])),
+    |error: &TransactionKernelError| {
+        matches!(error, TransactionKernelError::IesSealWithoutProtocolProcedure)
+    },
+)]
+#[tokio::test]
+async fn ies_seal_rejects_unanswerable_request(
+    #[case] seal_code: String,
+    #[case] ies_seal_seed: Option<IesSealSeed>,
+    #[case] is_expected_error: fn(&TransactionKernelError) -> bool,
+) -> anyhow::Result<()> {
+    let account = mock_account();
+    let mut mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
+    mock_chain.prove_next_block()?;
+    let tx_script = compile_tx_script(&format!("{}\n{seal_code}", store_inputs()), 1, None)?;
+
+    let result = mock_chain
+        .build_transaction(account)
+        .tx_script(tx_script)
+        .ies_seal_seed(ies_seal_seed)
+        .build()?
+        .execute()
+        .await;
 
     assert_transaction_executor_error!(
         result,
         matches ExecutionError::EventError { error: ref event_err, .. }
-            if matches!(
-                event_err.downcast_ref::<TransactionKernelError>(),
-                Some(TransactionKernelError::IesPublicKeyInvalid(_))
-            )
+            if event_err.downcast_ref::<TransactionKernelError>().is_some_and(is_expected_error)
     );
 
     Ok(())
@@ -447,6 +506,16 @@ fn seal_to_public_key(public_key: &[Felt; 5], envelope_idx: usize) -> String {
         "{}\n{}\nexec.::miden::protocol::ies::seal",
         push_seal_arguments(envelope_idx),
         push_reversed(public_key)
+    )
+}
+
+/// Returns MASM that encrypts the plaintext under the context to the public key with `commitment`
+/// with the core library's `seal`, writing the envelope with index `envelope_idx`.
+fn seal_to_commitment(commitment: Word, envelope_idx: usize) -> String {
+    format!(
+        "{}\n{}\nexec.::miden::core::crypto::ies::ecgfp5_eidos::seal",
+        push_seal_arguments(envelope_idx),
+        push_reversed(commitment.as_elements())
     )
 }
 
