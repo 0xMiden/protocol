@@ -26,7 +26,6 @@ use miden::protocol::ies
 use miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::expiration
-use miden::standards::note as std_note
 
 # CONSTANTS
 # =================================================================================================
@@ -168,7 +167,7 @@ proc encrypt_note_details(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmen
     dup exec.output_note::get_recipient
     # => [RECIPIENT, note_idx]
 
-    exec.std_note::get_recipient_parts
+    exec.note::get_recipient_preimage
     # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, note_idx]
 
     loc_storew_le.ENCRYPT_NOTE_DETAILS_SERIAL_NUM_LOC dropw

@@ -4,6 +4,8 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
+use miden_processor::ExecutionError;
+use miden_processor::advice::AdviceError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -18,6 +20,7 @@ use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, FungibleAsset, N
 use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
 use miden_protocol::crypto::ies::ecgfp5_eidos;
 use miden_protocol::errors::MasmError;
+use miden_protocol::errors::protocol::ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -37,11 +40,7 @@ use miden_standards::account::access::{Authority, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::{
-    ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING,
-    ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH,
-    ERR_NOTE_RECIPIENT_PREIMAGE_MISSING,
-};
+use miden_standards::errors::standards::ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING;
 use miden_standards::note::{
     EncryptedAssetsAttachment,
     EncryptedAssetsAttachmentError,
@@ -164,11 +163,6 @@ async fn public_note_gets_no_encrypted_assets_attachment() -> anyhow::Result<()>
 /// Tests that a private note whose attachment cannot be built cannot be sealed, so that its
 /// creator cannot skip the attachment.
 #[rstest::rstest]
-#[case::missing_recipient_preimage(
-    issuer_key_slots(),
-    RecipientPreimage::Missing,
-    ERR_NOTE_RECIPIENT_PREIMAGE_MISSING
-)]
 #[case::forged_recipient_preimage(
     issuer_key_slots(),
     RecipientPreimage::Forged,
@@ -189,6 +183,22 @@ async fn private_note_without_attachment_cannot_be_sealed(
         send_note(NoteType::Private, Vec::new(), issuer_key_slots, recipient_preimage).await?;
 
     assert_transaction_executor_error!(result, expected_error);
+
+    Ok(())
+}
+
+/// Tests that a private note whose recipient preimage is not in the advice map cannot be sealed.
+#[tokio::test]
+async fn private_note_without_recipient_preimage_cannot_be_sealed() -> anyhow::Result<()> {
+    let (note, result) =
+        send_note(NoteType::Private, Vec::new(), issuer_key_slots(), RecipientPreimage::Missing)
+            .await?;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::AdviceError { err: AdviceError::MapKeyNotFound { key }, .. }
+            if key == note.recipient().digest()
+    );
 
     Ok(())
 }
