@@ -26,13 +26,20 @@ pub mod strings;
 
 pub(crate) use strings::ShortCapitalString;
 
-/// Returns the [`Word`]s formed by each consecutive [`Word::NUM_ELEMENTS`] elements, or `None` if
-/// the number of elements is not a multiple of [`Word::NUM_ELEMENTS`].
-pub fn words_from_elements(elements: &[Felt]) -> Option<Vec<Word>> {
-    let (words, []) = elements.as_chunks::<{ Word::NUM_ELEMENTS }>() else {
-        return None;
-    };
-    Some(words.iter().copied().map(Word::new).collect())
+/// Extension methods for slices of [`Felt`]s.
+pub trait FeltSliceExt {
+    /// Returns the [`Word`]s formed by each consecutive [`Word::NUM_ELEMENTS`] elements, or `None`
+    /// if the number of elements is not a multiple of [`Word::NUM_ELEMENTS`].
+    fn to_words(&self) -> Option<Vec<Word>>;
+}
+
+impl FeltSliceExt for [Felt] {
+    fn to_words(&self) -> Option<Vec<Word>> {
+        let (words, []) = self.as_chunks::<{ Word::NUM_ELEMENTS }>() else {
+            return None;
+        };
+        Some(words.iter().copied().map(Word::new).collect())
+    }
 }
 
 /// Creates a minimal [MastForest] containing only an external node referencing the given digest.

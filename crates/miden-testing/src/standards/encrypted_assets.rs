@@ -32,7 +32,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
 };
 use miden_protocol::transaction::{ExecutedTransaction, OutputNote, RawOutputNote};
-use miden_protocol::utils::words_from_elements;
+use miden_protocol::utils::FeltSliceExt;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
@@ -215,7 +215,9 @@ async fn issuer_keeps_only_the_attachment_that_describes_the_note() -> anyhow::R
     )?;
     let decoy = NoteAttachment::with_words(
         EncryptedAssetsAttachment::ATTACHMENT_SCHEME,
-        words_from_elements(&decoy_envelope.to_elements())
+        decoy_envelope
+            .to_elements()
+            .to_words()
             .context("the envelope elements should form whole words")?,
     )?;
 
@@ -266,8 +268,7 @@ async fn issuer_keeps_only_the_attachment_that_describes_the_note() -> anyhow::R
     elements[8] = Felt::new(elements[8].as_canonical_u64() ^ 1)?;
     let tampered = NoteAttachment::with_words(
         EncryptedAssetsAttachment::ATTACHMENT_SCHEME,
-        words_from_elements(&elements)
-            .context("the attachment elements should form whole words")?,
+        elements.to_words().context("the attachment elements should form whole words")?,
     )?;
     assert_matches!(
         EncryptedAssetsAttachment::decrypt(&tampered, &issuer_secret_key()),

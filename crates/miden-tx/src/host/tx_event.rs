@@ -39,7 +39,7 @@ use miden_protocol::transaction::{
     TransactionLogs,
     TransactionSummary,
 };
-use miden_protocol::utils::words_from_elements;
+use miden_protocol::utils::FeltSliceExt;
 use miden_protocol::vm::EventId;
 use miden_protocol::{Felt, Word};
 
@@ -790,7 +790,8 @@ fn extract_transaction_log(
         .ok_or_else(|| TransactionKernelError::other("missing transaction log content"))?;
     // The kernel checks word alignment before emitting this event. Hash padding does not change
     // the advice map value; retain this check when decoding the host-side record as well.
-    let content = words_from_elements(elements)
+    let content = elements
+        .to_words()
         .filter(|words| words.len() <= TransactionLog::MAX_NUM_WORDS)
         .ok_or_else(|| TransactionKernelError::other("invalid transaction log content length"))?;
     TransactionLog::new(emitter, topic, content)
@@ -1025,7 +1026,7 @@ fn extract_note_attachment(
         ));
     }
 
-    let words = words_from_elements(elements).ok_or_else(|| {
+    let words = elements.to_words().ok_or_else(|| {
         TransactionKernelError::other(
             "num elements in attachment advice map value must be multiple of word size",
         )
