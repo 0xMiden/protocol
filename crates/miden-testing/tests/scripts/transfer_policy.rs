@@ -348,11 +348,12 @@ pub(crate) fn assert_minted_note(
 // NOTE SEALING FIXTURE
 // ================================================================================================
 
-/// The index of the note that [`execute_note_sealing_tx`] seals through the send policy.
+/// The index of the note that the send policy tests, such as [`execute_note_sealing_tx`], seal
+/// through the send policy.
 ///
 /// It is not 0, so that a send policy that returns the note index on top of its outputs returns a
 /// non-zero number of attachments.
-const SEALED_NOTE_IDX: usize = 1;
+pub(crate) const SEALED_NOTE_IDX: usize = 1;
 
 /// Builds a custom send policy that returns no attachments together with the provided attachment
 /// list commitment, which the kernel accepts only if it is the empty word.

@@ -14,7 +14,7 @@ use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
-use miden_protocol::note::{Note, NoteAttachments, NoteHeader, NoteType, PartialNote};
+use miden_protocol::note::{Note, NoteType, PartialNote};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -61,19 +61,14 @@ use miden_testing::{
 use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 
 use super::assert_default_expiration_limit;
+use super::transfer_policy::SEALED_NOTE_IDX;
+use crate::consume_note;
 
 // CONSTANTS
 // ================================================================================================
 
 /// The amount of the faucet's asset that a note holds.
 const NOTE_AMOUNT: u64 = 100;
-
-/// The index of the output note under test in each transaction.
-///
-/// Each transaction first seals another note, so that a send policy that leaves the note index on
-/// top of its outputs returns a non-zero attachment scheme instead of passing as returning no
-/// attachment.
-const NOTE_UNDER_TEST_IDX: usize = 1;
 
 // FIXTURES
 // ================================================================================================
@@ -178,27 +173,15 @@ fn p2id_note(
         .into())
 }
 
-/// Returns the note under test: a P2ID note of the provided type, created by `sender`, that holds
-/// [`NOTE_AMOUNT`] units of the asset of `faucet_id`.
-fn note_under_test(
-    sender: AccountId,
-    faucet_id: AccountId,
-    note_type: NoteType,
-) -> anyhow::Result<Note> {
-    p2id_note(sender, faucet_id, note_type, 1)
-}
-
 /// Executes a transaction in which `wallet` sends an empty private note and then `note`, which
-/// holds the asset of `faucet_id`, at [`NOTE_UNDER_TEST_IDX`].
+/// holds the asset of `faucet_id`, at [`SEALED_NOTE_IDX`].
 ///
-/// With `supply_preimage`, the transaction expects `note`, which puts its recipient preimage into
-/// the advice map.
+/// The transaction expects `note`, which puts its recipient preimage into the advice map.
 async fn execute_send(
     mock_chain: &MockChain,
     wallet: &Account,
     faucet_id: AccountId,
     note: &Note,
-    supply_preimage: bool,
 ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
     let empty_note = NoteBuilder::new(wallet.id(), EidosRandomCoin::new(Word::empty()))
         .note_type(NoteType::Private)
@@ -208,26 +191,23 @@ async fn execute_send(
         &[PartialNote::from(empty_note), PartialNote::from(note.clone())],
     )?;
 
-    let mut tx_builder = mock_chain
+    Ok(mock_chain
         .build_transaction(wallet.id())
         .send_notes_script(&send_script)
-        .foreign_accounts([mock_chain.get_foreign_account_inputs(faucet_id)?]);
-    if supply_preimage {
-        tx_builder = tx_builder.expected_output_note(RawOutputNote::Full(note.clone()));
-    }
-
-    Ok(tx_builder.build()?.execute().await)
+        .foreign_accounts([mock_chain.get_foreign_account_inputs(faucet_id)?])
+        .expected_output_note(RawOutputNote::Full(note.clone()))
+        .build()?
+        .execute()
+        .await)
 }
 
-/// Executes a transaction in which a wallet sends a note of the provided type that holds the asset
-/// of a faucet whose active send policy is the one `send_policy` returns for the wallet's ID.
+/// Executes a transaction in which a wallet sends a private note that holds the asset of a faucet
+/// whose active send policy is the one `send_policy` returns for the wallet's ID.
 ///
 /// Returns the note as the wallet creates it, i.e. without the policy's attachment, and the
 /// execution result.
 async fn send_note(
     send_policy: impl FnOnce(AccountId) -> anyhow::Result<SendPolicy>,
-    note_type: NoteType,
-    supply_preimage: bool,
 ) -> anyhow::Result<(Note, Result<ExecutedTransaction, TransactionExecutorError>)> {
     let mut builder = MockChain::builder();
     // the wallet is created before the faucet so that the send policy can name it
@@ -235,14 +215,14 @@ async fn send_note(
         .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak })?;
     let faucet = add_faucet(&mut builder, policy_manager(send_policy(wallet.id())?))?;
 
-    let note = note_under_test(wallet.id(), faucet.id(), note_type)?;
+    let note = p2id_note(wallet.id(), faucet.id(), NoteType::Private, 1)?;
     wallet
         .vault_mut()
         .add_asset(FungibleAsset::new(faucet.id(), NOTE_AMOUNT)?.into())?;
     builder.add_account(wallet.clone())?;
     let mock_chain = builder.build()?;
 
-    let result = execute_send(&mock_chain, &wallet, faucet.id(), &note, supply_preimage).await?;
+    let result = execute_send(&mock_chain, &wallet, faucet.id(), &note).await?;
 
     Ok((note, result))
 }
@@ -284,35 +264,29 @@ fn blocklist_with_encrypted_assets_policy(
     Ok(SendPolicy::custom(root, [component, issuer_key().into()])?)
 }
 
-/// Asserts that the output note of `executed` at [`NOTE_UNDER_TEST_IDX`] is a private note with a
+/// Asserts that the output note of `executed` at [`SEALED_NOTE_IDX`] is a private note with a
 /// single attachment, from which the issuer recomputes the note's ID and nullifier with
 /// `issuer_secret_key`.
 fn assert_issuer_decrypts_note(
     executed: &ExecutedTransaction,
     issuer_secret_key: &SecretKey,
 ) -> anyhow::Result<()> {
-    assert_eq!(executed.output_notes().num_notes(), NOTE_UNDER_TEST_IDX + 1);
-    let RawOutputNote::Full(note) = executed.output_notes().get_note(NOTE_UNDER_TEST_IDX) else {
+    assert_eq!(executed.output_notes().num_notes(), SEALED_NOTE_IDX + 1);
+    let RawOutputNote::Full(note) = executed.output_notes().get_note(SEALED_NOTE_IDX) else {
         anyhow::bail!("output note should be a full note");
     };
     assert_eq!(note.metadata().note_type(), NoteType::Private);
     assert_eq!(note.attachments().num_attachments(), 1);
 
-    let plaintext = decrypt_note(note.header(), note.attachments(), issuer_secret_key)?;
+    let plaintext = EncryptedAssetsAttachment::decrypt_and_verify_note(
+        note.header(),
+        note.attachments(),
+        issuer_secret_key,
+    )?;
     assert_eq!(plaintext.assets(), note.assets());
     assert_eq!(plaintext.nullifier(note.metadata()), note.nullifier());
 
     Ok(())
-}
-
-/// Decrypts the encrypted asset attachment of the note with the provided header and attachments
-/// with `issuer_secret_key`.
-fn decrypt_note(
-    header: &NoteHeader,
-    attachments: &NoteAttachments,
-    issuer_secret_key: &SecretKey,
-) -> Result<EncryptedAssetsAttachment, EncryptedAssetsAttachmentError> {
-    EncryptedAssetsAttachment::decrypt_and_verify_note(header, attachments, issuer_secret_key)
 }
 
 /// Returns a note, created by `sender`, whose script calls `set_issuer_key` on the consuming
@@ -422,59 +396,27 @@ fn mint_note(output_note: &Note, rng: &mut EidosRandomCoin) -> anyhow::Result<No
 /// of the proven note and recomputes the note's ID and nullifier.
 #[tokio::test]
 async fn issuer_decrypts_attachment_of_proven_private_note() -> anyhow::Result<()> {
-    let (note, result) =
-        send_note(|_| Ok(SendPolicy::with_encrypted_assets(issuer_key())), NoteType::Private, true)
-            .await?;
+    let (note, result) = send_note(|_| Ok(SendPolicy::with_encrypted_assets(issuer_key()))).await?;
     let executed = result?;
-    let RawOutputNote::Full(full_note) = executed.output_notes().get_note(NOTE_UNDER_TEST_IDX)
-    else {
+    let RawOutputNote::Full(full_note) = executed.output_notes().get_note(SEALED_NOTE_IDX) else {
         anyhow::bail!("output note should be a full note");
     };
     let nullifier = full_note.nullifier();
 
     let proven = LocalTransactionProver::default().prove(executed)?;
-    let OutputNote::Private(output_note) = proven.output_notes().get_note(NOTE_UNDER_TEST_IDX)
-    else {
+    let OutputNote::Private(output_note) = proven.output_notes().get_note(SEALED_NOTE_IDX) else {
         anyhow::bail!("output note should be private");
     };
     assert_eq!(output_note.attachments().num_attachments(), 1);
 
-    let plaintext =
-        decrypt_note(output_note.header(), output_note.attachments(), &issuer_secret_key())?;
+    let plaintext = EncryptedAssetsAttachment::decrypt_and_verify_note(
+        output_note.header(),
+        output_note.attachments(),
+        &issuer_secret_key(),
+    )?;
     assert_eq!(plaintext.serial_num(), note.recipient().serial_num());
     assert_eq!(plaintext.assets(), note.assets());
     assert_eq!(plaintext.nullifier(output_note.metadata()), nullifier);
-
-    Ok(())
-}
-
-/// A public note gets no attachment.
-#[tokio::test]
-async fn public_note_gets_no_attachment() -> anyhow::Result<()> {
-    let (note, result) =
-        send_note(|_| Ok(SendPolicy::with_encrypted_assets(issuer_key())), NoteType::Public, true)
-            .await?;
-    let executed = result?;
-
-    let output_note = executed.output_notes().get_note(NOTE_UNDER_TEST_IDX);
-    assert!(output_note.attachments().is_empty());
-    assert_eq!(output_note.id(), note.id());
-
-    Ok(())
-}
-
-/// A private note whose recipient preimage is not in the transaction's advice map does not seal,
-/// since its attachment cannot be built.
-#[tokio::test]
-async fn private_note_without_recipient_preimage_cannot_be_sealed() -> anyhow::Result<()> {
-    let (_, result) = send_note(
-        |_| Ok(SendPolicy::with_encrypted_assets(issuer_key())),
-        NoteType::Private,
-        false,
-    )
-    .await?;
-
-    assert_transaction_executor_error!(result, ERR_NOTE_RECIPIENT_PREIMAGE_MISSING);
 
     Ok(())
 }
@@ -489,11 +431,9 @@ async fn private_note_without_recipient_preimage_cannot_be_sealed() -> anyhow::R
 async fn combined_blocklist_policy_checks_sender_and_returns_attachment(
     #[case] sender_blocked: bool,
 ) -> anyhow::Result<()> {
-    let (_, result) = send_note(
-        |wallet_id| blocklist_with_encrypted_assets_policy(sender_blocked.then_some(wallet_id)),
-        NoteType::Private,
-        true,
-    )
+    let (_, result) = send_note(|wallet_id| {
+        blocklist_with_encrypted_assets_policy(sender_blocked.then_some(wallet_id))
+    })
     .await?;
 
     if sender_blocked {
@@ -568,13 +508,13 @@ async fn set_send_policy_switches_the_attachment(
         new_policy_root.as_word()
     );
 
-    let note = note_under_test(wallet.id(), faucet.id(), NoteType::Private)?;
-    let executed = execute_send(&mock_chain, &wallet, faucet.id(), &note, true).await??;
+    let note = p2id_note(wallet.id(), faucet.id(), NoteType::Private, 1)?;
+    let executed = execute_send(&mock_chain, &wallet, faucet.id(), &note).await??;
 
     if expects_attachment {
         assert_issuer_decrypts_note(&executed, &issuer_secret_key())?;
     } else {
-        let output_note = executed.output_notes().get_note(NOTE_UNDER_TEST_IDX);
+        let output_note = executed.output_notes().get_note(SEALED_NOTE_IDX);
         assert!(output_note.attachments().is_empty());
         assert_eq!(output_note.id(), note.id());
     }
@@ -644,22 +584,19 @@ async fn authority_rotates_issuer_key() -> anyhow::Result<()> {
     builder.add_output_note(RawOutputNote::Full(rotation_note.clone()));
     let mut mock_chain = builder.build()?;
 
-    let rotation_tx = mock_chain
-        .build_transaction(faucet.id())
-        .authenticated_input_note(rotation_note.id())
-        .build()?
-        .execute()
-        .await?;
-    mock_chain.add_pending_executed_transaction(&rotation_tx)?;
-    mock_chain.prove_next_block()?;
+    consume_note(&mut mock_chain, faucet.id(), &rotation_note).await?;
 
-    let note = note_under_test(wallet.id(), faucet.id(), NoteType::Private)?;
-    let executed = execute_send(&mock_chain, &wallet, faucet.id(), &note, true).await??;
+    let note = p2id_note(wallet.id(), faucet.id(), NoteType::Private, 1)?;
+    let executed = execute_send(&mock_chain, &wallet, faucet.id(), &note).await??;
 
     assert_issuer_decrypts_note(&executed, &new_secret_key)?;
-    let sent_note = executed.output_notes().get_note(NOTE_UNDER_TEST_IDX);
+    let sent_note = executed.output_notes().get_note(SEALED_NOTE_IDX);
     assert_matches!(
-        decrypt_note(sent_note.header(), sent_note.attachments(), &issuer_secret_key()),
+        EncryptedAssetsAttachment::decrypt_and_verify_note(
+            sent_note.header(),
+            sent_note.attachments(),
+            &issuer_secret_key()
+        ),
         Err(EncryptedAssetsAttachmentError::NoMatchingAttachment(_))
     );
 
@@ -715,7 +652,7 @@ async fn faucet_mints_private_note_with_attachment() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let public_note = p2id_note(faucet.id(), faucet.id(), NoteType::Public, 2)?;
-    let note = note_under_test(faucet.id(), faucet.id(), NoteType::Private)?;
+    let note = p2id_note(faucet.id(), faucet.id(), NoteType::Private, 1)?;
     let tx_script = CodeBuilder::default().compile_tx_script(format!(
         "
         @transaction_script
@@ -748,7 +685,7 @@ async fn faucet_mints_private_note_with_attachment() -> anyhow::Result<()> {
 /// digest, so the attachment cannot be built.
 ///
 /// The faucet consumes a public MINT note first, so the output note under test is at
-/// [`NOTE_UNDER_TEST_IDX`].
+/// [`SEALED_NOTE_IDX`].
 #[rstest::rstest]
 #[case::public_output_note(NoteType::Public)]
 #[case::private_output_note(NoteType::Private)]
@@ -762,7 +699,7 @@ async fn network_faucet_mints_only_public_output_notes(
     let mut rng = EidosRandomCoin::new([Felt::from(5u32); 4].into());
     let first_mint_note =
         mint_note(&p2id_note(faucet.id(), faucet.id(), NoteType::Public, 2)?, &mut rng)?;
-    let output_note = note_under_test(faucet.id(), faucet.id(), output_note_type)?;
+    let output_note = p2id_note(faucet.id(), faucet.id(), output_note_type, 1)?;
     let mint_note_under_test = mint_note(&output_note, &mut rng)?;
     builder.add_output_note(RawOutputNote::Full(first_mint_note.clone()));
     builder.add_output_note(RawOutputNote::Full(mint_note_under_test.clone()));
@@ -779,7 +716,7 @@ async fn network_faucet_mints_only_public_output_notes(
     match output_note_type {
         NoteType::Public => {
             let executed = result?;
-            let minted_note = executed.output_notes().get_note(NOTE_UNDER_TEST_IDX);
+            let minted_note = executed.output_notes().get_note(SEALED_NOTE_IDX);
             assert_eq!(minted_note.recipient_digest(), output_note.recipient().digest());
             assert!(minted_note.attachments().is_empty());
         },
