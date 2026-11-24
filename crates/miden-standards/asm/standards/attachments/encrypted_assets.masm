@@ -95,7 +95,7 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING = "active account has no issuer pu
 #! stored in the active account's `ISSUER_KEY_SLOT`, inserts the envelope into the advice map under
 #! its commitment and returns the scheme and commitment of the attachment. Since it reads the
 #! issuer key, it also applies the default expiration delta. Faucets call it from their
-#! `on_before_note_sealed` callback, which can return its outputs to the kernel.
+#! `on_before_note_sealed` callback.
 #!
 #! The note's recipient preimage must be in the advice map.
 #!
@@ -138,9 +138,7 @@ pub proc build_attachment(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmen
     # => [is_public, note_idx]
 
     if.true
-        # push the outputs before dropping note_idx: a drop at the minimum stack depth of 16 does
-        # not lower the depth, so dropping note_idx first would return one element more than the
-        # private branch when the procedure is called at that depth
+        # push the outputs before dropping note_idx for stack neutrality
         padw movup.4 drop push.0
         # => [attachment_reserved_scheme, EMPTY_WORD]
     else
