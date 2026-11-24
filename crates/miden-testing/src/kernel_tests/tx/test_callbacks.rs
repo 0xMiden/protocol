@@ -42,7 +42,6 @@ use miden_protocol::errors::tx_kernel::{
     ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_COMMITMENT_WITHOUT_ATTACHMENTS,
     ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_ENTRY_PADDING_NOT_ZERO,
     ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_LENGTH_MISMATCH,
-    ERR_OUTPUT_NOTE_CALLBACK_TOO_MANY_ATTACHMENTS,
     ERR_OUTPUT_NOTE_IS_SEALED,
     ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS,
     ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG,
@@ -1112,11 +1111,7 @@ async fn test_note_sealed_callback_attachments_are_appended_to_note(
 /// cannot return more attachments than a note can hold.
 #[rstest::rstest]
 #[case::too_many_attachments(3, &[20, 21], ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS)]
-#[case::too_many_listed_attachments(
-    0,
-    &[20, 21, 22, 23, 24],
-    ERR_OUTPUT_NOTE_CALLBACK_TOO_MANY_ATTACHMENTS
-)]
+#[case::too_many_listed_attachments(0, &[20, 21, 22, 23, 24], ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS)]
 #[case::invalid_scheme(0, &[20, u16::MAX], ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED)]
 #[case::zero_scheme(0, &[0], ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO)]
 #[tokio::test]

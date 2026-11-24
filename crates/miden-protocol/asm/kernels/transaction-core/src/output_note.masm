@@ -74,8 +74,6 @@ const ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS = "number of attachments per note can
 const ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED =
     "total number of attachment words per note cannot exceed 512"
 
-const ERR_OUTPUT_NOTE_CALLBACK_TOO_MANY_ATTACHMENTS = "note callback returned more than 4 attachments"
-
 const ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_COMMITMENT_WITHOUT_ATTACHMENTS =
     "note callback returned a non-empty attachment list commitment with 0 attachments"
 
@@ -948,8 +946,8 @@ proc add_attachment_list(
     note_idx: u16
 )
     # bound num_attachments by the note's attachment limit, so the list fits into local memory
-    dup u32assert.err=ERR_OUTPUT_NOTE_CALLBACK_TOO_MANY_ATTACHMENTS
-    u32lte.MAX_ATTACHMENTS_PER_NOTE assert.err=ERR_OUTPUT_NOTE_CALLBACK_TOO_MANY_ATTACHMENTS
+    dup u32assert.err=ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS
+    u32lte.MAX_ATTACHMENTS_PER_NOTE assert.err=ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS
     # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, note_idx]
 
     # push the list elements from the advice map onto the advice stack
