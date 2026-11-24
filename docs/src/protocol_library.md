@@ -226,8 +226,8 @@ Asset procedures provide utilities for creating fungible and non-fungible assets
 
 ## Encryption Procedures (`miden::protocol::ies`)
 
-Encryption procedures encrypt data to an EcGFp5 public key with the EcGFp5/Eidos integrated encryption scheme. The transaction inputs record the ephemeral secret of each encryption, so that re-execution and proving reproduce the envelope. Anyone holding the transaction inputs can decrypt the envelope.
+Encryption procedures encrypt data to an EcGFp5 public key with the EcGFp5/Eidos integrated encryption scheme. The host derives the ephemeral secret of each encryption from the IES seal seed in the transaction arguments, so that re-execution and proving with the same arguments reproduce the envelope. Anyone who knows the seed can check guesses of the encrypted plaintexts.
 
 | Procedure | Description | Context |
 | --------- | ----------- | ------- |
-| `seal`    | Encrypts the plaintext to the public key and writes the envelope `[R(5), tag(2), plaintext_len, ciphertext(2*plaintext_len)]` to the destination. The context is authenticated but not encrypted. Inserts the public key into the advice map under its commitment.<br/><br/>**Inputs:** `[public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]`<br/>**Outputs:** `[]` | Any     |
+| `seal`    | Encrypts the plaintext to the public key and writes the envelope `[R(5), tag(2), plaintext_len, ciphertext(2*plaintext_len)]` to the destination. The context is authenticated but not encrypted.<br/><br/>**Inputs:** `[public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]`<br/>**Outputs:** `[]` | Any     |
