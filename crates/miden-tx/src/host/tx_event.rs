@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use core::fmt;
 
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
@@ -737,7 +738,6 @@ pub(crate) enum RecipientData {
 // ================================================================================================
 
 /// An IES `seal` request of `miden::protocol::ies::ecgfp5_eidos::seal`.
-#[derive(Debug)]
 pub(crate) struct IesSealRequest {
     /// The context in which the request was made.
     pub(super) ctx: ContextId,
@@ -766,6 +766,17 @@ impl IesSealRequest {
             requester_account_id: process.get_active_account_id()?,
             requester_note_id: process.get_active_note_id()?,
         })
+    }
+}
+
+/// Leaves out the digests, which let anyone who sees them check guesses of a plaintext.
+impl fmt::Debug for IesSealRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IesSealRequest")
+            .field("ctx", &self.ctx)
+            .field("requester_account_id", &self.requester_account_id)
+            .field("requester_note_id", &self.requester_note_id)
+            .finish_non_exhaustive()
     }
 }
 
