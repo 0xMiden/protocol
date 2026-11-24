@@ -5,9 +5,8 @@ use anyhow::Context;
 use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceError;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::account::{Account, AccountId};
+use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
@@ -47,7 +46,12 @@ use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 
 use super::faucet::{FaucetTestParams, create_mint_body_code};
 use super::transfer_policy::{SEALED_NOTE_IDX, build_mint_note_for};
-use super::{assert_default_expiration_limit, fungible_faucet, fungible_faucet_account};
+use super::{
+    assert_default_expiration_limit,
+    fungible_faucet,
+    fungible_faucet_account,
+    policy_component,
+};
 use crate::consume_note;
 
 // CONSTANTS
@@ -175,10 +179,10 @@ async fn send_note(
 fn blocklist_with_encrypted_assets_policy(
     blocked_accounts: impl IntoIterator<Item = AccountId>,
 ) -> anyhow::Result<SendPolicy> {
-    const COMPONENT_NAME: &str = "tests::blocklist_with_encrypted_assets";
-
-    let code = CodeBuilder::default().compile_component_code(
-        COMPONENT_NAME,
+    let (root, component) = policy_component(
+        "tests::blocklist_with_encrypted_assets",
+        "check_send_policy",
+        vec![BlocklistStorage::with_blocked_accounts(blocked_accounts).into_slot()],
         "
         use miden::standards::faucets::policies::transfer::basic_blocklist
         use miden::standards::faucets::policies::transfer::encrypted_assets
@@ -192,14 +196,6 @@ fn blocklist_with_encrypted_assets_policy(
         end
         ",
     )?;
-    let component = AccountComponent::new(
-        code,
-        vec![BlocklistStorage::with_blocked_accounts(blocked_accounts).into_slot()],
-        AccountComponentMetadata::mock(COMPONENT_NAME),
-    )?;
-    let root = component
-        .get_procedure_root_by_path(format!("{COMPONENT_NAME}::check_send_policy").as_str())
-        .context("send policy procedure should exist")?;
 
     Ok(SendPolicy::custom(root, [component, issuer_key().into()])?)
 }
