@@ -36,15 +36,13 @@ pub const ENCRYPTED_ASSETS_ATTACHMENT_SCHEME = 8
 
 # Issuer key
 
-#! The map slot that holds the issuer's EcGFp5 public key.
-#!
-#! The map holds the following entries:
-#! - [0, 0, 0, 0] => [public_key_0, public_key_1, public_key_2, public_key_3]
-#! - [1, 0, 0, 0] => [public_key_4, 0, 0, 0]
-pub const ISSUER_KEY_SLOT = word("miden::standards::attachments::encrypted_assets::issuer_key")
+#! The value slot that holds the first four elements of the issuer's EcGFp5 public key,
+#! [public_key_0, public_key_1, public_key_2, public_key_3].
+pub const ISSUER_KEY_0_SLOT = word("miden::standards::attachments::encrypted_assets::issuer_key_0")
 
-const ISSUER_KEY_HEAD_MAP_KEY = [0, 0, 0, 0]
-const ISSUER_KEY_TAIL_MAP_KEY = [1, 0, 0, 0]
+#! The value slot that holds the fifth element of the issuer's EcGFp5 public key,
+#! [public_key_4, 0, 0, 0].
+pub const ISSUER_KEY_1_SLOT = word("miden::standards::attachments::encrypted_assets::issuer_key_1")
 
 # Layouts
 
@@ -86,7 +84,7 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING = "active account has no issuer pu
 #!
 #! A public note gets no attachment and the procedure returns attachment scheme 0 and the empty
 #! word. For a private note, the procedure encrypts the note's details to the issuer public key
-#! stored in the active account's `ISSUER_KEY_SLOT`, inserts the attachment into the advice map
+#! stored in the active account's issuer key slots, inserts the attachment into the advice map
 #! under its commitment and returns its scheme and commitment. Since it reads the issuer key, it
 #! also applies the default expiration delta. Faucets call it from their `on_before_note_sealed`
 #! callback.
@@ -117,7 +115,7 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING = "active account has no issuer pu
 #! - the note index does not point to an output note.
 #! - the note is private and:
 #!   - the advice map has no preimage for its recipient, or the preimage does not hash to it.
-#!   - the active account has no issuer key slot or no issuer public key in it.
+#!   - the active account has no issuer key slots or no issuer public key in them.
 #!   - the issuer public key is not a valid EcGFp5 public key.
 #!
 #! Invocation: exec
@@ -222,7 +220,7 @@ proc encrypt_note_details(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmen
     # => [attachment_scheme, ATTACHMENT_COMMITMENT]
 end
 
-#! Returns the issuer's EcGFp5 public key from the active account's `ISSUER_KEY_SLOT`.
+#! Returns the issuer's EcGFp5 public key from the active account's issuer key slots.
 #!
 #! Inputs:  []
 #! Outputs: [public_key(5)]
@@ -231,20 +229,18 @@ end
 #! - public_key is the issuer's EcGFp5 public key in increasing coefficient order.
 #!
 #! Panics if:
-#! - the active account has no `ISSUER_KEY_SLOT`.
-#! - the slot holds no public key, i.e. its five elements are zero.
+#! - the active account has no `ISSUER_KEY_0_SLOT` or `ISSUER_KEY_1_SLOT`.
+#! - the slots hold no public key, i.e. the five key elements are zero.
 #!
 #! Invocation: exec
 proc get_issuer_public_key() -> ecgfp5::PointEncoding
-    push.ISSUER_KEY_TAIL_MAP_KEY push.ISSUER_KEY_SLOT[0..2]
-    exec.active_account::get_map_item
+    push.ISSUER_KEY_1_SLOT[0..2] exec.active_account::get_item
     # => [public_key_4, 0, 0, 0]
 
     movdn.3 drop drop drop
     # => [public_key_4]
 
-    push.ISSUER_KEY_HEAD_MAP_KEY push.ISSUER_KEY_SLOT[0..2]
-    exec.active_account::get_map_item
+    push.ISSUER_KEY_0_SLOT[0..2] exec.active_account::get_item
     # => [public_key(5)]
 
     # an unset key reads as all zeros, which is not a valid public key

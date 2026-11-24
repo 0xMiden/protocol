@@ -111,7 +111,7 @@ async fn issuer_recomputes_note_id_and_nullifier_from_attachment(
     #[case] other_assets: Vec<Asset>,
 ) -> anyhow::Result<()> {
     let (note, result) =
-        send_note(NoteType::Private, other_assets, issuer_key_slot(), RecipientPreimage::Expected)
+        send_note(NoteType::Private, other_assets, issuer_key_slots(), RecipientPreimage::Expected)
             .await?;
     let executed_tx = result?;
     assert_eq!(
@@ -150,7 +150,7 @@ async fn issuer_recomputes_note_id_and_nullifier_from_attachment(
 #[tokio::test]
 async fn public_note_gets_no_encrypted_assets_attachment() -> anyhow::Result<()> {
     let (note, result) =
-        send_note(NoteType::Public, Vec::new(), issuer_key_slot(), RecipientPreimage::Expected)
+        send_note(NoteType::Public, Vec::new(), issuer_key_slots(), RecipientPreimage::Expected)
             .await?;
     let executed_tx = result?;
 
@@ -165,28 +165,28 @@ async fn public_note_gets_no_encrypted_assets_attachment() -> anyhow::Result<()>
 /// creator cannot skip the attachment.
 #[rstest::rstest]
 #[case::missing_recipient_preimage(
-    issuer_key_slot(),
+    issuer_key_slots(),
     RecipientPreimage::Missing,
     ERR_NOTE_RECIPIENT_PREIMAGE_MISSING
 )]
 #[case::forged_recipient_preimage(
-    issuer_key_slot(),
+    issuer_key_slots(),
     RecipientPreimage::Forged,
     ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH
 )]
 #[case::missing_issuer_key(
-    StorageSlot::with_empty_map(EncryptedAssetsIssuerKey::slot_name().clone()),
+    EncryptedAssetsIssuerKey::slot_names().clone().map(StorageSlot::with_empty_value),
     RecipientPreimage::Expected,
     ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING
 )]
 #[tokio::test]
 async fn private_note_without_attachment_cannot_be_sealed(
-    #[case] issuer_key_slot: StorageSlot,
+    #[case] issuer_key_slots: [StorageSlot; 2],
     #[case] recipient_preimage: RecipientPreimage,
     #[case] expected_error: MasmError,
 ) -> anyhow::Result<()> {
     let (_, result) =
-        send_note(NoteType::Private, Vec::new(), issuer_key_slot, recipient_preimage).await?;
+        send_note(NoteType::Private, Vec::new(), issuer_key_slots, recipient_preimage).await?;
 
     assert_transaction_executor_error!(result, expected_error);
 
@@ -221,7 +221,7 @@ async fn issuer_keeps_only_the_attachment_that_describes_the_note() -> anyhow::R
         NoteType::Private,
         Vec::new(),
         vec![decoy.clone()],
-        issuer_key_slot(),
+        issuer_key_slots(),
         RecipientPreimage::Expected,
     )
     .await?;
@@ -284,25 +284,31 @@ async fn encrypted_assets_masm_constants_match_rust() -> anyhow::Result<()> {
     let source = "
         use {
             ENCRYPTED_ASSETS_ATTACHMENT_SCHEME,
-            ISSUER_KEY_SLOT,
+            ISSUER_KEY_0_SLOT,
+            ISSUER_KEY_1_SLOT,
         } from miden::standards::attachments::encrypted_assets
 
         begin
-            push.ISSUER_KEY_SLOT[0..2]
+            push.ISSUER_KEY_1_SLOT[0..2]
+            push.ISSUER_KEY_0_SLOT[0..2]
             push.ENCRYPTED_ASSETS_ATTACHMENT_SCHEME
-            # => [attachment_scheme, slot_id_suffix, slot_id_prefix, pad(16)]
+            # => [attachment_scheme, slot_0_id_suffix, slot_0_id_prefix, slot_1_id_suffix,
+            #     slot_1_id_prefix, pad(16)]
 
             # truncate the stack to 16 elements
-            repeat.3 movup.3 drop end
+            repeat.5 movup.5 drop end
         end
     ";
 
     let exec_output = CodeExecutor::with_default_host().run(source).await?;
 
-    let slot_id = EncryptedAssetsIssuerKey::slot_name().id();
+    let [slot_0_id, slot_1_id] =
+        EncryptedAssetsIssuerKey::slot_names().each_ref().map(|name| name.id());
     assert_eq!(exec_output.stack[..1], EncryptedAssetsAttachment::IES_CONTEXT);
-    assert_eq!(exec_output.stack[1], slot_id.suffix());
-    assert_eq!(exec_output.stack[2], slot_id.prefix());
+    assert_eq!(
+        exec_output.stack[1..5],
+        [slot_0_id.suffix(), slot_0_id.prefix(), slot_1_id.suffix(), slot_1_id.prefix()]
+    );
 
     Ok(())
 }
@@ -325,16 +331,16 @@ fn issuer_secret_key() -> SecretKey {
     SecretKey::from_bytes(&[7; 40]).expect("bytes should encode a valid secret key")
 }
 
-/// Returns the storage slot that holds the public key of [`issuer_secret_key`].
-fn issuer_key_slot() -> StorageSlot {
-    EncryptedAssetsIssuerKey::new(issuer_secret_key().public_key()).into_storage_slot()
+/// Returns the storage slots that hold the public key of [`issuer_secret_key`].
+fn issuer_key_slots() -> [StorageSlot; 2] {
+    EncryptedAssetsIssuerKey::new(issuer_secret_key().public_key()).into_storage_slots()
 }
 
 /// Executes a transaction in which a wallet sends a P2ID note of the provided type that holds an
 /// asset of a faucet whose `on_before_note_sealed` callback returns the note's encrypted asset
 /// attachment, followed by `other_assets`.
 ///
-/// The faucet stores `issuer_key_slot`, and `recipient_preimage` determines the preimage of the
+/// The faucet stores `issuer_key_slots`, and `recipient_preimage` determines the preimage of the
 /// note's recipient in the advice map.
 ///
 /// Returns the note as the wallet creates it, i.e. without the attachment, and the execution
@@ -342,14 +348,14 @@ fn issuer_key_slot() -> StorageSlot {
 async fn send_note(
     note_type: NoteType,
     other_assets: Vec<Asset>,
-    issuer_key_slot: StorageSlot,
+    issuer_key_slots: [StorageSlot; 2],
     recipient_preimage: RecipientPreimage,
 ) -> anyhow::Result<(Note, Result<ExecutedTransaction, TransactionExecutorError>)> {
     send_note_with_attachments(
         note_type,
         other_assets,
         Vec::new(),
-        issuer_key_slot,
+        issuer_key_slots,
         recipient_preimage,
     )
     .await
@@ -361,11 +367,11 @@ async fn send_note_with_attachments(
     note_type: NoteType,
     other_assets: Vec<Asset>,
     creator_attachments: Vec<NoteAttachment>,
-    issuer_key_slot: StorageSlot,
+    issuer_key_slots: [StorageSlot; 2],
     recipient_preimage: RecipientPreimage,
 ) -> anyhow::Result<(Note, Result<ExecutedTransaction, TransactionExecutorError>)> {
     let mut builder = MockChain::builder();
-    let faucet = add_issuing_faucet(&mut builder, issuer_key_slot)?;
+    let faucet = add_issuing_faucet(&mut builder, issuer_key_slots)?;
     let assets = core::iter::once(FungibleAsset::new(faucet.id(), 100)?.into())
         .chain(other_assets)
         .collect::<Vec<Asset>>();
@@ -441,10 +447,10 @@ fn double_word_elements(first: Word, second: Word) -> Vec<Felt> {
 }
 
 /// Adds a faucet whose `on_before_note_sealed` callback returns the note's encrypted asset
-/// attachment, and which stores `issuer_key_slot`.
+/// attachment, and which stores `issuer_key_slots`.
 fn add_issuing_faucet(
     builder: &mut MockChainBuilder,
-    issuer_key_slot: StorageSlot,
+    issuer_key_slots: [StorageSlot; 2],
 ) -> anyhow::Result<Account> {
     let callback_code = CodeBuilder::default()
         .compile_component_code(ISSUER_COMPONENT_NAME, ISSUER_CALLBACK_CODE)?;
@@ -457,7 +463,7 @@ fn add_issuing_faucet(
 
     let mut storage_slots =
         AssetCallbacks::new().on_before_note_sealed(callback_root).into_storage_slots();
-    storage_slots.push(issuer_key_slot);
+    storage_slots.extend(issuer_key_slots);
     let issuer_component = AccountComponent::new(
         callback_code,
         storage_slots,

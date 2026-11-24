@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_protocol::account::{StorageMap, StorageMapKey, StorageSlot, StorageSlotName};
+use miden_protocol::account::{StorageSlot, StorageSlotName};
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
 use miden_protocol::crypto::ies::ecgfp5_eidos::{self, Envelope};
@@ -25,16 +25,14 @@ use crate::note::StandardNoteAttachment;
 // CONSTANTS
 // ================================================================================================
 
-static ISSUER_KEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::attachments::encrypted_assets::issuer_key")
-        .expect("storage slot name should be valid")
+static ISSUER_KEY_SLOT_NAMES: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
+    [
+        StorageSlotName::new("miden::standards::attachments::encrypted_assets::issuer_key_0")
+            .expect("storage slot name should be valid"),
+        StorageSlotName::new("miden::standards::attachments::encrypted_assets::issuer_key_1")
+            .expect("storage slot name should be valid"),
+    ]
 });
-
-/// The map key of the first four elements of the public key in the issuer key slot.
-const ISSUER_KEY_HEAD_INDEX: u32 = 0;
-
-/// The map key of the fifth element of the public key in the issuer key slot.
-const ISSUER_KEY_TAIL_INDEX: u32 = 1;
 
 // ENCRYPTED ASSETS ATTACHMENT
 // ================================================================================================
@@ -260,17 +258,17 @@ impl EncryptedAssetsAttachment {
 /// The public key to which `miden::standards::attachments::encrypted_assets::build_attachment`
 /// encrypts the [`EncryptedAssetsAttachment`] of a private note.
 ///
-/// A faucet stores the key in the map slot
-/// `miden::standards::attachments::encrypted_assets::issuer_key`, which holds the following
-/// entries:
+/// A faucet stores the key in two value slots:
 ///
 /// ```text
-/// [0, 0, 0, 0] => [public_key_0, public_key_1, public_key_2, public_key_3]
-/// [1, 0, 0, 0] => [public_key_4, 0, 0, 0]
+/// miden::standards::attachments::encrypted_assets::issuer_key_0:
+///     [public_key_0, public_key_1, public_key_2, public_key_3]
+/// miden::standards::attachments::encrypted_assets::issuer_key_1:
+///     [public_key_4, 0, 0, 0]
 /// ```
 ///
 /// where `public_key_i` are the elements of [`PublicKey::to_elements`]. To rotate the key, the
-/// issuer replaces these entries and keeps its previous secret keys to decrypt the attachments
+/// issuer replaces these values and keeps its previous secret keys to decrypt the attachments
 /// built before the rotation. `build_attachment` applies the default expiration delta of
 /// `miden::standards::expiration`, so a transaction can encrypt to the previous key only until
 /// that many blocks after the rotation.
@@ -285,9 +283,9 @@ impl EncryptedAssetsIssuerKey {
         Self { public_key }
     }
 
-    /// Returns the [`StorageSlotName`] of the issuer key slot.
-    pub fn slot_name() -> &'static StorageSlotName {
-        &ISSUER_KEY_SLOT_NAME
+    /// Returns the [`StorageSlotName`]s of the two issuer key slots.
+    pub fn slot_names() -> &'static [StorageSlotName; 2] {
+        &ISSUER_KEY_SLOT_NAMES
     }
 
     /// Returns the public key.
@@ -295,20 +293,18 @@ impl EncryptedAssetsIssuerKey {
         self.public_key
     }
 
-    /// Consumes the issuer key and returns the [`StorageSlot`] that holds it.
-    pub fn into_storage_slot(self) -> StorageSlot {
+    /// Consumes the issuer key and returns the two [`StorageSlot`]s that hold it.
+    pub fn into_storage_slots(self) -> [StorageSlot; 2] {
         let [e0, e1, e2, e3, e4] = self.public_key.to_elements();
-        let entries = [
-            (StorageMapKey::from_index(ISSUER_KEY_HEAD_INDEX), Word::new([e0, e1, e2, e3])),
-            (
-                StorageMapKey::from_index(ISSUER_KEY_TAIL_INDEX),
+        let [slot_name_0, slot_name_1] = Self::slot_names().clone();
+
+        [
+            StorageSlot::with_value(slot_name_0, Word::new([e0, e1, e2, e3])),
+            StorageSlot::with_value(
+                slot_name_1,
                 Word::new([e4, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
             ),
-        ];
-        let storage_map = StorageMap::with_entries(entries)
-            .expect("issuer key entries should have distinct keys");
-
-        StorageSlot::with_map(Self::slot_name().clone(), storage_map)
+        ]
     }
 }
 
@@ -345,7 +341,7 @@ mod tests {
     use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
-    use miden_protocol::account::{StorageMapKey, StorageSlotContent};
+    use miden_protocol::account::StorageSlot;
     use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
     use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
     use miden_protocol::errors::NoteError;
@@ -440,23 +436,25 @@ mod tests {
         Ok(())
     }
 
-    /// The issuer key slot maps indices 0 and 1 to the five public key elements.
+    /// The two issuer key slots hold the five public key elements.
     #[test]
-    fn issuer_key_storage_slot_holds_public_key_elements() -> anyhow::Result<()> {
+    fn issuer_key_storage_slots_hold_public_key_elements() -> anyhow::Result<()> {
         let public_key = SecretKey::from_bytes(&[1; 40])?.public_key();
         let [e0, e1, e2, e3, e4] = public_key.to_elements();
+        let [slot_name_0, slot_name_1] = EncryptedAssetsIssuerKey::slot_names();
 
-        let slot = EncryptedAssetsIssuerKey::new(public_key).into_storage_slot();
+        let [slot_0, slot_1] = EncryptedAssetsIssuerKey::new(public_key).into_storage_slots();
 
-        assert_eq!(slot.name(), EncryptedAssetsIssuerKey::slot_name());
-        let StorageSlotContent::Map(map) = slot.content() else {
-            anyhow::bail!("issuer key slot should be a map slot");
-        };
-        assert_eq!(map.num_entries(), 2);
-        assert_eq!(map.get(&StorageMapKey::from_index(0)), Word::new([e0, e1, e2, e3]));
         assert_eq!(
-            map.get(&StorageMapKey::from_index(1)),
-            Word::new([e4, Felt::ZERO, Felt::ZERO, Felt::ZERO])
+            slot_0,
+            StorageSlot::with_value(slot_name_0.clone(), Word::new([e0, e1, e2, e3]))
+        );
+        assert_eq!(
+            slot_1,
+            StorageSlot::with_value(
+                slot_name_1.clone(),
+                Word::new([e4, Felt::ZERO, Felt::ZERO, Felt::ZERO])
+            )
         );
 
         Ok(())
