@@ -19,7 +19,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::{ExecutedTransaction, IesSealSeed, TransactionScript};
-use miden_protocol::{Felt, WORD_SIZE, Word, ZERO};
+use miden_protocol::{Felt, MAX_IES_SEAL_REQUESTS_PER_TX, WORD_SIZE, Word, ZERO};
 use miden_standards::account::auth::{Approver, ApproverSet, MultisigAuthArgs};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -375,6 +375,56 @@ async fn ies_seal_rejects_unanswerable_request(
         matches ExecutionError::EventError { error: ref event_err, .. }
             if event_err.downcast_ref::<TransactionKernelError>().is_some_and(is_expected_error)
     );
+
+    Ok(())
+}
+
+/// Tests that the host answers up to [`MAX_IES_SEAL_REQUESTS_PER_TX`] IES seal requests that a
+/// transaction script emits directly, and rejects the next one.
+#[rstest]
+#[case::at_limit(MAX_IES_SEAL_REQUESTS_PER_TX, false)]
+#[case::above_limit(MAX_IES_SEAL_REQUESTS_PER_TX + 1, true)]
+#[tokio::test]
+async fn ies_seal_requests_are_limited_per_transaction(
+    #[case] num_requests: u32,
+    #[case] is_rejected: bool,
+) -> anyhow::Result<()> {
+    let code = format!(
+        r#"
+        {public_key}
+        {context_digest}
+        {plaintext_digest}
+        push.{num_requests} dup neq.0
+        # => [should_loop, num_requests, PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5)]
+
+        while.true
+            movdn.13
+            emit.event("miden::protocol::ies::ecgfp5_eidos::seal")
+            movup.13 sub.1 dup neq.0
+        end
+        # => [0, PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5)]
+
+        drop dropw dropw dropw drop
+        # => []
+        "#,
+        public_key = push_reversed(&secret_key(1).public_key().to_elements()),
+        context_digest = push_reversed(Word::from([1, 2, 3, 4u32]).as_elements()),
+        plaintext_digest = push_reversed(Word::from([5, 6, 7, 8u32]).as_elements()),
+    );
+    let result = execute(None, compile_tx_script(&code, 0, None)?).await;
+
+    if is_rejected {
+        assert_transaction_executor_error!(
+            result,
+            matches ExecutionError::EventError { error: ref event_err, .. }
+                if matches!(
+                    event_err.downcast_ref::<TransactionKernelError>(),
+                    Some(TransactionKernelError::TooManyIesSealRequests)
+                )
+        );
+    } else {
+        result?;
+    }
 
     Ok(())
 }

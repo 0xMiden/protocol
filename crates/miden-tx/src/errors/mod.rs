@@ -24,7 +24,7 @@ use miden_protocol::errors::{
 };
 use miden_protocol::note::{NoteId, PartialNoteMetadata};
 use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, MAX_IES_SEAL_REQUESTS_PER_TX, Word};
 use miden_prover::ProverError;
 use thiserror::Error;
 
@@ -309,6 +309,8 @@ pub enum TransactionKernelError {
     IesSealWithoutProtocolProcedure,
     #[error("transaction arguments provide no IES seal seed for an IES seal request")]
     IesSealSeedMissing,
+    #[error("transaction makes more than {max} IES seal requests", max = MAX_IES_SEAL_REQUESTS_PER_TX)]
+    TooManyIesSealRequests,
     #[error("recipient data `{0:?}` in the advice provider is not well formed")]
     MalformedRecipientData(Vec<Felt>),
     #[error("cannot add asset to note with index {0}, note does not exist in the advice provider")]

@@ -17,7 +17,6 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::block::account_tree::AccountIdKey;
-use miden_protocol::crypto::ecdh::ecgfp5::PublicKey;
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -742,8 +741,8 @@ pub(crate) enum RecipientData {
 pub(crate) struct IesSealRequest {
     /// The context in which the request was made.
     pub(super) ctx: ContextId,
-    /// The recipient public key.
-    pub(super) recipient: PublicKey,
+    /// The encoding of the recipient public key.
+    pub(super) public_key: [Felt; 5],
     /// The digest of the plaintext.
     pub(super) plaintext_digest: Word,
     /// The digest of the context.
@@ -759,13 +758,9 @@ impl IesSealRequest {
     /// and its requester from the kernel memory.
     fn extract(process: &ProcessorState) -> Result<Self, TransactionKernelError> {
         // Expected stack state: [event, PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5)]
-        let public_key = core::array::from_fn(|idx| process.get_stack_item(9 + idx));
-        let recipient = PublicKey::from_elements(public_key)
-            .map_err(TransactionKernelError::IesPublicKeyInvalid)?;
-
         Ok(Self {
             ctx: process.ctx(),
-            recipient,
+            public_key: core::array::from_fn(|idx| process.get_stack_item(9 + idx)),
             plaintext_digest: process.get_stack_word(1),
             context_digest: process.get_stack_word(5),
             requester_account_id: process.get_active_account_id()?,
