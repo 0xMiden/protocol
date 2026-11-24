@@ -427,9 +427,7 @@ pub proc estimate_network_note_sponsorships() -> (u16, AssetAmount)
     # => [num_sponsored_notes, total_sponsored_fee_amount]
 end
 
-#! Removes a fee from the native account's vault, checking the balance first so that an account
-#! that cannot pay fails with ERR_FEE_INSUFFICIENT_BALANCE rather than the vault's generic
-#! withdrawal error.
+#! Removes a fee from the native account's vault, first checking the balance covers it.
 #!
 #! Inputs:  [FEE_ASSET_ID, FEE_ASSET_VALUE]
 #! Outputs: [FINAL_ASSET_VALUE]
