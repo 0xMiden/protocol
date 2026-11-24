@@ -11,7 +11,11 @@ use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
-use miden_standards::account::policies::SupplyRestrictionManager;
+use miden_standards::account::policies::{
+    SupplyRestrictionManager,
+    SupplyRestrictionPolicy,
+    SupplyRestrictionStorage,
+};
 use miden_standards::errors::standards::{
     ERR_FAUCET_SUPPLY_DECREASE_EXCEEDS_TOKEN_SUPPLY,
     ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT,
@@ -68,6 +72,7 @@ fn add_faucet_with_owner_supply_restriction(
         .with_component(fungible_faucet()?)
         .with_component(Ownable2Step::new(owner_id))
         .with_component(Authority::OwnerControlled)
+        .with_component(SupplyRestrictionPolicy::default())
         .with_component(SupplyRestrictionManager);
 
     builder.add_account_from_builder(
@@ -133,7 +138,7 @@ fn restricted_amounts(
     let key = StorageMapKey::new(AccountIdKey::from(holder).as_word());
     let value = faucet
         .storage()
-        .get_map_item(SupplyRestrictionManager::restricted_amounts_slot(), key)?;
+        .get_map_item(SupplyRestrictionStorage::restricted_amounts_slot(), key)?;
     assert_eq!(value[2], Felt::ZERO, "unused restriction element should be zero");
     assert_eq!(value[3], Felt::ZERO, "unused restriction element should be zero");
     Ok((value[0], value[1]))

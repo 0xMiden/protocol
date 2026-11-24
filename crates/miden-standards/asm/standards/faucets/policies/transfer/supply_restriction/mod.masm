@@ -3,7 +3,7 @@
 # Per-faucet supply restriction primitive: freeze, unfreeze and confiscate amounts of the faucet's
 # fungible asset held by an account.
 #
-# See `SupplyRestrictionManager` for more details.
+# See `SupplyRestrictionStorage` for more details.
 
 use {AccountId, AssetAmount, StorageMapKey} from miden::protocol::types
 use miden::protocol::account_id
@@ -45,7 +45,7 @@ const ERR_SUPPLY_RESTRICTION_UNFREEZE_EXCEEDS_FROZEN_AMOUNT = "amount to unfreez
 #! - confiscated is the amount of the account that is confiscated for good.
 #!
 #! Invocation: exec
-proc get_restricted_amounts(account_id: AccountId) -> (AssetAmount, AssetAmount)
+pub proc get_restricted_amounts(account_id: AccountId) -> (AssetAmount, AssetAmount)
     exec.build_restricted_amounts_map_key
     # => [KEY]
 

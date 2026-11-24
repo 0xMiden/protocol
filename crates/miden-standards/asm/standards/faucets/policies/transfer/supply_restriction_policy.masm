@@ -1,0 +1,226 @@
+# miden::standards::faucets::policies::transfer::supply_restriction_policy
+#
+# Supply restriction send policy: rejects transfers that would spend frozen or confiscated amounts
+# of the native account.
+#
+# Receiving assets is never restricted, and the issuing faucet is exempt so that minting does not
+# depend on its own restricted amounts.
+
+use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET} from miden::protocol::asset
+use {AccountId, AssetAmount, AssetId} from miden::protocol::types
+use miden::core::word
+use miden::protocol::account_id
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::output_note
+use miden::protocol::tx
+use miden::standards::assets::fungible_asset
+use miden::standards::expiration
+use miden::standards::faucets::policies::transfer::supply_restriction
+
+# ERRORS
+# ================================================================================================
+
+const ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE = "transfer exceeds the balance of the account that is neither frozen nor confiscated"
+
+# LOCAL ADDRESSES (get_note_amount)
+# ================================================================================================
+
+const NOTE_ASSETS_LOC = 0
+
+# POLICY PROCEDURES
+# ================================================================================================
+
+#! Send policy that rejects output notes if the amount sent by the transaction so far would spend
+#! frozen or confiscated amounts of the native account on the issuing faucet.
+#!
+#! A restricted account can only send what it held at the beginning of the transaction, so it must
+#! spend assets it receives in a later transaction.
+#!
+#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
+#! after the reference block.
+#!
+#! Inputs:  [note_idx, pad(15)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - note_idx is the index of the output note being sealed.
+#!
+#! Panics if:
+#! - the native account is restricted, it is not the issuing faucet, and its initial balance is
+#!   less than its restricted amount plus the amount sent in all output notes created so far.
+#!
+#! Invocation: call
+@account_procedure
+pub proc check_send_policy(note_idx: u16)
+    # the check covers all output notes rather than only the one being sealed
+    drop
+    # => [pad(16)]
+
+    exec.expiration::apply_default
+    # => [pad(16)]
+
+    exec.native_account::get_id
+    # => [account_id_suffix, account_id_prefix, pad(16)]
+
+    dup.1 dup.1 exec.active_account::get_id exec.account_id::eq
+    # => [is_issuer, account_id_suffix, account_id_prefix, pad(16)]
+
+    # the issuing faucet is exempt
+    if.true
+        drop drop
+        # => [pad(16)]
+    else
+        exec.assert_restricted_amount_not_sent
+        # => [pad(16)]
+    end
+end
+
+# HELPER PROCEDURES
+# ================================================================================================
+
+#! Asserts that the transaction does not send restricted amounts of the native account, which must
+#! have the provided ID.
+#!
+#! The current vault balance is not used, because it is not final while a note is being sealed: the
+#! kernel checks asset conservation only at the end of the transaction, so an account can remove the
+#! sent assets from its vault after sealing the note, or add assets temporarily. The initial balance
+#! is fixed, and assets cannot be removed from output notes. Every later note holding the asset
+#! invokes the policy again, so the last invocation covers everything the transaction sends.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the account is restricted and its initial balance is less than its restricted amount plus the
+#!   amount sent in all output notes created so far.
+#!
+#! Invocation: exec
+proc assert_restricted_amount_not_sent(account_id: AccountId)
+    # frozen plus confiscated is at most FUNGIBLE_ASSET_MAX_AMOUNT, so the sum cannot wrap around
+    exec.supply_restriction::get_restricted_amounts add
+    # => [restricted]
+
+    # skip summing up the output notes for unrestricted accounts
+    dup neq.0
+    # => [is_restricted, restricted]
+
+    if.true
+        exec.active_account::get_id exec.fungible_asset::create_id
+        # => [ASSET_ID, restricted]
+
+        dupw exec.fungible_asset::get_initial_native_account_balance movdn.5
+        # => [ASSET_ID, restricted, initial_balance]
+
+        exec.get_sent_amount
+        # => [sent, restricted, initial_balance]
+
+        # the sum cannot wrap around in a valid transaction, because both amounts are at most
+        # FUNGIBLE_ASSET_MAX_AMOUNT (see get_sent_amount)
+        add
+        # => [sent + restricted, initial_balance]
+
+        # assert that initial_balance >= sent + restricted
+        gte assert.err=ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE
+        # => []
+    else
+        drop
+        # => []
+    end
+end
+
+#! Returns the amount of the fungible asset held by all output notes created so far.
+#!
+#! The amount can only exceed the maximum fungible asset amount, and thus wrap around the field
+#! modulus, in a transaction whose output notes exceed that maximum in total. The kernel rejects
+#! such a transaction when it checks that assets are preserved.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [sent]
+#!
+#! Invocation: exec
+proc get_sent_amount(asset_id: AssetId) -> AssetAmount
+    push.0 movdn.4
+    # => [ASSET_ID, sent]
+
+    exec.tx::get_num_output_notes
+    # => [num_notes_left, ASSET_ID, sent]
+
+    dup neq.0
+    # => [should_loop, num_notes_left, ASSET_ID, sent]
+
+    while.true
+        sub.1
+        # => [note_idx, ASSET_ID, sent]
+
+        dup repeat.4 dup.5 end
+        # => [ASSET_ID, note_idx, note_idx, ASSET_ID, sent]
+
+        exec.get_note_amount
+        # => [note_amount, note_idx, ASSET_ID, sent]
+
+        movup.6 add movdn.5
+        # => [note_idx, ASSET_ID, sent]
+
+        # the note index is the number of notes left
+        dup neq.0
+        # => [should_loop, num_notes_left, ASSET_ID, sent]
+    end
+    # => [0, ASSET_ID, sent]
+
+    drop dropw
+    # => [sent]
+end
+
+#! Returns the amount of the fungible asset held by the output note with the provided index.
+#!
+#! Inputs:  [ASSET_ID, note_idx]
+#! Outputs: [note_amount]
+#!
+#! Invocation: exec
+@locals(128)
+proc get_note_amount(asset_id: AssetId, note_idx: u16) -> AssetAmount
+    # write the assets to local memory, which fits ASSET_SIZE * MAX_ASSETS_PER_NOTE elements
+    movup.4 locaddr.NOTE_ASSETS_LOC exec.output_note::get_assets
+    # => [num_assets, ASSET_ID]
+
+    # initialize the amount and compute the range of asset pointers
+    push.0 swap mul.ASSET_SIZE locaddr.NOTE_ASSETS_LOC
+    # => [asset_ptr, assets_size, note_amount, ASSET_ID]
+
+    dup movdn.2 add swap
+    # => [asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
+
+    dup.1 dup.1 neq
+    # => [should_loop, asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
+
+    while.true
+        padw dup.4 mem_loadw_le
+        # => [NOTE_ASSET_ID, asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
+
+        repeat.4 dup.10 end exec.word::eq
+        # => [is_same_asset, asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
+
+        if.true
+            padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
+            # => [NOTE_ASSET_VALUE, asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
+
+            exec.fungible_asset::value_into_amount_unchecked
+            # => [asset_amount, asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
+
+            movup.3 add movdn.2
+            # => [asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
+        end
+        # => [asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
+
+        add.ASSET_SIZE
+        # => [asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
+
+        dup.1 dup.1 neq
+        # => [should_loop, asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
+    end
+    # => [asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
+
+    drop drop movdn.4 dropw
+    # => [note_amount]
+end

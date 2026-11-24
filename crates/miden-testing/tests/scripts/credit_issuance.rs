@@ -49,6 +49,8 @@ use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
     SupplyRestrictionManager,
+    SupplyRestrictionPolicy,
+    SupplyRestrictionStorage,
     TokenPolicyManager,
 };
 use miden_standards::note::config::{SupplyRestrictionConfig, SupplyRestrictionConfigNote};
@@ -529,6 +531,7 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
             .with_component(stablecoin)
             .with_components(AccessControl::Ownable2Step { owner: issuer_id })
             .with_components(token_policy_manager)
+            .with_component(SupplyRestrictionPolicy::default())
             .with_component(SupplyRestrictionManager),
         AccountState::Exists,
     )?;
@@ -670,7 +673,7 @@ fn confiscated_amount(
     // the restricted amounts are stored as [frozen, confiscated, 0, 0]
     let restricted_amounts = faucet
         .storage()
-        .get_map_item(SupplyRestrictionManager::restricted_amounts_slot(), key)?;
+        .get_map_item(SupplyRestrictionStorage::restricted_amounts_slot(), key)?;
     Ok(AssetAmount::try_from(restricted_amounts[1])?)
 }
 

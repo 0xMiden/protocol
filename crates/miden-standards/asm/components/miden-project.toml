@@ -27,6 +27,7 @@ members = [
   "faucets/policies/transfer/basic_blocklist",
   "faucets/policies/transfer/blocklist/manager",
   "faucets/policies/transfer/supply_restriction/manager",
+  "faucets/policies/transfer/supply_restriction_policy",
   "fees/policies/basic_constant_fee",
   "fees/policies/constant_fee_manager",
   "inspection/code_inspection",

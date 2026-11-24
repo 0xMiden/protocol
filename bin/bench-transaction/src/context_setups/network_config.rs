@@ -40,6 +40,7 @@ use miden_standards::account::policies::{
     ReceivePolicy,
     SendPolicy,
     SupplyRestrictionManager,
+    SupplyRestrictionPolicy,
     TokenPolicyManager,
 };
 use miden_standards::account::upgrade::UpgradeManager;
@@ -404,7 +405,8 @@ fn tx_consume_list_config_note_network(list: ListKind) -> Result<MockTransaction
 /// Returns the transaction context for a network faucet consuming a SUPPLY_RESTRICTION_CONFIG
 /// note.
 ///
-/// The faucet carries the `SupplyRestrictionManager` component gated by the owner wallet via
+/// The faucet carries the `SupplyRestrictionPolicy` component, which installs the restricted
+/// amounts map, and the `SupplyRestrictionManager` component gated by the owner wallet via
 /// `Authority::OwnerControlled` (mirrors the account fixture of the `supply_restriction` test
 /// suite). The benchmarked action is `Confiscate`, the most expensive selector: on top of the
 /// restricted amounts map write that `Freeze` and `Unfreeze` also do, it decreases the token
@@ -428,6 +430,7 @@ pub fn tx_consume_supply_restriction_config_note_network() -> Result<MockTransac
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner.id()))
         .with_component(Authority::OwnerControlled)
+        .with_component(SupplyRestrictionPolicy::default())
         .with_component(SupplyRestrictionManager)
         .with_assets([super::fee_funding_asset()?]);
     let account = builder.add_account_from_builder(
