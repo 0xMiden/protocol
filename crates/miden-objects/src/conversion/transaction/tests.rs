@@ -106,6 +106,8 @@ fn transaction_args_roundtrip_normalizes_note_args_order(
     );
 
     let message = proto::transaction::TransactionArgs::from(&args);
+    // The debug output of the message leaves the seed out.
+    assert!(!alloc::format!("{message:?}").contains(&alloc::format!("{:?}", [10_u8; 32])));
 
     assert_eq!(
         message

@@ -62,6 +62,12 @@ impl From<&IesSealSeed> for proto::transaction::IesSealSeed {
     }
 }
 
+impl core::fmt::Debug for proto::transaction::IesSealSeed {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("IesSealSeed").finish_non_exhaustive()
+    }
+}
+
 impl From<TransactionArgs> for proto::transaction::TransactionArgs {
     fn from(value: TransactionArgs) -> Self {
         (&value).into()

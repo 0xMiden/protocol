@@ -48,6 +48,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut prost = prost_build::Config::new();
     prost.out_dir(out_dir);
+    // The seed is secret, so its `Debug` implementation omits it.
+    prost.skip_debug([".transaction.IesSealSeed"]);
     for message in ["primitives.Felt", "primitives.Word", "primitives.ExecutionProof"] {
         prost.message_attribute(
             message,
