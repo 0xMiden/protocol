@@ -30,10 +30,15 @@ Fires (returns True) iff ANY pipeline segment matches. That preserves
 the intent of the original `Bash(*<binary> <sub>*)` matcher when the
 user runs `cd repo && git push`, while still excluding
 `echo "git push"` (first token of the only segment is `echo`).
+
+`invocation_dir` walks the same segments, plus the separators between
+them, to find the directory a matched invocation runs in (following
+`cd <dir>` segments and `git -C <dir>`).
 """
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from typing import Iterator
@@ -61,15 +66,31 @@ _TWO_CHAR_SEPARATORS = ("&&", "||", ";;")
 # split commands the way bash does.
 _SINGLE_CHAR_SEPARATORS = frozenset(";|&\n")
 
+# Global flag that makes the binary change directory before running the
+# subcommand. Git applies several in order, each relative to the previous.
+_DIR_FLAGS: dict[str, str] = {"git": "-C"}
 
-def _split_unquoted_separators(command: str) -> list[str]:
-    """Split `command` into raw segments on unquoted shell separators.
+# A `cd` is followed only with one of these on both sides (`""` is either
+# end of the command): it then runs in the current shell, after the segment
+# before it. Next to `|`, `&` or `||` it may run in a subshell or not at
+# all.
+_SEQUENTIAL_SEPARATORS = frozenset({"", "&&", ";", "\n"})
+
+# Characters that shlex leaves in a token but bash would expand or
+# reinterpret first (variables, command substitution, `~`, globs, brace
+# expansion, subshells, redirections), so the path is not known.
+_SHELL_SYNTAX = re.compile(r"^~|[$`*?\[{()<>]")
+
+
+def _split_unquoted_separators(command: str) -> list[tuple[str, str]]:
+    """Split `command` into raw segments on unquoted shell separators,
+    each paired with the separator that ends it (`""` for the last one).
     Walks the string char-by-char, tracking quote state so that
     separators inside `"..."` or `'...'` are preserved as part of the
     segment, and so backslash-newline outside quotes collapses to a
     space (line continuation).
     """
-    segments: list[str] = []
+    segments: list[tuple[str, str]] = []
     current: list[str] = []
     quote_char: str | None = None
     i = 0
@@ -104,19 +125,40 @@ def _split_unquoted_separators(command: str) -> list[str]:
             continue
         # Longest separator first.
         if i + 1 < n and command[i : i + 2] in _TWO_CHAR_SEPARATORS:
-            segments.append("".join(current))
+            segments.append(("".join(current), command[i : i + 2]))
             current = []
             i += 2
             continue
         if c in _SINGLE_CHAR_SEPARATORS:
-            segments.append("".join(current))
+            segments.append(("".join(current), c))
             current = []
             i += 1
             continue
         current.append(c)
         i += 1
-    segments.append("".join(current))
+    segments.append(("".join(current), ""))
     return segments
+
+
+def _segments(command: str) -> Iterator[tuple[list[str], str, str]]:
+    """Yield `(tokens, before, after)` for each top-level segment of
+    `command`: its shlex tokens and the separators that precede and
+    follow it (`""` at either end of the command). Blank segments and
+    segments that fail to tokenize are skipped.
+    """
+    if not command or not command.strip():
+        return
+    before = ""
+    for raw, after in _split_unquoted_separators(command):
+        raw = raw.strip()
+        try:
+            tokens = shlex.split(raw, posix=True)
+        except ValueError:
+            # Unbalanced quotes or similar — skip this segment.
+            tokens = []
+        if tokens:
+            yield tokens, before, after
+        before = after
 
 
 def pipeline_segments(command: str) -> list[list[str]]:
@@ -127,21 +169,7 @@ def pipeline_segments(command: str) -> list[list[str]]:
     (unbalanced quotes, etc.) are silently dropped — they could not
     have been a real invocation of any target anyway.
     """
-    if not command or not command.strip():
-        return []
-    segments: list[list[str]] = []
-    for raw in _split_unquoted_separators(command):
-        raw = raw.strip()
-        if not raw:
-            continue
-        try:
-            tokens = shlex.split(raw, posix=True)
-        except ValueError:
-            # Unbalanced quotes or similar — skip this segment.
-            continue
-        if tokens:
-            segments.append(tokens)
-    return segments
+    return [tokens for tokens, _before, _after in _segments(command)]
 
 
 def strip_assignments(tokens: list[str]) -> list[str]:
@@ -152,31 +180,42 @@ def strip_assignments(tokens: list[str]) -> list[str]:
     return tokens[i:]
 
 
-def _walk_past_global_flags(tokens: list[str], binary: str, start: int) -> int:
-    """Given `tokens` and an index `start` pointing at the position just
-    after `binary`, return the index of the first non-flag token.
-    Multi-token flags listed in _GLOBAL_FLAGS_WITH_ARG[binary] consume
-    the next token as their argument. `--flag=value` style flags occupy
-    a single token (the `=` is inside) and consume nothing extra.
-    Unknown `-...` tokens are conservatively treated as flag-only
+def _flag_width(token: str, binary: str) -> int:
+    """Return the number of tokens the global flag `token` of `binary`
+    occupies. Multi-token flags listed in _GLOBAL_FLAGS_WITH_ARG[binary]
+    consume the next token as their argument (2). `--flag=value` style
+    flags occupy a single token (the `=` is inside) and consume nothing
+    extra. Unknown `-...` tokens are conservatively treated as flag-only
     (single-token, no argument) — if we guess wrong we'll miss the
     subcommand, which is the safer failure mode.
     """
-    flags_with_arg = _GLOBAL_FLAGS_WITH_ARG.get(binary, set())
+    if "=" not in token and token in _GLOBAL_FLAGS_WITH_ARG.get(binary, set()):
+        return 2
+    return 1
+
+
+def _walk_past_global_flags(tokens: list[str], binary: str, start: int) -> int:
+    """Given `tokens` and an index `start` pointing at the position just
+    after `binary`, return the index of the first non-flag token.
+    """
     i = start
     while i < len(tokens) and tokens[i].startswith("-"):
-        token = tokens[i]
-        # `-x=value` and `--flag=value` occupy a single token.
-        if "=" in token:
-            i += 1
-            continue
-        if token in flags_with_arg:
-            # Known flag-with-arg: skip the flag AND its next-token arg.
-            i += 2
-        else:
-            # Unknown flag, or known no-arg flag: skip only the flag.
-            i += 1
+        i += _flag_width(tokens[i], binary)
     return i
+
+
+def _subcommand_start(tokens: list[str], binary: str, subcommand: list[str]) -> int | None:
+    """Return the index of the first `subcommand` token if the segment
+    `tokens` (env assignments already stripped) invokes `binary` with
+    `subcommand`, otherwise None.
+    """
+    if not subcommand or not tokens or tokens[0] != binary:
+        return None
+    i = _walk_past_global_flags(tokens, binary, 1)
+    # Subcommand chain must appear contiguously starting at `i`.
+    if tokens[i : i + len(subcommand)] == list(subcommand):
+        return i
+    return None
 
 
 def matches(command: str, binary: str, subcommand: list[str]) -> bool:
@@ -220,15 +259,10 @@ def iter_match_args(
     >>> list(iter_match_args("git status", "git", ["push"]))
     []
     """
-    if not subcommand:
-        return
     for tokens in pipeline_segments(command):
         tokens = strip_assignments(tokens)
-        if not tokens or tokens[0] != binary:
-            continue
-        i = _walk_past_global_flags(tokens, binary, 1)
-        # Subcommand chain must appear contiguously starting at `i`.
-        if tokens[i : i + len(subcommand)] == list(subcommand):
+        i = _subcommand_start(tokens, binary, subcommand)
+        if i is not None:
             yield tokens[i + len(subcommand) :]
 
 
@@ -248,3 +282,72 @@ def match_args(command: str, binary: str, subcommand: list[str]) -> list[str] | 
     True
     """
     return next(iter_match_args(command, binary, subcommand), None)
+
+
+def invocation_dir(
+    command: str, binary: str, subcommand: list[str], cwd: str | None
+) -> str | None:
+    """Return the directory that the LAST segment of `command` invoking
+    `binary` with `subcommand` runs in, or None when no segment matches
+    or its directory cannot be determined with confidence.
+
+    Starts from `cwd`, applies each top-level `cd <dir>` before that
+    segment in order, then the segment's own `-C <dir>` flags (git).
+    Relative paths resolve against the directory so far. The last
+    matching segment wins because a hook that runs after the command
+    sees the state it left behind: after `git commit -m a && cd ../b &&
+    git commit -m b`, HEAD is the commit made in `../b`.
+
+    The directory becomes unknown after a `cd` that cannot be followed
+    (no argument, `cd -`, options, unexpanded shell syntax such as `$VAR`,
+    or a `cd` joined by `||`, `|` or `&`), after `pushd`/`popd`, and
+    after a subshell or group; a later absolute `cd` makes it known
+    again.
+
+    >>> invocation_dir("cd /wt && git commit -m x", "git", ["commit"], "/repo")
+    '/wt'
+    >>> invocation_dir("git -C ../wt commit -m x", "git", ["commit"], "/repo/main")
+    '/repo/wt'
+    >>> invocation_dir("cd $WT && git commit -m x", "git", ["commit"], "/repo") is None
+    True
+    """
+    dir_flag = _DIR_FLAGS.get(binary)
+    directory = cwd
+    found: str | None = None
+    for tokens, before, after in _segments(command):
+        tokens = strip_assignments(tokens)
+        if not tokens:
+            continue
+        start = _subcommand_start(tokens, binary, subcommand)
+        if start is not None:
+            found = directory
+            i = 1
+            while i < start:
+                if tokens[i] == dir_flag:
+                    found = _change_dir(found, tokens[i + 1])
+                i += _flag_width(tokens[i], binary)
+        elif tokens[0] == "cd":
+            followable = (
+                before in _SEQUENTIAL_SEPARATORS
+                and after in _SEQUENTIAL_SEPARATORS
+                and len(tokens) == 2
+                and not tokens[1].startswith("-")
+            )
+            directory = _change_dir(directory, tokens[1]) if followable else None
+        elif tokens[0] in ("pushd", "popd") or tokens[0].startswith(("(", "{")):
+            directory = None
+    return found
+
+
+def _change_dir(directory: str | None, path: str) -> str | None:
+    """Return `directory` after changing into `path`, or None when that
+    is unknown: `path` has shell syntax bash would expand first, or is
+    relative to an unknown `directory`.
+    """
+    if _SHELL_SYNTAX.search(path):
+        return None
+    if not os.path.isabs(path):
+        if directory is None:
+            return None
+        path = os.path.join(directory, path)
+    return os.path.normpath(path)
