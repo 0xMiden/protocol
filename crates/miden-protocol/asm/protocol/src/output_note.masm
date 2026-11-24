@@ -2,6 +2,7 @@ use {
     Asset,
     Bool,
     NoteAttachmentCommitment,
+    NoteAttachmentCount,
     NoteAttachmentScheme,
     NoteAttachmentsCommitment,
     NoteId,
@@ -598,7 +599,7 @@ end
 pub proc write_attachment_commitments_to_memory(
     dest_ptr: ptr<NoteAttachmentCommitment>,
     note_index: u16
-) -> u8
+) -> NoteAttachmentCount
     swap exec.get_attachments_commitment
     # => [ATTACHMENTS_COMMITMENT, dest_ptr]
 

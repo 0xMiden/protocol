@@ -19,6 +19,7 @@ pub use {
     AssetAmount,
     NoteTag,
     NoteAttachmentScheme,
+    NoteAttachmentCount,
     NoteType,
     BlockNumber,
     BlockCommitment,
@@ -30,4 +31,5 @@ pub use {
     NoteStorageCommitment,
     NoteAttachmentCommitment,
     NoteAttachmentsCommitment,
+    NoteAttachmentListCommitment,
 } from miden::protocol_utils::types

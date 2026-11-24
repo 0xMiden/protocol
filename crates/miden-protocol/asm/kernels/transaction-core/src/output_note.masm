@@ -4,6 +4,8 @@ use {
     Bool,
     NoteAssetsCommitment,
     NoteAttachmentCommitment,
+    NoteAttachmentCount,
+    NoteAttachmentListCommitment,
     NoteAttachmentScheme,
     NoteAttachmentsCommitment,
     NoteMetadata,
@@ -587,7 +589,7 @@ end
 #! - attachment_scheme is the user-defined scheme of the attachment.
 #! - note_ptr is the memory address at which the output note data begins.
 proc set_attachment_schemes(
-    num_attachments: u8,
+    num_attachments: NoteAttachmentCount,
     note_ptr: ptr<OutputNoteData>,
     attachment_scheme: NoteAttachmentScheme
 )
@@ -936,7 +938,11 @@ end
 #! - the computed hash of the list elements does not match ATTACHMENT_LIST_COMMITMENT.
 #! - a listed attachment is invalid or exceeds the note's attachment limits (see `add_attachment`).
 @locals(32)
-proc add_attachment_list(num_attachments: u8, attachment_list_commitment: word, note_idx: u16)
+proc add_attachment_list(
+    num_attachments: NoteAttachmentCount,
+    attachment_list_commitment: NoteAttachmentListCommitment,
+    note_idx: u16
+)
     # bound num_attachments by the note's attachment limit, so the list fits into local memory
     dup u32assert.err=ERR_OUTPUT_NOTE_CALLBACK_TOO_MANY_ATTACHMENTS
     u32lte.MAX_ATTACHMENTS_PER_NOTE assert.err=ERR_OUTPUT_NOTE_CALLBACK_TOO_MANY_ATTACHMENTS

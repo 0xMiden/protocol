@@ -2,6 +2,8 @@ use {
     AccountProcedureRoot,
     Asset,
     AssetValue,
+    NoteAttachmentCount,
+    NoteAttachmentListCommitment,
     NoteRecipient,
     NoteTag,
     NoteType,
@@ -187,7 +189,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc invoke_send_policy(note_idx: u16) -> (u8, word)
+pub proc invoke_send_policy(note_idx: u16) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
     exec.expiration::apply_default
     # => [note_idx, pad(15)]
 

@@ -1,4 +1,12 @@
-use {AccountId, AccountProcedureRoot, Asset, Bool, StorageSlotId} from miden::protocol_utils::types
+use {
+    AccountId,
+    AccountProcedureRoot,
+    Asset,
+    Bool,
+    NoteAttachmentCount,
+    NoteAttachmentListCommitment,
+    StorageSlotId,
+} from miden::protocol_utils::types
 use miden::tx_kernel_core::tx
 use miden::tx_kernel_core::asset
 use miden::tx_kernel_core::account
@@ -94,7 +102,10 @@ end
 #!
 #! Panics if:
 #! - the callback procedure root is not part of the faucet's account code.
-pub proc on_before_note_sealed(faucet_id: AccountId, note_idx: u16) -> (u8, word)
+pub proc on_before_note_sealed(
+    faucet_id: AccountId,
+    note_idx: u16
+) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
     # pad the note index to the 8 elements of the callback inputs
     repeat.7
         push.0 movdn.3
