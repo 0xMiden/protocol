@@ -108,9 +108,9 @@ message BoundSignature {
   AuthSignature signature = 3;
 }
 
-message IesSealSecret {
-  // Canonically serialized recipient public key followed by the ephemeral secret key.
-  bytes encoded = 1;
+message IesSealSeed {
+  // The 32 bytes of the seed.
+  bytes seed = 1;
 }
 
 message TransactionArgs {
@@ -122,7 +122,7 @@ message TransactionArgs {
   optional account.AccountCodeUpgrade account_code_upgrade = 6;
   repeated note.NoteRecipient output_note_recipients = 7;
   repeated BoundSignature signatures = 8;
-  repeated IesSealSecret ies_seal_secrets = 9;
+  optional IesSealSeed ies_seal_seed = 9;
 }
 
 message LogTopic {

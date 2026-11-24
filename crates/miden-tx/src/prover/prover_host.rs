@@ -10,9 +10,8 @@ use miden_protocol::account::{AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::crypto::ecdh::ecgfp5::PublicKey;
 use miden_protocol::transaction::{
-    IesSealSecret,
+    IesSealSeed,
     InputNote,
     InputNotes,
     RawOutputNote,
@@ -49,8 +48,6 @@ where
 
     /// Creates a new [`TransactionProverHost`] instance from the provided inputs.
     ///
-    /// `ies_seal_secrets` are the ephemeral secrets, in request order, supplied for proving.
-    ///
     /// # Errors
     ///
     /// Returns an error if the host cannot be created.
@@ -61,7 +58,7 @@ where
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
-        ies_seal_secrets: Vec<IesSealSecret>,
+        ies_seal_seed: Option<IesSealSeed>,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
@@ -70,15 +67,10 @@ where
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
-            ies_seal_secrets,
+            ies_seal_seed,
         )?;
 
         Ok(Self { base_host })
-    }
-
-    /// Returns the number of supplied IES seal secrets that no `seal` request has used.
-    pub fn num_unused_ies_seal_secrets(&self) -> usize {
-        self.base_host.num_unused_ies_seal_secrets()
     }
 
     // PUBLIC ACCESSORS
@@ -131,20 +123,6 @@ impl<STORE> TransactionProverHost<'_, STORE>
 where
     STORE: MastForestStore,
 {
-    /// Returns the key agreement advice for an IES `seal` request, using the next supplied
-    /// ephemeral secret.
-    fn on_ies_seal_requested(
-        &mut self,
-        recipient: PublicKey,
-    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let secret = self
-            .base_host
-            .next_ies_seal_secret(recipient)?
-            .ok_or(TransactionKernelError::IesSealSecretMissing)?;
-
-        Ok(self.base_host.on_ies_seal_requested(&secret))
-    }
-
     fn on_event_sync(
         &mut self,
         process: &ProcessorState,
@@ -263,7 +241,7 @@ where
                 )))
             },
 
-            TransactionEvent::IesSeal { recipient } => self.on_ies_seal_requested(recipient),
+            TransactionEvent::IesSeal(request) => Ok(self.base_host.on_ies_seal_requested(request)),
 
             TransactionEvent::LinkMapSet { advice_mutation } => Ok(advice_mutation),
             TransactionEvent::LinkMapGet { advice_mutation } => Ok(advice_mutation),

@@ -452,9 +452,7 @@ impl Harness {
     ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
         let probe = builder.clone().build()?.execute().await;
         let tx_summary = match probe {
-            Err(TransactionExecutorError::Unauthorized { tx_summary, .. })
-                if !signers.is_empty() =>
-            {
+            Err(TransactionExecutorError::Unauthorized(tx_summary)) if !signers.is_empty() => {
                 tx_summary
             },
             other => return Ok(other),

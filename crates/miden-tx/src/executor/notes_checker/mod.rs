@@ -415,10 +415,9 @@ where
             return Ok(Vec::new());
         }
 
-        // Every run draws fresh IES seal secrets, since the runs vary the notes.
         let (mut host, stack_inputs, advice_inputs) = self
             .tx_executor
-            .prepare_transaction(tx_inputs, Vec::new())
+            .prepare_transaction(tx_inputs)
             .await
             .map_err(TransactionCheckerError::TransactionPreparation)?;
 
@@ -484,7 +483,7 @@ where
                     let checker_error = match error {
                         // the account's authentication requested a signature the executor could
                         // not provide
-                        TransactionExecutorError::Unauthorized { .. }
+                        TransactionExecutorError::Unauthorized(_)
                         | TransactionExecutorError::MissingAuthenticator => {
                             TransactionCheckerError::AuthorizationRequired {
                                 error,

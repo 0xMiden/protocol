@@ -592,7 +592,7 @@ async fn test_multisig_does_not_double_count_raw_and_eip712_signatures() -> anyh
         .execute()
         .await;
 
-    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized { .. })));
+    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
     Ok(())
 }
 
@@ -2468,7 +2468,7 @@ async fn test_multisig_set_procedure_threshold(
         .await;
 
     assert!(
-        matches!(clear_check_result, Err(TransactionExecutorError::Unauthorized { .. })),
+        matches!(clear_check_result, Err(TransactionExecutorError::Unauthorized(_))),
         "override cleared via threshold=0 should restore default threshold requirements"
     );
 

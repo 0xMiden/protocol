@@ -365,16 +365,16 @@ async fn test_hot_cold_guardian_transfer_paths(
     // A single category without the guardian is rejected.
     for signers in [vec![&hot[0]], vec![&cold], vec![&hot[0], &hot[1]]] {
         let result = sign_and_execute(transfer_tx(), &signers).await?;
-        assert!(matches!(result, Err(TransactionExecutorError::Unauthorized { .. })));
+        assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
     }
 
     // Both user categories without the guardian are rejected: nothing runs without it.
     let result = sign_and_execute(transfer_tx(), &[&hot[0], &cold]).await?;
-    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized { .. })));
+    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
 
     // The guardian alone is rejected: it holds no authority of its own.
     let result = sign_and_execute(transfer_tx(), &[&guardian]).await?;
-    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized { .. })));
+    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
 
     // Any hot key plus the guardian is the daily path.
     for (i, hot_key) in hot.iter().enumerate() {
@@ -408,7 +408,7 @@ async fn test_hot_cold_guardian_hot_keys_count_once() -> anyhow::Result<()> {
     // All three hot keys plus the guardian are still one category.
     let tx = rotate_key_tx(&mock_chain, &account, "rotate_cold_key", &new_cold, 1)?;
     let result = sign_and_execute(tx, &[&hot[0], &hot[1], &hot[2], &guardian]).await?;
-    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized { .. })));
+    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
 
     // The new cold key must stay distinct from the guardian key.
     let tx = rotate_key_tx(&mock_chain, &account, "rotate_cold_key", &guardian, 2)?;
@@ -454,7 +454,7 @@ async fn test_hot_cold_guardian_update_hot_keys_requires_cold() -> anyhow::Resul
     // A hot key plus the guardian cannot replace the hot keys.
     let tx = update_hot_keys_tx(&mock_chain, &account, &new_hot_approvers, 1)?;
     let result = sign_and_execute(tx, &[&hot[0], &guardian]).await?;
-    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized { .. })));
+    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
 
     // The new hot keys must be distinct from the guardian key, and there must be at least one.
     for (new_keys, expected_error) in [
@@ -491,7 +491,7 @@ async fn test_hot_cold_guardian_update_hot_keys_requires_cold() -> anyhow::Resul
     let fresh_cold = Signer::new(auth_scheme, &mut rng);
     let tx = rotate_key_tx(&mock_chain, &account, "rotate_cold_key", &fresh_cold, 3)?;
     let result = sign_and_execute(tx, &[&hot[0], &cold, &guardian]).await?;
-    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized { .. })));
+    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
 
     // Shrinking the set clears the stale entries.
     let tx = update_hot_keys_tx(&mock_chain, &account, &new_hot_approvers[..1], 4)?;
@@ -534,12 +534,12 @@ async fn test_hot_cold_guardian_update_guardian_public_key() -> anyhow::Result<(
     // Without the guardian's consent the rotation does not run.
     let tx = rotate_key_tx(&mock_chain, &account, "update_guardian_public_key", &new_guardian, 1)?;
     let result = sign_and_execute(tx, &[&hot[0], &cold]).await?;
-    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized { .. })));
+    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
 
     // One user category is not enough either.
     let tx = rotate_key_tx(&mock_chain, &account, "update_guardian_public_key", &new_guardian, 1)?;
     let result = sign_and_execute(tx, &[&hot[0], &guardian]).await?;
-    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized { .. })));
+    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
 
     // The guardian key must stay distinct from the user keys, checked by the rotation itself.
     for user_key in [&cold, &hot[1]] {
@@ -595,7 +595,7 @@ async fn test_hot_cold_guardian_set_procedure_policy_and_delay_config() -> anyho
     // A hot key plus the guardian cannot change policies.
     let tx = set_procedure_policy_tx(&mock_chain, &account, receive_asset_root, 2, 0, 3)?;
     let result = sign_and_execute(tx, &[&hot[0], &guardian]).await?;
-    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized { .. })));
+    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
 
     // Both categories plus the guardian require both categories for `receive_asset`.
     let tx = set_procedure_policy_tx(&mock_chain, &account, receive_asset_root, 2, 0, 3)?;
@@ -616,7 +616,7 @@ async fn test_hot_cold_guardian_set_procedure_policy_and_delay_config() -> anyho
             ))
     };
     let result = sign_and_execute(consume_tx(), &[&hot[0], &guardian]).await?;
-    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized { .. })));
+    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
     sign_and_execute(consume_tx(), &[&hot[0], &cold, &guardian]).await??;
 
     // The delay configuration is bounded and takes both categories plus the guardian.
@@ -626,7 +626,7 @@ async fn test_hot_cold_guardian_set_procedure_policy_and_delay_config() -> anyho
 
     let tx = update_delay_config_tx(&mock_chain, &account, MIN_DELAY_FLOOR_BLOCKS, 40, 2, 6)?;
     let result = sign_and_execute(tx, &[&hot[0], &guardian]).await?;
-    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized { .. })));
+    assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
 
     let tx = update_delay_config_tx(&mock_chain, &account, MIN_DELAY_FLOOR_BLOCKS, 40, 2, 6)?;
     let executed = sign_and_execute(tx, &[&hot[0], &cold, &guardian]).await??;
@@ -698,7 +698,7 @@ async fn test_hot_cold_guardian_code_upgrade_requires_both_categories() -> anyho
     // A single category plus the guardian cannot upgrade the code.
     for signers in [[&hot, &guardian], [&cold, &guardian]] {
         let result = sign_and_execute(upgrade_tx(), &signers).await?;
-        assert!(matches!(result, Err(TransactionExecutorError::Unauthorized { .. })));
+        assert!(matches!(result, Err(TransactionExecutorError::Unauthorized(_))));
     }
 
     // Both categories plus the guardian upgrade it.

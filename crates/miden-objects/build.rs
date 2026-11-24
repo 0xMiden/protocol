@@ -135,7 +135,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".transaction.AccountInputs",
             ".transaction.AuthSignature",
             ".transaction.BoundSignature",
-            ".transaction.IesSealSecret",
+            ".transaction.IesSealSeed",
             ".transaction.TransactionArgs",
             ".transaction.NoteArgument",
             ".transaction.TransactionScript",
@@ -231,9 +231,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string(),
     );
     prost.field_attribute(
-        ".transaction.IesSealSecret.encoded",
+        ".transaction.IesSealSeed.seed",
         quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
-            miden_protocol::transaction::IesSealSecret
+            miden_protocol::transaction::IesSealSeed
         >)])
         .to_string(),
     );

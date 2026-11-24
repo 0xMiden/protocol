@@ -63,13 +63,15 @@ impl<'store> MockHost<'store> {
             .map(|(handler_event_name, _)| handler_event_name.to_event_id());
         let mut handled_events = BTreeSet::from_iter(core_lib_handlers);
 
-        // The default set of transaction events, and the IES `seal` event, that are always handled.
+        // The default set of transaction events, and the core library's IES `seal` event, that are
+        // always handled.
         handled_events.extend(
             [
                 &TransactionEventId::AccountPushProcedureIndex,
                 &TransactionEventId::AccountPushPatchCommitmentBodyBlockCount,
                 &TransactionEventId::AccountPushDeltaCommitmentBodyBlockCount,
                 &TransactionEventId::InputNoteIndexLookup,
+                &TransactionEventId::IesSeal,
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,
             ]

@@ -51,17 +51,6 @@ impl Verify for BoundSignature {
     }
 }
 
-pub use proto::transaction::DecodedIesSealSecret as IesSealSecret;
-
-/// Returns the canonical secret; the VM's `seal` checks the key agreement advice derived from it.
-impl Verify for IesSealSecret {
-    type Verified = miden_protocol::transaction::IesSealSecret;
-    type Error = core::convert::Infallible;
-    fn verify(self) -> Result<Self::Verified, Self::Error> {
-        Ok(self.encoded.into_inner())
-    }
-}
-
 pub use proto::transaction::DecodedTransactionInputsV1 as TransactionInputsV1;
 
 /// Checks input consistency and note inclusion against supplied headers, without authenticating the
@@ -79,7 +68,6 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
         let foreign_accounts = self.foreign_accounts.verify()?;
         let note_scripts = self.note_scripts.verify()?;
         let signatures = self.signatures.verify()?;
-        let ies_seal_secrets = self.ies_seal_secrets.verify()?;
         let code_tree = PartialCodeTree::from_partial_smt(self.code_tree.verify()?)?;
         Ok(Self::Output::builder()
             .account(account)
@@ -91,7 +79,6 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
             .foreign_accounts(foreign_accounts)
             .note_scripts(note_scripts)
             .signatures(signatures)
-            .ies_seal_secrets(ies_seal_secrets)
             .code_tree(code_tree)
             .build()?)
     }

@@ -1,5 +1,6 @@
 use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::transaction::{
+    IesSealSeed,
     InputNoteCommitment,
     OutputNote,
     PrivateOutputNote,
@@ -13,6 +14,7 @@ use miden_protocol::transaction::{
     TransactionScript,
     TxAccountUpdate,
 };
+use miden_protocol::utils::serde::Serializable;
 
 use crate::proto;
 
@@ -49,8 +51,14 @@ impl From<&TransactionArgs> for proto::transaction::TransactionArgs {
             account_code_upgrade: value.account_code_upgrade().map(Into::into),
             output_note_recipients: value.output_note_recipients().iter().map(Into::into).collect(),
             signatures: value.signatures().iter().map(Into::into).collect(),
-            ies_seal_secrets: value.ies_seal_secrets().iter().map(Into::into).collect(),
+            ies_seal_seed: value.ies_seal_seed().map(Into::into),
         }
+    }
+}
+
+impl From<&IesSealSeed> for proto::transaction::IesSealSeed {
+    fn from(value: &IesSealSeed) -> Self {
+        Self { seed: value.to_bytes() }
     }
 }
 

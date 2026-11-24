@@ -1,10 +1,10 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use core::ops::Range;
 
-use miden_core_lib::handlers::ecgfp5_eidos::ECGFP5_EIDOS_SEAL_EVENT_NAME;
-use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
+use miden_processor::{ContextId, ProcessorState};
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature, SignatureKey};
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
@@ -19,6 +19,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::ecdh::ecgfp5::PublicKey;
+use miden_protocol::crypto::ies::ecgfp5_eidos::MAX_PLAINTEXT_FELTS;
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -40,7 +41,7 @@ use miden_protocol::transaction::{
     TransactionSummary,
 };
 use miden_protocol::vm::EventId;
-use miden_protocol::{Felt, WORD_SIZE, Word};
+use miden_protocol::{Felt, WORD_SIZE, Word, ZERO};
 
 use crate::host::{TransactionBaseHost, TransactionKernelProcess};
 use crate::{LinkMap, TransactionKernelError};
@@ -181,11 +182,7 @@ pub(crate) enum TransactionEvent {
         tx_summary: TransactionSummary,
     },
 
-    /// The data necessary to handle an IES `seal` request of the core library.
-    IesSeal {
-        /// The recipient public key, looked up in the advice map under the requested commitment.
-        recipient: PublicKey,
-    },
+    IesSeal(IesSealRequest),
 
     LinkMapSet {
         advice_mutation: Vec<AdviceMutation>,
@@ -208,14 +205,6 @@ impl TransactionEvent {
         process: &ProcessorState,
     ) -> Result<Option<TransactionEvent>, TransactionKernelError> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
-
-        // The core library's IES `seal` emits its own event, so it has no transaction event ID.
-        if event_id == ECGFP5_EIDOS_SEAL_EVENT_NAME.to_event_id() {
-            return Ok(Some(TransactionEvent::IesSeal {
-                recipient: extract_ies_recipient(process)?,
-            }));
-        }
-
         let tx_event_id = TransactionEventId::try_from(event_id).map_err(|err| {
             TransactionKernelError::other_with_source(
                 "failed to convert event ID into transaction event ID",
@@ -613,6 +602,10 @@ impl TransactionEvent {
                 Some(TransactionEvent::Unauthorized { tx_summary })
             },
 
+            TransactionEventId::IesSeal => {
+                Some(TransactionEvent::IesSeal(IesSealRequest::extract(process)?))
+            },
+
             TransactionEventId::LinkMapSet => Some(TransactionEvent::LinkMapSet {
                 advice_mutation: LinkMap::handle_set_event(process),
             }),
@@ -743,31 +736,82 @@ pub(crate) enum RecipientData {
     },
 }
 
-/// Looks up the recipient public key of an IES `seal` request in the advice map under the
-/// commitment the request carries, and checks that it is a valid public key with that commitment.
-fn extract_ies_recipient(process: &ProcessorState) -> Result<PublicKey, TransactionKernelError> {
-    // Expected stack state: [event, PUBLIC_KEY_COMMITMENT]
-    let commitment = process.get_stack_word(1);
+// IES SEAL REQUEST
+// ================================================================================================
 
-    let elements = process
-        .advice_provider()
-        .get_mapped_values(&commitment)
-        .ok_or(TransactionKernelError::IesPublicKeyMissing(commitment))?;
-    let elements = <[Felt; 5]>::try_from(elements).map_err(|_| {
-        TransactionKernelError::IesPublicKeyInvalidLength { commitment, len: elements.len() }
-    })?;
-    let recipient = PublicKey::from_elements(elements)
-        .map_err(|source| TransactionKernelError::IesPublicKeyInvalid { commitment, source })?;
+/// An IES `seal` request of `miden::protocol::ies::seal`, which the key agreement request of the
+/// core library's `seal` it calls completes.
+#[derive(Debug)]
+pub(crate) struct IesSealRequest {
+    /// The context in which the request was made.
+    ctx: ContextId,
+    /// The recipient public key.
+    recipient: PublicKey,
+    /// The memory address and the number of elements of the plaintext.
+    plaintext: (Felt, Felt),
+    /// The memory address and the number of elements of the context.
+    context: (Felt, Felt),
+}
 
-    let actual = recipient.to_commitment();
-    if actual != commitment {
-        return Err(TransactionKernelError::IesPublicKeyCommitmentMismatch {
-            expected: commitment,
-            actual,
-        });
+impl IesSealRequest {
+    /// Extracts the request from the stack of the `miden::protocol::ies::seal` event.
+    fn extract(process: &ProcessorState) -> Result<Self, TransactionKernelError> {
+        // Expected stack state: [event, public_key(5), src_ptr, plaintext_len, context_ptr,
+        // context_len, dst_ptr]
+        let public_key = core::array::from_fn(|idx| process.get_stack_item(1 + idx));
+        let recipient = PublicKey::from_elements(public_key)
+            .map_err(TransactionKernelError::IesPublicKeyInvalid)?;
+
+        Ok(Self {
+            ctx: process.ctx(),
+            recipient,
+            plaintext: (process.get_stack_item(6), process.get_stack_item(7)),
+            context: (process.get_stack_item(8), process.get_stack_item(9)),
+        })
     }
 
-    Ok(recipient)
+    /// Returns the recipient public key.
+    pub(crate) fn recipient(&self) -> &PublicKey {
+        &self.recipient
+    }
+
+    /// Reads the context and the plaintext of the request from memory, if the key agreement
+    /// request of the core library's `seal` that `process` is handling completes this request.
+    ///
+    /// The core `seal` checks its memory ranges before it requests key agreement. So a request in
+    /// another context, for another recipient or with ranges the core `seal` rejects was not made
+    /// by `miden::protocol::ies::seal` for this key agreement request, and `None` is returned.
+    pub(crate) fn read_inputs(&self, process: &ProcessorState) -> Option<(Vec<Felt>, Vec<Felt>)> {
+        // Expected stack state: [event, PUBLIC_KEY_COMMITMENT]
+        if process.ctx() != self.ctx || process.get_stack_word(1) != self.recipient.to_commitment()
+        {
+            return None;
+        }
+
+        let plaintext = memory_range(self.plaintext)?;
+        let context = memory_range(self.context)?;
+        // The plaintext, expanded to two elements each, and the context share the input budget.
+        let input_len = 2 * plaintext.len() as u64 + context.len() as u64;
+        if input_len > 2 * MAX_PLAINTEXT_FELTS as u64 {
+            return None;
+        }
+
+        let read = |range: Range<u32>| {
+            range
+                .map(|addr| process.get_mem_value(self.ctx, addr).unwrap_or(ZERO))
+                .collect()
+        };
+        Some((read(context), read(plaintext)))
+    }
+}
+
+/// Returns the addresses of the memory range of `len` elements from `ptr`, or `None` if `ptr` or
+/// `len` is not a u32 or the range exceeds the address space.
+fn memory_range((ptr, len): (Felt, Felt)) -> Option<Range<u32>> {
+    let ptr = u32::try_from(ptr.as_canonical_u64()).ok()?;
+    let len = u32::try_from(len.as_canonical_u64()).ok()?;
+
+    Some(ptr..ptr.checked_add(len)?)
 }
 
 /// Extracts a transaction log after the kernel has authenticated its emitter and content.

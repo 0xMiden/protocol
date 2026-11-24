@@ -34,7 +34,6 @@ mod tx_progress;
 mod tx_event;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
-use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
@@ -59,10 +58,9 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::crypto::ecdh::ecgfp5::PublicKey;
 use miden_protocol::note::{NoteAttachment, NoteId, NoteRecipient, PartialNoteMetadata};
 use miden_protocol::transaction::{
-    IesSealSecret,
+    IesSealSeed,
     InputNote,
     InputNotes,
     RawOutputNote,
@@ -73,6 +71,7 @@ use miden_protocol::transaction::{
     TransactionSummaryUserParams,
 };
 pub(crate) use tx_event::{
+    IesSealRequest,
     RecipientData,
     TransactionEvent,
     TransactionProgressEvent,
@@ -125,8 +124,14 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// Handle the VM default events _before_ passing it to user defined ones.
     core_lib_handlers: EventHandlerRegistry,
 
-    /// The ephemeral secrets, in request order, supplied for re-execution or proving.
-    ies_seal_secrets: vec::IntoIter<IesSealSecret>,
+    /// The seed from which the ephemeral secrets of the IES `seal` requests are derived.
+    ies_seal_seed: Option<IesSealSeed>,
+
+    /// The IES `seal` request whose key agreement the core library's `seal` requests next.
+    ies_seal_request: Option<IesSealRequest>,
+
+    /// The number of IES `seal` requests answered so far.
+    num_ies_seal_requests: u32,
 }
 
 impl<'store, STORE> TransactionBaseHost<'store, STORE> {
@@ -134,9 +139,6 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new [`TransactionBaseHost`] instance from the provided inputs.
-    ///
-    /// `ies_seal_secrets` are the ephemeral secrets, in request order, supplied for re-execution or
-    /// proving.
     ///
     /// # Errors
     ///
@@ -148,7 +150,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         mast_store: &'store STORE,
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
-        ies_seal_secrets: Vec<IesSealSecret>,
+        ies_seal_seed: Option<IesSealSeed>,
     ) -> Result<Self, TransactionKernelError> {
         let core_lib_handlers = {
             let mut registry = EventHandlerRegistry::new();
@@ -173,7 +175,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             input_notes,
             block_commitments,
             core_lib_handlers,
-            ies_seal_secrets: ies_seal_secrets.into_iter(),
+            ies_seal_seed,
+            ies_seal_request: None,
+            num_ies_seal_requests: 0,
         })
     }
 
@@ -355,15 +359,19 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         vec![AdviceMutation::extend_advice_stack_with([note_idx, is_found])]
     }
 
-    /// Handles the event if the core lib event handler registry contains a handler with the emitted
-    /// event ID.
+    /// Handles the event if it is the key agreement request of the core library's IES `seal` or if
+    /// the core lib event handler registry contains a handler with the emitted event ID.
     ///
     /// Returns `Some` if the event was handled, `None` otherwise.
     pub fn handle_core_lib_events(
-        &self,
+        &mut self,
         process: &ProcessorState,
     ) -> Result<Option<Vec<AdviceMutation>>, EventError> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
+        if event_id == ECGFP5_EIDOS_SEAL_EVENT_NAME.to_event_id() {
+            return Ok(Some(self.on_ies_seal_agreement_requested(process)?));
+        }
+
         if let Some(mutations) = self.core_lib_handlers.handle_event(event_id, process)? {
             Ok(Some(mutations))
         } else {
@@ -396,43 +404,48 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         vec![AdviceMutation::extend_advice_stack_with(signature)]
     }
 
-    /// Returns the next supplied ephemeral secret for an IES `seal` request to `recipient`, or
-    /// `None` if all supplied secrets are used.
+    /// Records the IES `seal` request of `miden::protocol::ies::seal`, whose key agreement the core
+    /// library's `seal` requests next.
+    pub(crate) fn on_ies_seal_requested(&mut self, request: IesSealRequest) -> Vec<AdviceMutation> {
+        self.ies_seal_request = Some(request);
+        Vec::new()
+    }
+
+    /// Returns the key agreement advice for the key agreement request of the core library's IES
+    /// `seal`, with an ephemeral secret derived from the IES seal seed for the recorded request.
     ///
     /// # Errors
     ///
-    /// Returns an error if the next supplied secret is for another recipient.
-    pub fn next_ies_seal_secret(
+    /// Returns an error if:
+    /// - the key agreement request does not complete an IES `seal` request of
+    ///   `miden::protocol::ies::seal`.
+    /// - the transaction arguments provide no IES seal seed.
+    fn on_ies_seal_agreement_requested(
         &mut self,
-        recipient: PublicKey,
-    ) -> Result<Option<IesSealSecret>, TransactionKernelError> {
-        let Some(secret) = self.ies_seal_secrets.next() else {
-            return Ok(None);
-        };
+        process: &ProcessorState,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        let request = self
+            .ies_seal_request
+            .take()
+            .ok_or(TransactionKernelError::IesSealWithoutProtocolProcedure)?;
+        let (context, plaintext) = request
+            .read_inputs(process)
+            .ok_or(TransactionKernelError::IesSealWithoutProtocolProcedure)?;
+        let seed = self.ies_seal_seed.as_ref().ok_or(TransactionKernelError::IesSealSeedMissing)?;
 
-        if secret.recipient() != recipient {
-            return Err(TransactionKernelError::IesSealSecretRecipientMismatch {
-                supplied: secret.recipient().to_commitment(),
-                requested: recipient.to_commitment(),
-            });
-        }
+        let ephemeral_secret = seed.derive_ephemeral_secret(
+            self.num_ies_seal_requests,
+            request.recipient(),
+            &context,
+            &plaintext,
+        );
+        self.num_ies_seal_requests += 1;
 
-        Ok(Some(secret))
-    }
-
-    /// Returns the number of supplied ephemeral secrets that no IES `seal` request has used.
-    pub fn num_unused_ies_seal_secrets(&self) -> usize {
-        self.ies_seal_secrets.len()
-    }
-
-    /// Returns the advice mutations that provide the key agreement advice for an IES `seal`
-    /// request with the provided ephemeral secret.
-    pub fn on_ies_seal_requested(&self, secret: &IesSealSecret) -> Vec<AdviceMutation> {
-        let advice = secret.advise();
-        vec![
+        let advice = request.recipient().advise(&ephemeral_secret);
+        Ok(vec![
             AdviceMutation::extend_merkle_store(advice.merkle_nodes().iter().cloned()),
             AdviceMutation::extend_advice_stack_with(advice.elements()),
-        ]
+        ])
     }
 
     /// Adds an asset to the output note identified by the note index.
