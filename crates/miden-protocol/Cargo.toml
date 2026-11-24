@@ -31,14 +31,7 @@ std = [
   "miden-processor/std",
   "miden-verifier/std",
 ]
-testing = [
-  "dep:getrandom-03",
-  "dep:rand_chacha",
-  "dep:rand_xoshiro",
-  "miden-core/testing",
-  "miden-crypto/std",
-  "rand/thread_rng",
-]
+testing = ["dep:getrandom-03", "dep:rand_xoshiro", "miden-core/testing", "miden-crypto/std", "rand/thread_rng"]
 
 [dependencies]
 # Miden dependencies
@@ -57,13 +50,12 @@ miden-verifier        = { workspace = true }
 bech32       = { default-features = false, features = ["alloc"], version = "0.11" }
 bon          = { workspace = true }
 rand         = { workspace = true }
+rand_chacha  = { workspace = true }
 rand_xoshiro = { default-features = false, optional = true, version = "0.8" }
 semver       = { features = ["serde"], version = "1.0" }
 serde        = { features = ["derive"], optional = true, workspace = true }
 thiserror    = { workspace = true }
 toml         = { optional = true, workspace = true }
-# for SecretKey generation
-rand_chacha = { optional = true, workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { features = ["wasm_js"], workspace = true }

@@ -5,6 +5,7 @@ use super::{Felt, Hasher, Word};
 mod effects;
 mod executed_tx;
 mod fee;
+mod ies_seal_seed;
 mod inputs;
 mod kernel;
 mod logs;
@@ -23,6 +24,7 @@ mod verifier;
 pub use effects::TransactionEffects;
 pub use executed_tx::{ExecutedTransaction, TransactionMeasurements};
 pub use fee::{TransactionFee, TransactionFeeError};
+pub use ies_seal_seed::IesSealSeed;
 pub use inputs::{
     AccountInputs,
     IesSealSecret,
