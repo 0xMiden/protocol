@@ -46,7 +46,6 @@ use miden_standards::note::{
     EncryptedAssetsAttachmentError,
     EncryptedAssetsIssuerKey,
     MintNote,
-    MintNoteStorage,
     P2idNote,
 };
 use miden_standards::testing::note::NoteBuilder;
@@ -61,7 +60,8 @@ use miden_testing::{
 use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 
 use super::assert_default_expiration_limit;
-use super::transfer_policy::SEALED_NOTE_IDX;
+use super::faucet::{FaucetTestParams, create_mint_body_code};
+use super::transfer_policy::{SEALED_NOTE_IDX, build_mint_note_for};
 use crate::consume_note;
 
 // CONSTANTS
@@ -332,62 +332,6 @@ fn add_owned_faucet(builder: &mut MockChainBuilder, owner: AccountId) -> anyhow:
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
 }
 
-/// Returns transaction script code that mints `note`, which holds an asset of `faucet_id`, through
-/// `mint_and_send` and seals it.
-fn mint_and_seal_code(note: &Note, faucet_id: AccountId) -> String {
-    format!(
-        "
-        push.{recipient}
-        push.{note_type}
-        push.{tag}
-        push.{NOTE_AMOUNT}
-        push.{faucet_id_prefix}
-        push.{faucet_id_suffix}
-        # => [faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, pad(16)]
-
-        exec.::miden::standards::assets::fungible_asset::create
-        # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(16)]
-
-        call.::miden::standards::faucets::fungible::mint_and_send
-        # => [note_idx, pad(29)]
-
-        exec.::miden::protocol::output_note::seal
-        # => [pad(29)]
-
-        # truncate the stack
-        dropw dropw dropw drop
-        # => [pad(16)]
-        ",
-        recipient = note.recipient().digest(),
-        note_type = note.metadata().note_type() as u8,
-        tag = note.metadata().tag(),
-        faucet_id_prefix = faucet_id.prefix().as_felt(),
-        faucet_id_suffix = faucet_id.suffix(),
-    )
-}
-
-/// Returns a MINT note that instructs the faucet to mint `output_note`. For a public output note,
-/// the MINT note holds the output note's recipient; for a private one, only its recipient digest.
-fn mint_note(output_note: &Note, rng: &mut EidosRandomCoin) -> anyhow::Result<Note> {
-    let asset = *output_note.assets().iter().next().context("output note should hold an asset")?;
-    let tag = output_note.metadata().tag();
-    let mint_storage = match output_note.metadata().note_type() {
-        NoteType::Public => {
-            MintNoteStorage::new_public_output(output_note.recipient().clone(), asset, tag)?
-        },
-        NoteType::Private => {
-            MintNoteStorage::new_private_output(output_note.recipient().digest(), asset, tag)
-        },
-    };
-
-    Ok(MintNote::builder()
-        .sender(ACCOUNT_ID_SENDER.try_into()?)
-        .mint_storage(mint_storage)
-        .generate_serial_number(rng)
-        .build()?
-        .into())
-}
-
 // SEND TESTS
 // ================================================================================================
 
@@ -653,6 +597,16 @@ async fn faucet_mints_private_note_with_attachment() -> anyhow::Result<()> {
 
     let public_note = p2id_note(faucet.id(), faucet.id(), NoteType::Public, 2)?;
     let note = p2id_note(faucet.id(), faucet.id(), NoteType::Private, 1)?;
+    let amount = Felt::new(NOTE_AMOUNT)?;
+    let mint_code = |note: &Note| {
+        let params = FaucetTestParams {
+            recipient: note.recipient().digest(),
+            tag: note.metadata().tag(),
+            note_type: note.metadata().note_type(),
+            amount,
+        };
+        create_mint_body_code(&params, faucet.id())
+    };
     let tx_script = CodeBuilder::default().compile_tx_script(format!(
         "
         @transaction_script
@@ -661,8 +615,8 @@ async fn faucet_mints_private_note_with_attachment() -> anyhow::Result<()> {
             {mint_note_under_test}
         end
         ",
-        mint_public_note = mint_and_seal_code(&public_note, faucet.id()),
-        mint_note_under_test = mint_and_seal_code(&note, faucet.id()),
+        mint_public_note = mint_code(&public_note),
+        mint_note_under_test = mint_code(&note),
     ))?;
 
     let executed = mock_chain
@@ -696,11 +650,11 @@ async fn network_faucet_mints_only_public_output_notes(
     let mut builder = MockChain::builder();
     let faucet = add_network_faucet(&mut builder)?;
 
-    let mut rng = EidosRandomCoin::new([Felt::from(5u32); 4].into());
+    let owner = AccountId::try_from(ACCOUNT_ID_SENDER)?;
     let first_mint_note =
-        mint_note(&p2id_note(faucet.id(), faucet.id(), NoteType::Public, 2)?, &mut rng)?;
+        build_mint_note_for(owner, &p2id_note(faucet.id(), faucet.id(), NoteType::Public, 2)?, 5)?;
     let output_note = p2id_note(faucet.id(), faucet.id(), output_note_type, 1)?;
-    let mint_note_under_test = mint_note(&output_note, &mut rng)?;
+    let mint_note_under_test = build_mint_note_for(owner, &output_note, 6)?;
     builder.add_output_note(RawOutputNote::Full(first_mint_note.clone()));
     builder.add_output_note(RawOutputNote::Full(mint_note_under_test.clone()));
     let mock_chain = builder.build()?;
