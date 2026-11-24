@@ -661,10 +661,6 @@ end
 #! block. If the active root is the empty word (no policy configured for this kind), the transfer
 #! is accepted; otherwise the policy is invoked via `dyncall`.
 #!
-#! The callers pass the 16 elements of their own call frame as the policy inputs. With no policy
-#! configured, dropping them leaves 16 zeros in place of the policy outputs, since the operand
-#! stack of a call frame is filled with zeros up to its minimum depth of 16.
-#!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, policy_inputs(16)]
 #! Outputs: [policy_outputs(16)]
 #!
