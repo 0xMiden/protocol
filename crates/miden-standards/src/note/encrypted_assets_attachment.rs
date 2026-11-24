@@ -14,11 +14,12 @@ use miden_protocol::note::{
     NoteHeader,
     NoteId,
     NoteMetadata,
+    NoteRecipient,
     NoteScriptRoot,
     Nullifier,
 };
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Hasher, Word};
+use miden_protocol::{Felt, Word};
 
 use crate::note::StandardNoteAttachment;
 
@@ -206,7 +207,11 @@ impl EncryptedAssetsAttachment {
     /// Computes the ID of a note with these details and the provided metadata.
     pub fn note_id(&self, metadata: &NoteMetadata) -> NoteId {
         let details_commitment = NoteDetailsCommitment::from_raw_commitments(
-            self.recipient_digest(),
+            NoteRecipient::compute_digest(
+                self.serial_num,
+                self.script_root,
+                self.storage_commitment,
+            ),
             self.assets.commitment(),
         );
 
@@ -232,20 +237,6 @@ impl EncryptedAssetsAttachment {
             .flatten()
             .chain(self.assets.to_elements())
             .collect()
-    }
-
-    // HELPERS
-    // --------------------------------------------------------------------------------------------
-
-    /// Computes the digest of the note's recipient, as
-    /// [`NoteRecipient::digest`](miden_protocol::note::NoteRecipient::digest) does from the full
-    /// script and storage.
-    fn recipient_digest(&self) -> Word {
-        let serial_commitment = Hasher::hash_double_word(&[self.serial_num, Word::empty()]);
-        let serial_script_commitment =
-            Hasher::hash_double_word(&[serial_commitment, self.script_root.as_word()]);
-
-        Hasher::hash_double_word(&[serial_script_commitment, self.storage_commitment])
     }
 }
 
