@@ -410,9 +410,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// `miden::protocol::ies::ecgfp5_eidos::seal` in this transaction and records it for the key
     /// agreement request of the core library's `seal` that follows.
     ///
-    /// The digests come from the VM, so the host does constant work per request. Code that emits
-    /// the request event itself, with digests of data it does not encrypt, only affects its own
-    /// envelope.
+    /// The digests come from the VM, so the host does constant work per request. The requester is
+    /// read from the kernel memory, so code that emits the request event itself, with any digests,
+    /// only gets secrets of requests with its own requester.
     ///
     /// # Errors
     ///
@@ -426,6 +426,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             self.initial_account_header.id(),
             self.initial_account_header.to_commitment(),
             self.input_notes.commitment(),
+            request.requester_account_id,
+            request.requester_note_id,
             self.num_ies_seal_requests,
             &request.recipient,
             request.context_digest,

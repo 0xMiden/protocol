@@ -748,10 +748,15 @@ pub(crate) struct IesSealRequest {
     pub(super) plaintext_digest: Word,
     /// The digest of the context.
     pub(super) context_digest: Word,
+    /// The account that is active when the request is made.
+    pub(super) requester_account_id: AccountId,
+    /// The input note executing when the request is made, if any.
+    pub(super) requester_note_id: Option<NoteId>,
 }
 
 impl IesSealRequest {
-    /// Extracts the request from the stack of the `miden::protocol::ies::ecgfp5_eidos::seal` event.
+    /// Extracts the request from the stack of the `miden::protocol::ies::ecgfp5_eidos::seal` event,
+    /// and its requester from the kernel memory.
     fn extract(process: &ProcessorState) -> Result<Self, TransactionKernelError> {
         // Expected stack state: [event, PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5)]
         let public_key = core::array::from_fn(|idx| process.get_stack_item(9 + idx));
@@ -763,6 +768,8 @@ impl IesSealRequest {
             recipient,
             plaintext_digest: process.get_stack_word(1),
             context_digest: process.get_stack_word(5),
+            requester_account_id: process.get_active_account_id()?,
+            requester_note_id: process.get_active_note_id()?,
         })
     }
 }
