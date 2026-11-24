@@ -20,7 +20,6 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::{ExecutedTransaction, OutputNote, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BlocklistStorage,
     BurnPolicy,
@@ -46,9 +45,9 @@ use miden_testing::{
 };
 use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 
-use super::assert_default_expiration_limit;
 use super::faucet::{FaucetTestParams, create_mint_body_code};
 use super::transfer_policy::{SEALED_NOTE_IDX, build_mint_note_for};
+use super::{assert_default_expiration_limit, fungible_faucet, fungible_faucet_account};
 use crate::consume_note;
 
 // CONSTANTS
@@ -75,16 +74,6 @@ fn issuer_key() -> EncryptedAssetsIssuerKey {
     EncryptedAssetsIssuerKey::new(issuer_secret_key().public_key())
 }
 
-/// Returns the fungible faucet component of the faucets under test.
-fn fungible_faucet() -> anyhow::Result<FungibleFaucet> {
-    Ok(FungibleFaucet::builder()
-        .name(TokenName::new("ENC")?)
-        .symbol("ENC".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?)
-}
-
 /// Returns a token policy manager whose active send policy is `send_policy`.
 fn policy_manager(send_policy: SendPolicy) -> TokenPolicyManager {
     TokenPolicyManager::builder()
@@ -99,9 +88,7 @@ fn add_faucet(
     builder: &mut MockChainBuilder,
     token_policy_manager: TokenPolicyManager,
 ) -> anyhow::Result<Account> {
-    let account_builder = AccountBuilder::new([48; 32])
-        .account_type(AccountType::Public)
-        .with_component(fungible_faucet()?)
+    let account_builder = fungible_faucet_account(48)?
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager);
 
@@ -276,9 +263,7 @@ fn set_issuer_key_note(sender: AccountId, public_key: [Felt; 5]) -> anyhow::Resu
 /// Adds an existing faucet owned by `owner`, whose authority gates its setters, with
 /// [`SendPolicy::with_encrypted_assets`] active.
 fn add_owned_faucet(builder: &mut MockChainBuilder, owner: AccountId) -> anyhow::Result<Account> {
-    let account_builder = AccountBuilder::new([50; 32])
-        .account_type(AccountType::Public)
-        .with_component(fungible_faucet()?)
+    let account_builder = fungible_faucet_account(50)?
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
         .with_components(policy_manager(SendPolicy::with_encrypted_assets(issuer_key())));
