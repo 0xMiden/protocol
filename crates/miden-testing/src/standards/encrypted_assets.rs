@@ -209,7 +209,7 @@ async fn issuer_keeps_only_the_attachment_that_describes_the_note() -> anyhow::R
     let decoy_envelope = ecgfp5_eidos::seal_with_rng(
         &issuer_secret_key().public_key(),
         &decoy_plaintext.to_elements(),
-        &EncryptedAssetsAttachment::CONTEXT,
+        &EncryptedAssetsAttachment::IES_CONTEXT,
         &mut rand::rng(),
     )?;
     let decoy = NoteAttachment::with_words(
@@ -302,7 +302,7 @@ async fn encrypted_assets_masm_constants_match_rust() -> anyhow::Result<()> {
     let exec_output = CodeExecutor::with_default_host().run(source).await?;
 
     let slot_id = EncryptedAssetsIssuerKey::slot_name().id();
-    assert_eq!(exec_output.stack[0..2], EncryptedAssetsAttachment::CONTEXT);
+    assert_eq!(exec_output.stack[0..2], EncryptedAssetsAttachment::IES_CONTEXT);
     assert_eq!(
         exec_output.stack[0],
         Felt::from(EncryptedAssetsAttachment::ATTACHMENT_SCHEME.as_u16())

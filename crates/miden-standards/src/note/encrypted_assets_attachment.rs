@@ -52,7 +52,8 @@ const ISSUER_KEY_TAIL_INDEX: u32 = 1;
 ///  ASSET_ID_0, ASSET_VALUE_0, ..., ASSET_ID_{n-1}, ASSET_VALUE_{n-1}]
 /// ```
 ///
-/// The attachment content is the EcGFp5/Eidos envelope of the plaintext under [`Self::CONTEXT`],
+/// The attachment content is the EcGFp5/Eidos envelope of the plaintext under
+/// [`Self::IES_CONTEXT`],
 /// `[ephemeral_public_key(5), auth_tag(2), plaintext_len, ciphertext(2 * plaintext_len)]`, which
 /// is `8 + 4n` words. It carries no identifier of the issuer key.
 ///
@@ -80,7 +81,7 @@ impl EncryptedAssetsAttachment {
 
     /// The context under which the plaintext is encrypted: the attachment scheme and the format
     /// version.
-    pub const CONTEXT: [Felt; 2] = [
+    pub const IES_CONTEXT: [Felt; 2] = [
         Felt::from_u16(Self::ATTACHMENT_SCHEME.as_u16()),
         Felt::from_u8(Self::FORMAT_VERSION),
     ];
@@ -133,7 +134,7 @@ impl EncryptedAssetsAttachment {
     /// Returns an error if:
     /// - the attachment scheme is not [`Self::ATTACHMENT_SCHEME`].
     /// - the attachment content is not an envelope.
-    /// - the envelope does not decrypt with `issuer_secret_key` under [`Self::CONTEXT`].
+    /// - the envelope does not decrypt with `issuer_secret_key` under [`Self::IES_CONTEXT`].
     /// - the plaintext does not decode, see [`Self::try_from_elements`].
     pub fn decrypt(
         attachment: &NoteAttachment,
@@ -147,7 +148,7 @@ impl EncryptedAssetsAttachment {
 
         let envelope = Envelope::from_elements(attachment.as_elements())
             .map_err(EncryptedAssetsAttachmentError::InvalidEnvelope)?;
-        let plaintext = ecgfp5_eidos::open(issuer_secret_key, &Self::CONTEXT, &envelope)
+        let plaintext = ecgfp5_eidos::open(issuer_secret_key, &Self::IES_CONTEXT, &envelope)
             .map_err(EncryptedAssetsAttachmentError::DecryptionFailed)?;
 
         Self::try_from_elements(&plaintext)
