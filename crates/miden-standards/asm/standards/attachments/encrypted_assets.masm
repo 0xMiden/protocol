@@ -12,8 +12,7 @@
 #!
 #! The attachment content is the envelope
 #! `[ephemeral_public_key(5), auth_tag(2), plaintext_len, ciphertext(2 * plaintext_len)]`, that is
-#! `8 + 4n` words, sealed under the IES context
-#! `[ENCRYPTED_ASSETS_ATTACHMENT_SCHEME, ENCRYPTED_ASSETS_FORMAT_VERSION]`.
+#! `8 + 4n` words, sealed under the IES context `[ENCRYPTED_ASSETS_ATTACHMENT_SCHEME]`.
 
 use {ASSET_SIZE} from miden::protocol::asset
 use {MAX_ASSETS_PER_NOTE, WORD_NUM_ELEMENTS} from miden::protocol::constants
@@ -34,9 +33,6 @@ use miden::standards::note as std_note
 
 #! The attachment scheme of encrypted asset attachments.
 pub const ENCRYPTED_ASSETS_ATTACHMENT_SCHEME = 8
-
-#! The version of the encrypted asset attachment format.
-pub const ENCRYPTED_ASSETS_FORMAT_VERSION = 1
 
 # Issuer key
 
@@ -64,7 +60,7 @@ const MAX_PLAINTEXT_LEN = PLAINTEXT_HEADER_LEN + MAX_ASSETS_PER_NOTE * ASSET_SIZ
 const ENVELOPE_HEADER_LEN = 8
 
 # The number of elements of the IES context.
-const IES_CONTEXT_LEN = 2
+const IES_CONTEXT_LEN = 1
 
 # encrypt_note_details locals: the plaintext of up to MAX_ASSETS_PER_NOTE assets, the context and
 # the envelope of that plaintext, which spans ENVELOPE_HEADER_LEN + 2 * MAX_PLAINTEXT_LEN elements.
@@ -76,8 +72,6 @@ const ENCRYPT_NOTE_DETAILS_SCRIPT_ROOT_LOC = ENCRYPT_NOTE_DETAILS_SERIAL_NUM_LOC
 const ENCRYPT_NOTE_DETAILS_STORAGE_COMMITMENT_LOC = ENCRYPT_NOTE_DETAILS_SCRIPT_ROOT_LOC + WORD_NUM_ELEMENTS
 const ENCRYPT_NOTE_DETAILS_ASSETS_LOC = ENCRYPT_NOTE_DETAILS_PLAINTEXT_LOC + PLAINTEXT_HEADER_LEN
 const ENCRYPT_NOTE_DETAILS_IES_CONTEXT_LOC = ENCRYPT_NOTE_DETAILS_PLAINTEXT_LOC + MAX_PLAINTEXT_LEN
-const ENCRYPT_NOTE_DETAILS_IES_CONTEXT_SCHEME_LOC = ENCRYPT_NOTE_DETAILS_IES_CONTEXT_LOC
-const ENCRYPT_NOTE_DETAILS_IES_CONTEXT_VERSION_LOC = ENCRYPT_NOTE_DETAILS_IES_CONTEXT_LOC + 1
 const ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC = ENCRYPT_NOTE_DETAILS_IES_CONTEXT_LOC + WORD_NUM_ELEMENTS
 
 # ERRORS
@@ -191,9 +185,8 @@ proc encrypt_note_details(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmen
     mul.ASSET_SIZE add.PLAINTEXT_HEADER_LEN
     # => [plaintext_len]
 
-    # write the IES context [ENCRYPTED_ASSETS_ATTACHMENT_SCHEME, ENCRYPTED_ASSETS_FORMAT_VERSION]
-    push.ENCRYPTED_ASSETS_ATTACHMENT_SCHEME loc_store.ENCRYPT_NOTE_DETAILS_IES_CONTEXT_SCHEME_LOC
-    push.ENCRYPTED_ASSETS_FORMAT_VERSION loc_store.ENCRYPT_NOTE_DETAILS_IES_CONTEXT_VERSION_LOC
+    # write the IES context [ENCRYPTED_ASSETS_ATTACHMENT_SCHEME]
+    push.ENCRYPTED_ASSETS_ATTACHMENT_SCHEME loc_store.ENCRYPT_NOTE_DETAILS_IES_CONTEXT_LOC
     # => [plaintext_len]
 
     # encrypt the plaintext to the issuer's public key

@@ -284,31 +284,25 @@ async fn encrypted_assets_masm_constants_match_rust() -> anyhow::Result<()> {
     let source = "
         use {
             ENCRYPTED_ASSETS_ATTACHMENT_SCHEME,
-            ENCRYPTED_ASSETS_FORMAT_VERSION,
             ISSUER_KEY_SLOT,
         } from miden::standards::attachments::encrypted_assets
 
         begin
             push.ISSUER_KEY_SLOT[0..2]
-            push.ENCRYPTED_ASSETS_FORMAT_VERSION
             push.ENCRYPTED_ASSETS_ATTACHMENT_SCHEME
-            # => [attachment_scheme, format_version, slot_id_suffix, slot_id_prefix, pad(16)]
+            # => [attachment_scheme, slot_id_suffix, slot_id_prefix, pad(16)]
 
             # truncate the stack to 16 elements
-            repeat.4 movup.4 drop end
+            repeat.3 movup.3 drop end
         end
     ";
 
     let exec_output = CodeExecutor::with_default_host().run(source).await?;
 
     let slot_id = EncryptedAssetsIssuerKey::slot_name().id();
-    assert_eq!(exec_output.stack[0..2], EncryptedAssetsAttachment::IES_CONTEXT);
-    assert_eq!(
-        exec_output.stack[0],
-        Felt::from(EncryptedAssetsAttachment::ATTACHMENT_SCHEME.as_u16())
-    );
-    assert_eq!(exec_output.stack[2], slot_id.suffix());
-    assert_eq!(exec_output.stack[3], slot_id.prefix());
+    assert_eq!(exec_output.stack[..1], EncryptedAssetsAttachment::IES_CONTEXT);
+    assert_eq!(exec_output.stack[1], slot_id.suffix());
+    assert_eq!(exec_output.stack[2], slot_id.prefix());
 
     Ok(())
 }

@@ -76,15 +76,8 @@ impl EncryptedAssetsAttachment {
     pub const ATTACHMENT_SCHEME: NoteAttachmentScheme =
         StandardNoteAttachment::EncryptedAssets.attachment_scheme();
 
-    /// The version of the encrypted asset attachment format.
-    pub const FORMAT_VERSION: u8 = 1;
-
-    /// The context under which the plaintext is encrypted: the attachment scheme and the format
-    /// version.
-    pub const IES_CONTEXT: [Felt; 2] = [
-        Felt::from_u16(Self::ATTACHMENT_SCHEME.as_u16()),
-        Felt::from_u8(Self::FORMAT_VERSION),
-    ];
+    /// The context under which the plaintext is encrypted: the attachment scheme.
+    pub const IES_CONTEXT: [Felt; 1] = [Felt::from_u16(Self::ATTACHMENT_SCHEME.as_u16())];
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
