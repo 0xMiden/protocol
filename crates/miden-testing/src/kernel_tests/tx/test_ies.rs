@@ -254,6 +254,54 @@ async fn ies_seal_rejects_unanswerable_request(
     Ok(())
 }
 
+/// Tests that the host answers a request event and a key agreement event that code emits directly,
+/// without `miden::protocol::ies::ecgfp5_eidos::seal` and the core library's `seal`.
+///
+/// The request event carries the digests of the plaintext and the context instead of their memory
+/// ranges, so the host does constant work: the empty plaintext and the context of nearly 2^28
+/// elements that the values below the public key describe are not part of the event.
+#[tokio::test]
+async fn ies_seal_events_carry_no_memory_ranges() -> anyhow::Result<()> {
+    let recipient = secret_key(1).public_key();
+    let code = format!(
+        r#"
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.0 push.{context_len} push.0 push.0 push.0
+            {public_key}
+            {context_digest}
+            {plaintext_digest}
+            # => [PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5), src_ptr, plaintext_len,
+            #     context_ptr, context_len, dst_ptr]
+
+            emit.event("miden::protocol::ies::ecgfp5_eidos::seal")
+            dropw dropw dropw dropw drop drop
+            # => []
+
+            {commitment}
+            emit.event("miden::core::crypto::ies::ecgfp5_eidos::seal")
+            dropw
+            # => []
+        end
+        "#,
+        context_len = (1 << 28) - 6,
+        public_key = push_reversed(&recipient.to_elements()),
+        context_digest = push_reversed(Word::from([1, 2, 3, 4u32]).as_elements()),
+        plaintext_digest = push_reversed(Word::from([5, 6, 7, 8u32]).as_elements()),
+        commitment = push_reversed(recipient.to_commitment().as_elements()),
+    );
+
+    TestTransactionBuilder::with_existing_mock_account()
+        .build()?
+        .execute_code(&code)
+        .await?;
+
+    Ok(())
+}
+
 /// Tests that code run through `execute_code` can encrypt.
 #[tokio::test]
 async fn execute_code_handles_seal_request() -> anyhow::Result<()> {

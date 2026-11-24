@@ -58,6 +58,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
 use miden_protocol::note::{NoteAttachment, NoteId, NoteRecipient, PartialNoteMetadata};
 use miden_protocol::transaction::{
     IesSealSeed,
@@ -127,8 +128,9 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// The seed from which the ephemeral secrets of the IES `seal` requests are derived.
     ies_seal_seed: Option<IesSealSeed>,
 
-    /// The IES `seal` request whose key agreement the core library's `seal` requests next.
-    ies_seal_request: Option<IesSealRequest>,
+    /// The last IES `seal` request with the ephemeral secret derived for it, which the key
+    /// agreement request of the core library's `seal` takes.
+    ies_seal_request: Option<(IesSealRequest, SecretKey)>,
 
     /// The number of IES `seal` requests answered so far.
     num_ies_seal_requests: u32,
@@ -404,44 +406,56 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         vec![AdviceMutation::extend_advice_stack_with(signature)]
     }
 
-    /// Records the IES `seal` request of `miden::protocol::ies::ecgfp5_eidos::seal`, whose key
-    /// agreement the core library's `seal` requests next.
-    pub(crate) fn on_ies_seal_requested(&mut self, request: IesSealRequest) -> Vec<AdviceMutation> {
-        self.ies_seal_request = Some(request);
-        Vec::new()
-    }
-
-    /// Returns the key agreement advice for the key agreement request of the core library's IES
-    /// `seal`, with an ephemeral secret derived from the IES seal seed for the recorded request.
+    /// Derives the ephemeral secret for the IES `seal` request of
+    /// `miden::protocol::ies::ecgfp5_eidos::seal` and records it for the key agreement request of
+    /// the core library's `seal` that follows.
+    ///
+    /// The digests come from the VM, so the host does constant work per request. Code that emits
+    /// the request event itself, with digests of data it does not encrypt, only affects its own
+    /// envelope.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - the key agreement request does not complete an IES `seal` request of
-    ///   `miden::protocol::ies::ecgfp5_eidos::seal`.
-    /// - the transaction arguments provide no IES seal seed.
+    /// Returns an error if the transaction arguments provide no IES seal seed.
+    pub(crate) fn on_ies_seal_requested(
+        &mut self,
+        request: IesSealRequest,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        let seed = self.ies_seal_seed.as_ref().ok_or(TransactionKernelError::IesSealSeedMissing)?;
+        let ephemeral_secret = seed.derive_ephemeral_secret(
+            self.num_ies_seal_requests,
+            &request.recipient,
+            request.context_digest,
+            request.plaintext_digest,
+        );
+        self.num_ies_seal_requests += 1;
+        self.ies_seal_request = Some((request, ephemeral_secret));
+
+        Ok(Vec::new())
+    }
+
+    /// Returns the key agreement advice for the key agreement request of the core library's IES
+    /// `seal`, with the ephemeral secret derived for the recorded request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the key agreement request does not follow an IES `seal` request of
+    /// `miden::protocol::ies::ecgfp5_eidos::seal` in the same context and for the same recipient.
     fn on_ies_seal_agreement_requested(
         &mut self,
         process: &ProcessorState,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let request = self
+        // Expected stack state: [event, PUBLIC_KEY_COMMITMENT]
+        let (request, ephemeral_secret) = self
             .ies_seal_request
             .take()
+            .filter(|(request, _)| {
+                request.ctx == process.ctx()
+                    && request.recipient.to_commitment() == process.get_stack_word(1)
+            })
             .ok_or(TransactionKernelError::IesSealWithoutProtocolProcedure)?;
-        let (context, plaintext) = request
-            .read_inputs(process)
-            .ok_or(TransactionKernelError::IesSealWithoutProtocolProcedure)?;
-        let seed = self.ies_seal_seed.as_ref().ok_or(TransactionKernelError::IesSealSeedMissing)?;
 
-        let ephemeral_secret = seed.derive_ephemeral_secret(
-            self.num_ies_seal_requests,
-            request.recipient(),
-            &context,
-            &plaintext,
-        );
-        self.num_ies_seal_requests += 1;
-
-        let advice = request.recipient().advise(&ephemeral_secret);
+        let advice = request.recipient.advise(&ephemeral_secret);
         Ok(vec![
             AdviceMutation::extend_merkle_store(advice.merkle_nodes().iter().cloned()),
             AdviceMutation::extend_advice_stack_with(advice.elements()),

@@ -5,8 +5,9 @@ use miden::core::crypto::ies::ecgfp5_eidos as core_ecgfp5_eidos
 # CONSTANTS
 # =================================================================================================
 
-# Event the host answers by recording the request, so that it can derive the ephemeral secret of the
-# encryption when the core library's `seal` requests key agreement.
+# Event from which the host derives the ephemeral secret of the encryption, which it supplies when
+# the core library's `seal` requests key agreement. It is emitted with
+# [PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5), ...] on the stack.
 const IES_ECGFP5_EIDOS_SEAL_EVENT = event("miden::protocol::ies::ecgfp5_eidos::seal")
 
 # Eidos domain tag of EcGFp5 public-key commitments, shared with `ecgfp5::PublicKey::to_commitment`
@@ -32,8 +33,8 @@ const PUBLIC_KEY_TAIL_LOC = PUBLIC_KEY_LOC + 4
 #! secret key and the same context, e.g. with Rust's `miden_crypto::ies::ecgfp5_eidos::open`.
 #!
 #! The host derives the ephemeral secret of the encryption from the IES seal seed of the transaction
-#! arguments, the index of the request in the transaction, the public key, the context and the
-#! plaintext.
+#! arguments, the index of the request in the transaction, the public key and the digests of the
+#! context and the plaintext, which this procedure computes.
 #!
 #! Inputs:  [public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
 #! Outputs: []
@@ -61,10 +62,19 @@ pub proc seal(
     context_len: u32,
     destination: ptr<felt>,
 )
-    emit.IES_ECGFP5_EIDOS_SEAL_EVENT
+    # store the public key before hashing the inputs, which may lie in this procedure's locals
+    loc_storew_le.PUBLIC_KEY_LOC dup.4 loc_store.PUBLIC_KEY_TAIL_LOC
     # => [public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
 
-    loc_storew_le.PUBLIC_KEY_LOC dropw loc_store.PUBLIC_KEY_TAIL_LOC
+    dup.8 dup.8 exec.eidos::hash_elements
+    # => [CONTEXT_DIGEST, public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
+
+    dup.10 dup.10 exec.eidos::hash_elements
+    # => [PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5), src_ptr, plaintext_len, context_ptr,
+    #     context_len, dst_ptr]
+
+    emit.IES_ECGFP5_EIDOS_SEAL_EVENT
+    dropw dropw dropw drop
     # => [src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
 
     push.ECGFP5_PUBLIC_KEY_LEN locaddr.PUBLIC_KEY_LOC push.ECGFP5_PUBLIC_KEY_DOMAIN

@@ -1,6 +1,5 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use core::ops::Range;
 
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
@@ -19,7 +18,6 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::ecdh::ecgfp5::PublicKey;
-use miden_protocol::crypto::ies::ecgfp5_eidos::MAX_PLAINTEXT_FELTS;
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -41,7 +39,7 @@ use miden_protocol::transaction::{
     TransactionSummary,
 };
 use miden_protocol::vm::EventId;
-use miden_protocol::{Felt, WORD_SIZE, Word, ZERO};
+use miden_protocol::{Felt, WORD_SIZE, Word};
 
 use crate::host::{TransactionBaseHost, TransactionKernelProcess};
 use crate::{LinkMap, TransactionKernelError};
@@ -739,80 +737,34 @@ pub(crate) enum RecipientData {
 // IES SEAL REQUEST
 // ================================================================================================
 
-/// An IES `seal` request of `miden::protocol::ies::ecgfp5_eidos::seal`, which the key agreement
-/// request of the core library's `seal` it calls completes.
+/// An IES `seal` request of `miden::protocol::ies::ecgfp5_eidos::seal`.
 #[derive(Debug)]
 pub(crate) struct IesSealRequest {
     /// The context in which the request was made.
-    ctx: ContextId,
+    pub(super) ctx: ContextId,
     /// The recipient public key.
-    recipient: PublicKey,
-    /// The memory address and the number of elements of the plaintext.
-    plaintext: (Felt, Felt),
-    /// The memory address and the number of elements of the context.
-    context: (Felt, Felt),
+    pub(super) recipient: PublicKey,
+    /// The digest of the plaintext.
+    pub(super) plaintext_digest: Word,
+    /// The digest of the context.
+    pub(super) context_digest: Word,
 }
 
 impl IesSealRequest {
     /// Extracts the request from the stack of the `miden::protocol::ies::ecgfp5_eidos::seal` event.
     fn extract(process: &ProcessorState) -> Result<Self, TransactionKernelError> {
-        // Expected stack state: [event, public_key(5), src_ptr, plaintext_len, context_ptr,
-        // context_len, dst_ptr]
-        let public_key = core::array::from_fn(|idx| process.get_stack_item(1 + idx));
+        // Expected stack state: [event, PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5)]
+        let public_key = core::array::from_fn(|idx| process.get_stack_item(9 + idx));
         let recipient = PublicKey::from_elements(public_key)
             .map_err(TransactionKernelError::IesPublicKeyInvalid)?;
 
         Ok(Self {
             ctx: process.ctx(),
             recipient,
-            plaintext: (process.get_stack_item(6), process.get_stack_item(7)),
-            context: (process.get_stack_item(8), process.get_stack_item(9)),
+            plaintext_digest: process.get_stack_word(1),
+            context_digest: process.get_stack_word(5),
         })
     }
-
-    /// Returns the recipient public key.
-    pub(crate) fn recipient(&self) -> &PublicKey {
-        &self.recipient
-    }
-
-    /// Reads the context and the plaintext of the request from memory, if the key agreement
-    /// request of the core library's `seal` that `process` is handling completes this request.
-    ///
-    /// The core `seal` checks its memory ranges before it requests key agreement. So a request in
-    /// another context, for another recipient or with ranges the core `seal` rejects was not made
-    /// by `miden::protocol::ies::ecgfp5_eidos::seal` for this key agreement request, and `None` is
-    /// returned.
-    pub(crate) fn read_inputs(&self, process: &ProcessorState) -> Option<(Vec<Felt>, Vec<Felt>)> {
-        // Expected stack state: [event, PUBLIC_KEY_COMMITMENT]
-        if process.ctx() != self.ctx || process.get_stack_word(1) != self.recipient.to_commitment()
-        {
-            return None;
-        }
-
-        let plaintext = memory_range(self.plaintext)?;
-        let context = memory_range(self.context)?;
-        // The plaintext, expanded to two elements each, and the context share the input budget.
-        let input_len = 2 * plaintext.len() as u64 + context.len() as u64;
-        if input_len > 2 * MAX_PLAINTEXT_FELTS as u64 {
-            return None;
-        }
-
-        let read = |range: Range<u32>| {
-            range
-                .map(|addr| process.get_mem_value(self.ctx, addr).unwrap_or(ZERO))
-                .collect()
-        };
-        Some((read(context), read(plaintext)))
-    }
-}
-
-/// Returns the addresses of the memory range of `len` elements from `ptr`, or `None` if `ptr` or
-/// `len` is not a u32 or the range exceeds the address space.
-fn memory_range((ptr, len): (Felt, Felt)) -> Option<Range<u32>> {
-    let ptr = u32::try_from(ptr.as_canonical_u64()).ok()?;
-    let len = u32::try_from(len.as_canonical_u64()).ok()?;
-
-    Some(ptr..ptr.checked_add(len)?)
 }
 
 /// Extracts a transaction log after the kernel has authenticated its emitter and content.
