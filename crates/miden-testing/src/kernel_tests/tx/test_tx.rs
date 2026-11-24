@@ -611,7 +611,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 
     let error = mock_tx.execute().await.unwrap_err();
 
-    assert_matches!(error, TransactionExecutorError::Unauthorized { tx_summary, .. } => {
+    assert_matches!(error, TransactionExecutorError::Unauthorized(tx_summary) => {
         assert!(tx_summary.account_delta().vault().is_empty());
         assert!(tx_summary.account_delta().storage().is_empty());
         assert_eq!(tx_summary.account_delta().nonce_delta().as_canonical_u64(), 1);
@@ -689,7 +689,7 @@ async fn tx_summary_binds_expiration_delta_and_user_params() -> anyhow::Result<(
 
     let error = mock_tx.execute().await.unwrap_err();
 
-    assert_matches!(error, TransactionExecutorError::Unauthorized { tx_summary, .. } => {
+    assert_matches!(error, TransactionExecutorError::Unauthorized(tx_summary) => {
         assert_eq!(tx_summary.expiration_delta(), 42);
         assert_eq!(
             tx_summary.user_params(),

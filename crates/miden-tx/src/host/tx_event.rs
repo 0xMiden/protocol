@@ -1,10 +1,9 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use miden_core_lib::handlers::ecgfp5_eidos::ECGFP5_EIDOS_SEAL_EVENT_NAME;
-use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
+use miden_processor::{ContextId, ProcessorState};
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature, SignatureKey};
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
@@ -181,11 +180,7 @@ pub(crate) enum TransactionEvent {
         tx_summary: TransactionSummary,
     },
 
-    /// The data necessary to handle an IES `seal` request of the core library.
-    IesSeal {
-        /// The recipient public key, looked up in the advice map under the requested commitment.
-        recipient: PublicKey,
-    },
+    IesEcgfp5EidosSeal(IesSealRequest),
 
     LinkMapSet {
         advice_mutation: Vec<AdviceMutation>,
@@ -208,14 +203,6 @@ impl TransactionEvent {
         process: &ProcessorState,
     ) -> Result<Option<TransactionEvent>, TransactionKernelError> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
-
-        // The core library's IES `seal` emits its own event, so it has no transaction event ID.
-        if event_id == ECGFP5_EIDOS_SEAL_EVENT_NAME.to_event_id() {
-            return Ok(Some(TransactionEvent::IesSeal {
-                recipient: extract_ies_recipient(process)?,
-            }));
-        }
-
         let tx_event_id = TransactionEventId::try_from(event_id).map_err(|err| {
             TransactionKernelError::other_with_source(
                 "failed to convert event ID into transaction event ID",
@@ -613,6 +600,10 @@ impl TransactionEvent {
                 Some(TransactionEvent::Unauthorized { tx_summary })
             },
 
+            TransactionEventId::IesEcgfp5EidosSeal => {
+                Some(TransactionEvent::IesEcgfp5EidosSeal(IesSealRequest::extract(process)?))
+            },
+
             TransactionEventId::LinkMapSet => Some(TransactionEvent::LinkMapSet {
                 advice_mutation: LinkMap::handle_set_event(process),
             }),
@@ -743,31 +734,37 @@ pub(crate) enum RecipientData {
     },
 }
 
-/// Looks up the recipient public key of an IES `seal` request in the advice map under the
-/// commitment the request carries, and checks that it is a valid public key with that commitment.
-fn extract_ies_recipient(process: &ProcessorState) -> Result<PublicKey, TransactionKernelError> {
-    // Expected stack state: [event, PUBLIC_KEY_COMMITMENT]
-    let commitment = process.get_stack_word(1);
+// IES SEAL REQUEST
+// ================================================================================================
 
-    let elements = process
-        .advice_provider()
-        .get_mapped_values(&commitment)
-        .ok_or(TransactionKernelError::IesPublicKeyMissing(commitment))?;
-    let elements = <[Felt; 5]>::try_from(elements).map_err(|_| {
-        TransactionKernelError::IesPublicKeyInvalidLength { commitment, len: elements.len() }
-    })?;
-    let recipient = PublicKey::from_elements(elements)
-        .map_err(|source| TransactionKernelError::IesPublicKeyInvalid { commitment, source })?;
+/// An IES `seal` request of `miden::protocol::ies::ecgfp5_eidos::seal`.
+#[derive(Debug)]
+pub(crate) struct IesSealRequest {
+    /// The context in which the request was made.
+    pub(super) ctx: ContextId,
+    /// The recipient public key.
+    pub(super) recipient: PublicKey,
+    /// The digest of the plaintext.
+    pub(super) plaintext_digest: Word,
+    /// The digest of the context.
+    pub(super) context_digest: Word,
+}
 
-    let actual = recipient.to_commitment();
-    if actual != commitment {
-        return Err(TransactionKernelError::IesPublicKeyCommitmentMismatch {
-            expected: commitment,
-            actual,
-        });
+impl IesSealRequest {
+    /// Extracts the request from the stack of the `miden::protocol::ies::ecgfp5_eidos::seal` event.
+    fn extract(process: &ProcessorState) -> Result<Self, TransactionKernelError> {
+        // Expected stack state: [event, PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5)]
+        let public_key = core::array::from_fn(|idx| process.get_stack_item(9 + idx));
+        let recipient = PublicKey::from_elements(public_key)
+            .map_err(TransactionKernelError::IesPublicKeyInvalid)?;
+
+        Ok(Self {
+            ctx: process.ctx(),
+            recipient,
+            plaintext_digest: process.get_stack_word(1),
+            context_digest: process.get_stack_word(5),
+        })
     }
-
-    Ok(recipient)
 }
 
 /// Extracts a transaction log after the kernel has authenticated its emitter and content.

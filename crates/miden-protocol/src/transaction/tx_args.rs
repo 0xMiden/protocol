@@ -4,12 +4,11 @@ use alloc::vec::Vec;
 use miden_crypto::merkle::InnerNodeInfo;
 
 use super::script::TransactionScript;
-use super::{Felt, Word};
+use super::{Felt, IesSealSeed, Word};
 use crate::EMPTY_WORD;
 use crate::account::AccountCodeUpgrade;
 use crate::account::auth::BoundSignature;
 use crate::note::{NoteId, NoteRecipient};
-use crate::transaction::IesSealSecret;
 use crate::vm::{AdviceInputs, AdviceMap};
 
 // TRANSACTION ARGUMENTS
@@ -29,8 +28,6 @@ use crate::vm::{AdviceInputs, AdviceMap};
 /// - Output note recipients: the recipients of the output notes the transaction is expected to
 ///   create.
 /// - Signatures: signatures the transaction needs for authentication.
-/// - IES seal secrets: ephemeral secrets supplied for the IES `seal` requests, e.g. those an
-///   earlier execution of the transaction drew.
 /// - Advice inputs: provides arbitrary user-defined data needed at runtime.
 /// - Auth arguments: data put onto the stack right before authentication procedure execution. If
 ///   this argument is not specified, the [`EMPTY_WORD`] would be used as a default value. If the
@@ -38,6 +35,9 @@ use crate::vm::{AdviceInputs, AdviceMap};
 ///   as a key to access the corresponding value.
 /// - Account code upgrade: the [`AccountCodeUpgrade`] of the native account if the transaction
 ///   upgrades its code.
+/// - IES seal seed: the [`IesSealSeed`] from which the host derives the ephemeral secrets of the
+///   IES `seal` requests. Use a fresh seed for every transaction. Executing a transaction that
+///   seals without a seed fails.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransactionArgs {
     tx_script: Option<TransactionScript>,
@@ -45,10 +45,10 @@ pub struct TransactionArgs {
     note_args: BTreeMap<NoteId, Word>,
     output_note_recipients: Vec<NoteRecipient>,
     signatures: Vec<BoundSignature>,
-    ies_seal_secrets: Vec<IesSealSecret>,
     advice_inputs: AdviceInputs,
     auth_args: Word,
     account_code_upgrade: Option<AccountCodeUpgrade>,
+    ies_seal_seed: Option<IesSealSeed>,
 }
 
 impl TransactionArgs {
@@ -63,9 +63,9 @@ impl TransactionArgs {
             BTreeMap::new(),
             Vec::new(),
             Vec::new(),
-            Vec::new(),
             AdviceInputs::from(advice_map),
             EMPTY_WORD,
+            None,
             None,
         )
     }
@@ -78,10 +78,10 @@ impl TransactionArgs {
         note_args: BTreeMap<NoteId, Word>,
         output_note_recipients: Vec<NoteRecipient>,
         signatures: Vec<BoundSignature>,
-        ies_seal_secrets: Vec<IesSealSecret>,
         advice_inputs: AdviceInputs,
         auth_args: Word,
         account_code_upgrade: Option<AccountCodeUpgrade>,
+        ies_seal_seed: Option<IesSealSeed>,
     ) -> Self {
         Self {
             tx_script,
@@ -89,10 +89,10 @@ impl TransactionArgs {
             note_args,
             output_note_recipients,
             signatures,
-            ies_seal_secrets,
             advice_inputs,
             auth_args,
             account_code_upgrade,
+            ies_seal_seed,
         }
     }
 
@@ -147,6 +147,13 @@ impl TransactionArgs {
         self
     }
 
+    /// Returns new [`TransactionArgs`] instantiated with the provided IES seal seed.
+    #[must_use]
+    pub fn with_ies_seal_seed(mut self, ies_seal_seed: IesSealSeed) -> Self {
+        self.ies_seal_seed = Some(ies_seal_seed);
+        self
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -186,13 +193,6 @@ impl TransactionArgs {
         &self.signatures
     }
 
-    /// Returns the ephemeral secrets supplied for the IES `seal` requests.
-    ///
-    /// The secrets are used in the order added, one per `seal` request.
-    pub fn ies_seal_secrets(&self) -> &[IesSealSecret] {
-        &self.ies_seal_secrets
-    }
-
     /// Returns a reference to the internal [AdviceInputs].
     pub fn advice_inputs(&self) -> &AdviceInputs {
         &self.advice_inputs
@@ -214,6 +214,11 @@ impl TransactionArgs {
         self.account_code_upgrade.as_ref()
     }
 
+    /// Returns the seed of the IES `seal` requests, if any.
+    pub fn ies_seal_seed(&self) -> Option<&IesSealSeed> {
+        self.ies_seal_seed.as_ref()
+    }
+
     // STATE MUTATORS
     // --------------------------------------------------------------------------------------------
 
@@ -228,14 +233,6 @@ impl TransactionArgs {
     /// Adds a signature the transaction needs for authentication.
     pub fn add_signature(&mut self, signature: BoundSignature) {
         self.signatures.push(signature);
-    }
-
-    /// Adds an ephemeral secret for the next IES `seal` request.
-    ///
-    /// The secrets are used in the order added, one per `seal` request. Supply only secrets an
-    /// earlier execution of the same transaction drew, see [`IesSealSecret`].
-    pub fn add_ies_seal_secret(&mut self, secret: IesSealSecret) {
-        self.ies_seal_secrets.push(secret);
     }
 
     /// Adds the recipients of output notes the transaction is expected to create.
@@ -298,9 +295,9 @@ mod tests {
             note_args.clone(),
             Vec::new(),
             Vec::new(),
-            Vec::new(),
             advice_inputs.clone(),
             Word::new([Felt::from(5_u32); 4]),
+            None,
             None,
         );
 

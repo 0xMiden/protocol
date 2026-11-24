@@ -4,8 +4,8 @@
 #! the notes that carry it.
 #!
 #! The attachment encrypts the note's details, from which the issuer recomputes the note's ID and
-#! nullifier, to the issuer's public key with `miden::protocol::ies::seal`. The plaintext of a note
-#! with n assets is `3 + 2n` words, with the assets in note order:
+#! nullifier, to the issuer's public key with `miden::protocol::ies::ecgfp5_eidos::seal`. The
+#! plaintext of a note with n assets is `3 + 2n` words, with the assets in note order:
 #!
 #! [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSET_ID_0, ASSET_VALUE_0, ...,
 #!  ASSET_ID_{n-1}, ASSET_VALUE_{n-1}]
@@ -22,7 +22,7 @@ use miden::core::crypto::ecdh::ecgfp5
 use miden::core::crypto::hashes::eidos
 use miden::core::word
 use miden::protocol::active_account
-use miden::protocol::ies
+use miden::protocol::ies::ecgfp5_eidos
 use miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::expiration
@@ -88,7 +88,8 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING = "active account has no issuer pu
 #! also applies the default expiration delta. Faucets call it from their `on_before_note_sealed`
 #! callback.
 #!
-#! The note's recipient preimage must be in the advice map.
+#! The note's recipient preimage must be in the advice map, and the transaction arguments must
+#! provide an IES seal seed.
 #!
 #! Inputs:
 #!   Operand stack: [note_idx]
@@ -116,6 +117,7 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING = "active account has no issuer pu
 #!   - the advice map has no preimage for its recipient, or the preimage does not hash to it.
 #!   - the active account has no issuer key slots or no issuer public key in them.
 #!   - the issuer public key is not a valid EcGFp5 public key.
+#!   - the transaction arguments provide no IES seal seed.
 #!
 #! Invocation: exec
 pub proc build_attachment(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmentCommitment)
@@ -155,6 +157,7 @@ end
 #! Panics if:
 #! - the advice map has no preimage for the note's recipient, or it does not hash to the recipient.
 #! - the active account has no issuer public key, or the key is not a valid EcGFp5 public key.
+#! - the transaction arguments provide no IES seal seed.
 #!
 #! Invocation: exec
 @locals(432)
@@ -197,7 +200,7 @@ proc encrypt_note_details(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmen
     exec.get_issuer_public_key
     # => [public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr, plaintext_len]
 
-    exec.ies::seal
+    exec.ecgfp5_eidos::seal
     # => [plaintext_len]
 
     # the attachment is the envelope

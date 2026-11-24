@@ -1,12 +1,6 @@
 use miden_protocol::Word;
 use miden_protocol::account::auth::{BoundSignature, Signature};
-use miden_protocol::transaction::{
-    AccountInputs,
-    IesSealSecret,
-    InputNote,
-    InputNotes,
-    TransactionInputs,
-};
+use miden_protocol::transaction::{AccountInputs, InputNote, InputNotes, TransactionInputs};
 use miden_protocol::utils::serde::Serializable;
 
 use crate::proto;
@@ -74,12 +68,6 @@ impl From<&AccountInputs> for proto::transaction::AccountInputs {
     }
 }
 
-impl From<&IesSealSecret> for proto::transaction::IesSealSecret {
-    fn from(value: &IesSealSecret) -> Self {
-        Self { encoded: value.to_bytes() }
-    }
-}
-
 impl From<&TransactionInputs> for proto::transaction::TransactionInputsV1 {
     fn from(value: &TransactionInputs) -> Self {
         Self {
@@ -93,7 +81,6 @@ impl From<&TransactionInputs> for proto::transaction::TransactionInputsV1 {
             note_scripts: value.note_scripts().values().map(Into::into).collect(),
             signatures: value.signatures().iter().map(Into::into).collect(),
             code_tree: Some(value.code_tree().partial_smt().clone().into()),
-            ies_seal_secrets: value.ies_seal_secrets().iter().map(Into::into).collect(),
         }
     }
 }

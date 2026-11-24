@@ -5,6 +5,7 @@ use super::{Felt, Hasher, Word};
 mod effects;
 mod executed_tx;
 mod fee;
+mod ies_seal_seed;
 mod inputs;
 mod kernel;
 mod logs;
@@ -23,14 +24,8 @@ mod verifier;
 pub use effects::TransactionEffects;
 pub use executed_tx::{ExecutedTransaction, TransactionMeasurements};
 pub use fee::{TransactionFee, TransactionFeeError};
-pub use inputs::{
-    AccountInputs,
-    IesSealSecret,
-    InputNote,
-    InputNotes,
-    ToInputNoteCommitments,
-    TransactionInputs,
-};
+pub use ies_seal_seed::IesSealSeed;
+pub use inputs::{AccountInputs, InputNote, InputNotes, ToInputNoteCommitments, TransactionInputs};
 pub use kernel::{TransactionAdviceInputs, TransactionEventId, TransactionKernel, memory};
 pub use logs::{
     LogTopic,

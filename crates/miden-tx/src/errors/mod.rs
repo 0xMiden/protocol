@@ -23,7 +23,7 @@ use miden_protocol::errors::{
     TransactionOutputError,
 };
 use miden_protocol::note::{NoteId, PartialNoteMetadata};
-use miden_protocol::transaction::{IesSealSecret, TransactionEventId, TransactionSummary};
+use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
 use miden_protocol::{Felt, Word};
 use miden_prover::ProverError;
 use thiserror::Error;
@@ -151,19 +151,9 @@ pub enum TransactionExecutorError {
     #[error("failed to execute transaction kernel program:\n{}", PrintDiagnostic::new(.0))]
     TransactionProgramExecutionFailed(ExecutionError),
     /// This variant can be matched on to get the summary of a transaction for signing purposes.
-    ///
-    /// `ies_seal_secrets` are the ephemeral secrets the host drew for IES `seal` requests, which
-    /// reproduce the summary. Pass these secrets to the signed execution after any secrets its
-    /// arguments already supply.
-    // The summary is boxed to avoid triggering clippy::result_large_err for functions that return
-    // this type.
-    #[error("transaction is unauthorized with summary {tx_summary:?}")]
-    Unauthorized {
-        tx_summary: Box<TransactionSummary>,
-        ies_seal_secrets: Vec<IesSealSecret>,
-    },
-    #[error("transaction arguments supply {0} IES seal secrets that no seal request used")]
-    UnusedIesSealSecrets(usize),
+    // It is boxed to avoid triggering clippy::result_large_err for functions that return this type.
+    #[error("transaction is unauthorized with summary {0:?}")]
+    Unauthorized(Box<TransactionSummary>),
     #[error(
         "failed to respond to signature requested since no authenticator is assigned to the host"
     )]
@@ -176,10 +166,9 @@ pub enum TransactionExecutorError {
 
 #[cfg(any(test, feature = "testing"))]
 impl TransactionExecutorError {
-    /// Returns the summary of an unauthorized execution, discarding its IES seal secrets.
     pub fn unwrap_unauthorized_err(self) -> Box<TransactionSummary> {
         match self {
-            TransactionExecutorError::Unauthorized { tx_summary, .. } => tx_summary,
+            TransactionExecutorError::Unauthorized(transaction_summary) => transaction_summary,
             other => panic!("expected TransactionExecutorError::Unauthorized, got {other}"),
         }
     }
@@ -194,8 +183,6 @@ pub enum TransactionProverError {
     TransactionOutputConstructionFailed(#[source] TransactionOutputError),
     #[error("stack outputs of the transaction execution do not match the transaction outputs")]
     StackOutputsMismatch,
-    #[error("transaction inputs supply {0} IES seal secrets that no seal request used")]
-    UnusedIesSealSecrets(usize),
     #[error("failed to shrink output note")]
     OutputNoteShrinkFailed(#[source] OutputNoteError),
     #[error("failed to build proven transaction")]
@@ -314,33 +301,14 @@ pub enum TransactionKernelError {
         max = Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS
     )]
     InvalidEncodedSignatureLength { signature_key: Word, actual: usize },
+    #[error("IES seal request has an invalid EcGFp5 public key")]
+    IesPublicKeyInvalid(#[source] InvalidPublicKey),
     #[error(
-        "advice map does not provide the EcGFp5 public key with commitment {0} for an IES seal request"
+        "key agreement request of the core library's IES seal was not made through miden::protocol::ies::ecgfp5_eidos::seal"
     )]
-    IesPublicKeyMissing(Word),
-    #[error(
-        "advice map provides an invalid EcGFp5 public key for commitment {commitment} of an IES seal request"
-    )]
-    IesPublicKeyInvalid {
-        commitment: Word,
-        source: InvalidPublicKey,
-    },
-    #[error(
-        "advice map entry for EcGFp5 public key commitment {commitment} has {len} elements instead of five"
-    )]
-    IesPublicKeyInvalidLength { commitment: Word, len: usize },
-    #[error(
-        "advice map provides an EcGFp5 public key with commitment {actual} for commitment {expected} of an IES seal request"
-    )]
-    IesPublicKeyCommitmentMismatch { expected: Word, actual: Word },
-    #[error("no ephemeral secret is supplied for an IES seal request")]
-    IesSealSecretMissing,
-    #[error(
-        "the next supplied IES seal secret is for the EcGFp5 public key with commitment {supplied}, but the seal request is for commitment {requested}"
-    )]
-    IesSealSecretRecipientMismatch { supplied: Word, requested: Word },
-    #[error("transaction arguments supply {0} IES seal secrets that no seal request used")]
-    UnusedIesSealSecrets(usize),
+    IesSealWithoutProtocolProcedure,
+    #[error("transaction arguments provide no IES seal seed for an IES seal request")]
+    IesSealSeedMissing,
     #[error("recipient data `{0:?}` in the advice provider is not well formed")]
     MalformedRecipientData(Vec<Felt>),
     #[error("cannot add asset to note with index {0}, note does not exist in the advice provider")]
@@ -395,13 +363,9 @@ pub enum TransactionKernelError {
         source: DataStoreError,
     },
     /// This variant signals that a signature over the contained commitments is required, but
-    /// missing. It also carries the ephemeral secrets the host drew for IES `seal` requests. Pass
-    /// these secrets to the signed execution after any secrets its arguments already supply.
+    /// missing.
     #[error("transaction requires a signature")]
-    Unauthorized {
-        tx_summary: Box<TransactionSummary>,
-        ies_seal_secrets: Vec<IesSealSecret>,
-    },
+    Unauthorized(Box<TransactionSummary>),
     /// A generic error returned when the transaction kernel did not behave as expected.
     #[error("{message}")]
     Other {
