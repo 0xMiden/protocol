@@ -68,7 +68,7 @@ pub enum TransactionEventId {
 
     AuthRequest = AUTH_REQUEST_ID,
 
-    IesSeal = IES_SEAL_ID,
+    IesEcgfp5EidosSeal = IES_ECGFP5_EIDOS_SEAL_ID,
 
     PrologueStart = PROLOGUE_START_ID,
     PrologueEnd = PROLOGUE_END_ID,
@@ -102,7 +102,10 @@ impl TransactionEventId {
     pub fn is_privileged(&self) -> bool {
         let is_unprivileged = matches!(
             self,
-            Self::AuthRequest | Self::InputNoteIndexLookup | Self::IesSeal | Self::Unauthorized
+            Self::AuthRequest
+                | Self::InputNoteIndexLookup
+                | Self::IesEcgfp5EidosSeal
+                | Self::Unauthorized
         );
         !is_unprivileged
     }
@@ -151,7 +154,7 @@ impl TransactionEventId {
             Self::TxLogAdded => &TX_LOG_ADDED_NAME,
             Self::TxBeforeBlockWitnessLoad => &TX_BEFORE_BLOCK_WITNESS_LOAD_NAME,
             Self::AuthRequest => &AUTH_REQUEST_NAME,
-            Self::IesSeal => &IES_SEAL_NAME,
+            Self::IesEcgfp5EidosSeal => &IES_ECGFP5_EIDOS_SEAL_NAME,
             Self::PrologueStart => &PROLOGUE_START_NAME,
             Self::PrologueEnd => &PROLOGUE_END_NAME,
             Self::NotesProcessingStart => &NOTES_PROCESSING_START_NAME,
@@ -258,7 +261,7 @@ impl TryFrom<EventId> for TransactionEventId {
 
             AUTH_REQUEST_ID => Ok(TransactionEventId::AuthRequest),
 
-            IES_SEAL_ID => Ok(TransactionEventId::IesSeal),
+            IES_ECGFP5_EIDOS_SEAL_ID => Ok(TransactionEventId::IesEcgfp5EidosSeal),
 
             PROLOGUE_START_ID => Ok(TransactionEventId::PrologueStart),
             PROLOGUE_END_ID => Ok(TransactionEventId::PrologueEnd),

@@ -204,7 +204,7 @@ async fn signed_execution_reproduces_unauthorized_summary() -> anyhow::Result<()
 
 /// Tests that the host rejects an IES seal request it cannot answer: one with a public key that is
 /// not a valid EcGFp5 point, one without an IES seal seed, and a call to the core library's `seal`
-/// that does not go through `miden::protocol::ies::seal`.
+/// that does not go through `miden::protocol::ies::ecgfp5_eidos::seal`.
 #[rstest]
 #[case::invalid_public_key(
     // The all-zero encoding is the identity, which is not a valid public key.
@@ -280,7 +280,7 @@ async fn execute_code_handles_seal_request() -> anyhow::Result<()> {
             push.{ENVELOPE_PTR} push.{context_len} push.{context_ptr} push.{plaintext_len}
             push.{SCRATCH_PTR}
             {public_key}
-            exec.::miden::protocol::ies::seal
+            exec.::miden::protocol::ies::ecgfp5_eidos::seal
         end
         "#,
         context_len = CONTEXT.len(),
@@ -500,10 +500,10 @@ fn store_envelope_from_stack() -> String {
 }
 
 /// Returns MASM that encrypts the plaintext under the context to `public_key` with
-/// `miden::protocol::ies::seal`, writing the envelope with index `envelope_idx`.
+/// `miden::protocol::ies::ecgfp5_eidos::seal`, writing the envelope with index `envelope_idx`.
 fn seal_to_public_key(public_key: &[Felt; 5], envelope_idx: usize) -> String {
     format!(
-        "{}\n{}\nexec.::miden::protocol::ies::seal",
+        "{}\n{}\nexec.::miden::protocol::ies::ecgfp5_eidos::seal",
         push_seal_arguments(envelope_idx),
         push_reversed(public_key)
     )

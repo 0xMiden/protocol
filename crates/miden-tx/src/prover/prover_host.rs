@@ -241,7 +241,9 @@ where
                 )))
             },
 
-            TransactionEvent::IesSeal(request) => Ok(self.base_host.on_ies_seal_requested(request)),
+            TransactionEvent::IesEcgfp5EidosSeal(request) => {
+                Ok(self.base_host.on_ies_seal_requested(request))
+            },
 
             TransactionEvent::LinkMapSet { advice_mutation } => Ok(advice_mutation),
             TransactionEvent::LinkMapGet { advice_mutation } => Ok(advice_mutation),

@@ -404,8 +404,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         vec![AdviceMutation::extend_advice_stack_with(signature)]
     }
 
-    /// Records the IES `seal` request of `miden::protocol::ies::seal`, whose key agreement the core
-    /// library's `seal` requests next.
+    /// Records the IES `seal` request of `miden::protocol::ies::ecgfp5_eidos::seal`, whose key
+    /// agreement the core library's `seal` requests next.
     pub(crate) fn on_ies_seal_requested(&mut self, request: IesSealRequest) -> Vec<AdviceMutation> {
         self.ies_seal_request = Some(request);
         Vec::new()
@@ -418,7 +418,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     ///
     /// Returns an error if:
     /// - the key agreement request does not complete an IES `seal` request of
-    ///   `miden::protocol::ies::seal`.
+    ///   `miden::protocol::ies::ecgfp5_eidos::seal`.
     /// - the transaction arguments provide no IES seal seed.
     fn on_ies_seal_agreement_requested(
         &mut self,

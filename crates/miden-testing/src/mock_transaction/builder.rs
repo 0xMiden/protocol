@@ -311,7 +311,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
     /// Sets the IES seal seed of the transaction arguments, or removes it with `None`.
     ///
     /// Defaults to a fixed seed, so that transactions that encrypt with
-    /// `miden::protocol::ies::seal` execute without further setup.
+    /// `miden::protocol::ies::ecgfp5_eidos::seal` execute without further setup.
     pub fn ies_seal_seed(mut self, ies_seal_seed: Option<IesSealSeed>) -> Self {
         self.ies_seal_seed = ies_seal_seed;
         self

@@ -1,13 +1,13 @@
 use miden::core::crypto::ecdh::ecgfp5
 use miden::core::crypto::hashes::eidos
-use miden::core::crypto::ies::ecgfp5_eidos
+use miden::core::crypto::ies::ecgfp5_eidos as core_ecgfp5_eidos
 
 # CONSTANTS
 # =================================================================================================
 
 # Event the host answers by recording the request, so that it can derive the ephemeral secret of the
 # encryption when the core library's `seal` requests key agreement.
-const IES_SEAL_EVENT = event("miden::protocol::ies::seal")
+const IES_ECGFP5_EIDOS_SEAL_EVENT = event("miden::protocol::ies::ecgfp5_eidos::seal")
 
 # Eidos domain tag of EcGFp5 public-key commitments, shared with `ecgfp5::PublicKey::to_commitment`
 # in Rust.
@@ -25,7 +25,9 @@ const PUBLIC_KEY_TAIL_LOC = PUBLIC_KEY_LOC + 4
 
 #! Encrypts a plaintext to an EcGFp5 public key with the EcGFp5/Eidos integrated encryption scheme.
 #!
-#! Writes the envelope `[R(5), tag(2), plaintext_len, ciphertext(2*plaintext_len)]` to dst_ptr.
+#! Writes the envelope `[ephemeral_public_key(5), auth_tag(2), plaintext_len,
+#! ciphertext(2*plaintext_len)]` to dst_ptr, where ephemeral_public_key is the sender's ephemeral
+#! public key `R = rG` for the ephemeral secret `r`, and auth_tag is the AEAD authentication tag.
 #! The context is authenticated but not encrypted. The recipient decrypts the envelope with its
 #! secret key and the same context, e.g. with Rust's `miden_crypto::ies::ecgfp5_eidos::open`.
 #!
@@ -59,7 +61,7 @@ pub proc seal(
     context_len: u32,
     destination: ptr<felt>,
 )
-    emit.IES_SEAL_EVENT
+    emit.IES_ECGFP5_EIDOS_SEAL_EVENT
     # => [public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
 
     loc_storew_le.PUBLIC_KEY_LOC dropw loc_store.PUBLIC_KEY_TAIL_LOC
@@ -72,6 +74,6 @@ pub proc seal(
     exec.eidos::hash_elements_in_domain
     # => [PUBLIC_KEY_COMMITMENT, src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
 
-    exec.ecgfp5_eidos::seal
+    exec.core_ecgfp5_eidos::seal
     # => []
 end

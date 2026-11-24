@@ -71,7 +71,7 @@ impl<'store> MockHost<'store> {
                 &TransactionEventId::AccountPushPatchCommitmentBodyBlockCount,
                 &TransactionEventId::AccountPushDeltaCommitmentBodyBlockCount,
                 &TransactionEventId::InputNoteIndexLookup,
-                &TransactionEventId::IesSeal,
+                &TransactionEventId::IesEcgfp5EidosSeal,
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,
             ]

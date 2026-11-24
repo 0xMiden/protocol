@@ -224,10 +224,10 @@ Asset procedures provide utilities for creating fungible and non-fungible assets
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `create_fungible_asset`     | Builds a fungible asset for the specified fungible faucet and amount.<br/><br/>**Inputs:** `[faucet_id_suffix, faucet_id_prefix, amount]`<br/>**Outputs:** `[ASSET_ID, ASSET_VALUE]` | Any     |
 
-## Encryption Procedures (`miden::protocol::ies`)
+## Encryption Procedures (`miden::protocol::ies::ecgfp5_eidos`)
 
 Encryption procedures encrypt data to an EcGFp5 public key with the EcGFp5/Eidos integrated encryption scheme. The host derives the ephemeral secret of each encryption from the IES seal seed in the transaction arguments, so that re-execution and proving with the same arguments reproduce the envelope. Anyone who knows the seed can check guesses of the encrypted plaintexts.
 
 | Procedure | Description | Context |
 | --------- | ----------- | ------- |
-| `seal`    | Encrypts the plaintext to the public key and writes the envelope `[R(5), tag(2), plaintext_len, ciphertext(2*plaintext_len)]` to the destination. The context is authenticated but not encrypted.<br/><br/>**Inputs:** `[public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]`<br/>**Outputs:** `[]` | Any     |
+| `seal`    | Encrypts the plaintext to the public key and writes the envelope `[ephemeral_public_key(5), auth_tag(2), plaintext_len, ciphertext(2*plaintext_len)]` to the destination, where `ephemeral_public_key` is the sender's ephemeral public key `R = rG` and `auth_tag` is the AEAD authentication tag. The context is authenticated but not encrypted.<br/><br/>**Inputs:** `[public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]`<br/>**Outputs:** `[]` | Any     |

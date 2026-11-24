@@ -182,7 +182,7 @@ pub(crate) enum TransactionEvent {
         tx_summary: TransactionSummary,
     },
 
-    IesSeal(IesSealRequest),
+    IesEcgfp5EidosSeal(IesSealRequest),
 
     LinkMapSet {
         advice_mutation: Vec<AdviceMutation>,
@@ -602,8 +602,8 @@ impl TransactionEvent {
                 Some(TransactionEvent::Unauthorized { tx_summary })
             },
 
-            TransactionEventId::IesSeal => {
-                Some(TransactionEvent::IesSeal(IesSealRequest::extract(process)?))
+            TransactionEventId::IesEcgfp5EidosSeal => {
+                Some(TransactionEvent::IesEcgfp5EidosSeal(IesSealRequest::extract(process)?))
             },
 
             TransactionEventId::LinkMapSet => Some(TransactionEvent::LinkMapSet {
@@ -739,8 +739,8 @@ pub(crate) enum RecipientData {
 // IES SEAL REQUEST
 // ================================================================================================
 
-/// An IES `seal` request of `miden::protocol::ies::seal`, which the key agreement request of the
-/// core library's `seal` it calls completes.
+/// An IES `seal` request of `miden::protocol::ies::ecgfp5_eidos::seal`, which the key agreement
+/// request of the core library's `seal` it calls completes.
 #[derive(Debug)]
 pub(crate) struct IesSealRequest {
     /// The context in which the request was made.
@@ -754,7 +754,7 @@ pub(crate) struct IesSealRequest {
 }
 
 impl IesSealRequest {
-    /// Extracts the request from the stack of the `miden::protocol::ies::seal` event.
+    /// Extracts the request from the stack of the `miden::protocol::ies::ecgfp5_eidos::seal` event.
     fn extract(process: &ProcessorState) -> Result<Self, TransactionKernelError> {
         // Expected stack state: [event, public_key(5), src_ptr, plaintext_len, context_ptr,
         // context_len, dst_ptr]
@@ -780,7 +780,8 @@ impl IesSealRequest {
     ///
     /// The core `seal` checks its memory ranges before it requests key agreement. So a request in
     /// another context, for another recipient or with ranges the core `seal` rejects was not made
-    /// by `miden::protocol::ies::seal` for this key agreement request, and `None` is returned.
+    /// by `miden::protocol::ies::ecgfp5_eidos::seal` for this key agreement request, and `None` is
+    /// returned.
     pub(crate) fn read_inputs(&self, process: &ProcessorState) -> Option<(Vec<Felt>, Vec<Felt>)> {
         // Expected stack state: [event, PUBLIC_KEY_COMMITMENT]
         if process.ctx() != self.ctx || process.get_stack_word(1) != self.recipient.to_commitment()
