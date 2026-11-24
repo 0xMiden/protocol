@@ -1,10 +1,6 @@
 //! Tests for the encrypted assets send policy ([`SendPolicy::with_encrypted_assets`]) and the
 //! [`EncryptedAssetsIssuerKey`] component that installs the issuer key on the faucet.
 
-extern crate alloc;
-
-use alloc::collections::BTreeSet;
-
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::AuthScheme;
@@ -16,17 +12,14 @@ use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteType, PartialNote};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_FEE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::{ExecutedTransaction, OutputNote, RawOutputNote};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::{AccessControl, Authority, Ownable2Step, Pausable};
-use miden_standards::account::auth::{AuthNetworkAccount, SponsorshipPolicy};
+use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
-use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
     BlocklistStorage,
     BurnPolicy,
@@ -45,7 +38,6 @@ use miden_standards::note::{
     EncryptedAssetsAttachment,
     EncryptedAssetsAttachmentError,
     EncryptedAssetsIssuerKey,
-    MintNote,
     P2idNote,
 };
 use miden_standards::testing::note::NoteBuilder;
@@ -119,40 +111,6 @@ fn add_faucet(
         .with_components(token_policy_manager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
-}
-
-/// Adds an existing network fungible faucet with [`SendPolicy::with_encrypted_assets`] active,
-/// composed like the faucets of `create_network_fungible_faucet`.
-fn add_network_faucet(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
-    // the network account prices every note it consumes, so schedule a zero fee for each
-    let allowed_script_roots = BTreeSet::from([MintNote::script_root()]);
-    let fee_policy = allowed_script_roots
-        .iter()
-        .copied()
-        .chain(AuthNetworkAccount::default_allowed_note_scripts())
-        .fold(BasicConstantFeePolicy::new(), |policy, root| {
-            policy.with_fee(root, AssetAmount::ZERO)
-        });
-    let fee_policy_manager = FeePolicyManager::builder()
-        .active_fee_policy(fee_policy.into())
-        .fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?)
-        .build();
-
-    let account_builder = AccountBuilder::new([49; 32])
-        .account_type(AccountType::Public)
-        .with_component(fungible_faucet()?)
-        .with_components(AccessControl::Ownable2Step { owner: ACCOUNT_ID_SENDER.try_into()? })
-        .with_components(policy_manager(SendPolicy::with_encrypted_assets(issuer_key())))
-        .with_component(Pausable::unpaused());
-
-    let auth = Auth::NetworkAccount {
-        allowed_script_roots,
-        allowed_tx_script_roots: BTreeSet::new(),
-        fee_policy_manager,
-        sponsorship_policy: SponsorshipPolicy::default(),
-    };
-
-    builder.add_account_from_builder(auth, account_builder, AccountState::Exists)
 }
 
 /// Returns a P2ID note of the provided type, created by `sender`, that holds [`NOTE_AMOUNT`] units
@@ -647,10 +605,15 @@ async fn faucet_mints_private_note_with_attachment() -> anyhow::Result<()> {
 async fn network_faucet_mints_only_public_output_notes(
     #[case] output_note_type: NoteType,
 ) -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let faucet = add_network_faucet(&mut builder)?;
-
     let owner = AccountId::try_from(ACCOUNT_ID_SENDER)?;
+    let mut builder = MockChain::builder();
+    let faucet = builder.add_existing_network_faucet_with_policies(
+        owner,
+        fungible_faucet()?,
+        [],
+        policy_manager(SendPolicy::with_encrypted_assets(issuer_key())),
+    )?;
+
     let first_mint_note =
         build_mint_note_for(owner, &p2id_note(faucet.id(), faucet.id(), NoteType::Public, 2)?, 5)?;
     let output_note = p2id_note(faucet.id(), faucet.id(), output_note_type, 1)?;
