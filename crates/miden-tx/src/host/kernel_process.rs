@@ -95,8 +95,10 @@ pub(super) trait TransactionKernelProcess {
 
 impl<'a> TransactionKernelProcess for ProcessorState<'a> {
     fn get_active_account_ptr(&self) -> Result<u32, TransactionKernelError> {
+        // The account stack lives in the kernel context, while the events reading it may be
+        // emitted from an account or a note context, so read from the root context explicitly.
         let account_stack_top_ptr =
-            self.get_mem_value(self.ctx(), ACCOUNT_STACK_TOP_PTR).ok_or_else(|| {
+            self.get_mem_value(ContextId::root(), ACCOUNT_STACK_TOP_PTR).ok_or_else(|| {
                 TransactionKernelError::other("account stack top ptr should be initialized")
             })?;
         let account_stack_top_ptr = u32::try_from(account_stack_top_ptr.as_canonical_u64())
@@ -105,7 +107,7 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
             })?;
 
         let active_account_ptr = self
-            .get_mem_value(self.ctx(), account_stack_top_ptr)
+            .get_mem_value(ContextId::root(), account_stack_top_ptr)
             .ok_or_else(|| TransactionKernelError::other("account id should be initialized"))?;
         u32::try_from(active_account_ptr.as_canonical_u64())
             .map_err(|_| TransactionKernelError::other("active account ptr should fit into a u32"))
@@ -133,7 +135,7 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
     fn get_active_account_code_commitment(&self) -> Result<Word, TransactionKernelError> {
         let active_account_ptr = self.get_active_account_ptr()?;
         let code_commitment = self
-            .get_mem_word(self.ctx(), active_account_ptr + ACCT_CODE_COMMITMENT_OFFSET)
+            .get_mem_word(ContextId::root(), active_account_ptr + ACCT_CODE_COMMITMENT_OFFSET)
             .map_err(|err| {
                 TransactionKernelError::other_with_source(
                     "failed to read code commitment from memory",
@@ -221,8 +223,8 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
     /// `u32::MAX`).
     fn get_active_note_id(&self) -> Result<Option<NoteId>, TransactionKernelError> {
         // get the note address in `Felt` or return `None` if the address hasn't been accessed
-        // previously.
-        let note_address_felt = match self.get_mem_value(self.ctx(), ACTIVE_INPUT_NOTE_PTR) {
+        // previously. The note data lives in the kernel context, so read from the root context.
+        let note_address_felt = match self.get_mem_value(ContextId::root(), ACTIVE_INPUT_NOTE_PTR) {
             Some(addr) => addr,
             None => return Ok(None),
         };
@@ -237,7 +239,7 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
             Ok(None)
         } else {
             Ok(self
-                .get_mem_word(self.ctx(), note_address + INPUT_NOTE_ID_OFFSET)
+                .get_mem_word(ContextId::root(), note_address + INPUT_NOTE_ID_OFFSET)
                 .map_err(|err| {
                     TransactionKernelError::other_with_source(
                         "failed to read note ID",
@@ -410,7 +412,7 @@ fn read_account_id(
     account_ptr: u32,
 ) -> Result<AccountId, TransactionKernelError> {
     let account_metadata = process
-        .get_mem_word(process.ctx(), account_ptr)
+        .get_mem_word(ContextId::root(), account_ptr)
         .map_err(|_| TransactionKernelError::other("account ptr should be word-aligned"))?
         .ok_or_else(|| TransactionKernelError::other("account id should be initialized"))?;
 

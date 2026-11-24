@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use core::fmt;
 
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
@@ -17,7 +18,6 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::block::account_tree::AccountIdKey;
-use miden_protocol::crypto::ecdh::ecgfp5::PublicKey;
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
@@ -738,32 +738,45 @@ pub(crate) enum RecipientData {
 // ================================================================================================
 
 /// An IES `seal` request of `miden::protocol::ies::ecgfp5_eidos::seal`.
-#[derive(Debug)]
 pub(crate) struct IesSealRequest {
     /// The context in which the request was made.
     pub(super) ctx: ContextId,
-    /// The recipient public key.
-    pub(super) recipient: PublicKey,
+    /// The encoding of the recipient public key.
+    pub(super) public_key: [Felt; 5],
     /// The digest of the plaintext.
     pub(super) plaintext_digest: Word,
     /// The digest of the context.
     pub(super) context_digest: Word,
+    /// The account that is active when the request is made.
+    pub(super) requester_account_id: AccountId,
+    /// The input note executing when the request is made, if any.
+    pub(super) requester_note_id: Option<NoteId>,
 }
 
 impl IesSealRequest {
-    /// Extracts the request from the stack of the `miden::protocol::ies::ecgfp5_eidos::seal` event.
+    /// Extracts the request from the stack of the `miden::protocol::ies::ecgfp5_eidos::seal` event,
+    /// and its requester from the kernel memory.
     fn extract(process: &ProcessorState) -> Result<Self, TransactionKernelError> {
         // Expected stack state: [event, PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5)]
-        let public_key = core::array::from_fn(|idx| process.get_stack_item(9 + idx));
-        let recipient = PublicKey::from_elements(public_key)
-            .map_err(TransactionKernelError::IesPublicKeyInvalid)?;
-
         Ok(Self {
             ctx: process.ctx(),
-            recipient,
+            public_key: core::array::from_fn(|idx| process.get_stack_item(9 + idx)),
             plaintext_digest: process.get_stack_word(1),
             context_digest: process.get_stack_word(5),
+            requester_account_id: process.get_active_account_id()?,
+            requester_note_id: process.get_active_note_id()?,
         })
+    }
+}
+
+/// Leaves out the digests, which let anyone who sees them check guesses of a plaintext.
+impl fmt::Debug for IesSealRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IesSealRequest")
+            .field("ctx", &self.ctx)
+            .field("requester_account_id", &self.requester_account_id)
+            .field("requester_note_id", &self.requester_note_id)
+            .finish_non_exhaustive()
     }
 }
 
