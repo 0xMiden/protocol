@@ -138,7 +138,8 @@ async fn issuer_recomputes_note_id_and_nullifier_from_attachment(
         output_note.header(),
         output_note.attachments(),
         &issuer_secret_key(),
-    )?;
+    )
+    .context("the encrypted asset attachment should describe the note")?;
     assert_eq!(plaintext.assets(), note.assets());
     assert_eq!(plaintext.nullifier(output_note.metadata()), nullifier);
 
@@ -243,7 +244,8 @@ async fn issuer_keeps_only_the_attachment_that_describes_the_note() -> anyhow::R
         output_note.header(),
         output_note.attachments(),
         &issuer_secret_key(),
-    )?;
+    )
+    .context("the encrypted asset attachment should describe the note")?;
     assert_eq!(plaintext.serial_num(), note.recipient().serial_num());
     assert_eq!(
         EncryptedAssetsAttachment::decrypt(&decoy, &issuer_secret_key())?,
@@ -260,13 +262,13 @@ async fn issuer_keeps_only_the_attachment_that_describes_the_note() -> anyhow::R
         EncryptedAssetsAttachment::decrypt(attachment, &other_secret_key),
         Err(EncryptedAssetsAttachmentError::DecryptionFailed(_))
     );
-    assert_matches!(
+    assert_eq!(
         EncryptedAssetsAttachment::decrypt_and_verify_note(
             output_note.header(),
             output_note.attachments(),
             &other_secret_key
         ),
-        Err(EncryptedAssetsAttachmentError::NoMatchingAttachment(id)) if id == output_note.id()
+        None
     );
 
     // flip the lowest bit of the first ciphertext limb, which keeps it a valid u32 limb

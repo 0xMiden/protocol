@@ -99,20 +99,17 @@ impl EncryptedAssetsAttachment {
     /// note with the issuer's secret key, and returns the plaintext from which [`Self::note_id`]
     /// recomputes the ID of the provided note header.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if no attachment of the scheme decrypts to the details of the note.
+    /// Returns `None` if no attachment of the scheme decrypts to the details of the note.
     pub fn decrypt_and_verify_note(
         header: &NoteHeader,
         attachments: &NoteAttachments,
         issuer_secret_key: &SecretKey,
-    ) -> Result<Self, EncryptedAssetsAttachmentError> {
+    ) -> Option<Self> {
         attachments
             .iter()
             .filter(|attachment| attachment.attachment_scheme() == Self::ATTACHMENT_SCHEME)
             .filter_map(|attachment| Self::decrypt(attachment, issuer_secret_key).ok())
             .find(|plaintext| plaintext.note_id(header.metadata()) == header.id())
-            .ok_or(EncryptedAssetsAttachmentError::NoMatchingAttachment(header.id()))
     }
 
     /// Decrypts the provided encrypted asset attachment with the issuer's secret key.
@@ -329,8 +326,6 @@ pub enum EncryptedAssetsAttachmentError {
     InvalidAsset(#[source] AssetError),
     #[error("plaintext holds invalid note assets")]
     InvalidAssets(#[source] NoteError),
-    #[error("no encrypted asset attachment decrypts to the details of note {0}")]
-    NoMatchingAttachment(NoteId),
 }
 
 // TESTS
