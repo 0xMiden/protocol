@@ -3,8 +3,8 @@ use alloc::vec::Vec;
 use miden_protocol::account::AccountCodeUpgrade;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{NoteAttachment, NoteAttachmentScheme, NoteAttachments};
+use miden_protocol::utils::FeltSliceExt;
 use miden_protocol::utils::serde::DeserializationError;
-use miden_protocol::utils::words_from_elements;
 use miden_protocol::{Felt, Word};
 
 use crate::note::StandardNoteAttachment;
@@ -105,7 +105,10 @@ impl AccountCodeUpgradeAttachment {
     ///
     /// Returns an error if a chunk cannot be converted into a note attachment.
     pub fn to_attachments(&self) -> Result<Vec<NoteAttachment>, NoteError> {
-        let words = words_from_elements(&self.code_upgrade.to_elements())
+        let words = self
+            .code_upgrade
+            .to_elements()
+            .to_words()
             .expect("the code upgrade encoding should be padded to whole words");
 
         words

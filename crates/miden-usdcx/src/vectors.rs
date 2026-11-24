@@ -8,7 +8,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use miden_protocol::crypto::utils::Deserializable;
-use miden_protocol::utils::words_from_elements;
+use miden_protocol::utils::FeltSliceExt;
 use miden_protocol::{Felt, Word};
 use miden_standards::interop::eth::EthAmount;
 use serde::Deserialize;
@@ -437,7 +437,8 @@ impl BnVector {
     /// The words under test (accept: golden layout; reject: malformed words).
     pub fn items_words(&self) -> Vec<Word> {
         let felts: Vec<Felt> = self.items.iter().map(|s| felt_from_hex(s)).collect();
-        words_from_elements(&felts)
+        felts
+            .to_words()
             .unwrap_or_else(|| panic!("{}: items are a whole number of words", self.id))
     }
 

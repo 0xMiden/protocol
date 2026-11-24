@@ -32,7 +32,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::transaction::ExecutedTransaction;
-use miden_protocol::utils::words_from_elements;
+use miden_protocol::utils::FeltSliceExt;
 use miden_protocol::{Felt, Word};
 use miden_standards::interop::eth::EthEmbeddedAccountId;
 use miden_standards::note::{
@@ -288,7 +288,8 @@ fn transport_attachment(
     key_source: &AttesterVector,
     plan: &AttachmentPlan,
 ) -> Result<NoteAttachment> {
-    let mut words = words_from_elements(&transport_felts(payload, key_source, plan))
+    let mut words = transport_felts(payload, key_source, plan)
+        .to_words()
         .context("the transport sections should be padded to whole words")?;
     if let Some(truncate) = plan.transport_truncate_words {
         words.truncate(truncate);

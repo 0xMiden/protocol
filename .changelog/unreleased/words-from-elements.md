@@ -1,1 +1,1 @@
-Added `miden_protocol::utils::words_from_elements` to convert field elements into words.
+Added `miden_protocol::utils::FeltSliceExt::to_words` to convert field elements into words.

@@ -24,8 +24,8 @@ use miden_protocol::note::{
     NoteScriptRoot,
     Nullifier,
 };
+use miden_protocol::utils::FeltSliceExt;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::utils::words_from_elements;
 use miden_protocol::{Felt, Word};
 
 use crate::account::account_component_package;
@@ -178,7 +178,7 @@ impl EncryptedAssetsAttachment {
     pub fn try_from_elements(elements: &[Felt]) -> Result<Self, EncryptedAssetsAttachmentError> {
         let invalid_length = EncryptedAssetsAttachmentError::InvalidPlaintextLength(elements.len());
 
-        let Some(words) = words_from_elements(elements) else {
+        let Some(words) = elements.to_words() else {
             return Err(invalid_length);
         };
         let Some((&[serial_num, script_root, storage_commitment], asset_words)) =
