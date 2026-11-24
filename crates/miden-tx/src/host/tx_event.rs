@@ -747,15 +747,10 @@ pub(crate) struct IesSealRequest {
     pub(super) plaintext_digest: Word,
     /// The digest of the context.
     pub(super) context_digest: Word,
-    /// The account that is active when the request is made.
-    pub(super) requester_account_id: AccountId,
-    /// The input note executing when the request is made, if any.
-    pub(super) requester_note_id: Option<NoteId>,
 }
 
 impl IesSealRequest {
-    /// Extracts the request from the stack of the `miden::protocol::ies::ecgfp5_eidos::seal` event,
-    /// and its requester from the kernel memory.
+    /// Extracts the request from the stack of the `miden::protocol::ies::ecgfp5_eidos::seal` event.
     fn extract(process: &ProcessorState) -> Result<Self, TransactionKernelError> {
         // Expected stack state: [event, PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5)]
         Ok(Self {
@@ -763,8 +758,6 @@ impl IesSealRequest {
             public_key: core::array::from_fn(|idx| process.get_stack_item(9 + idx)),
             plaintext_digest: process.get_stack_word(1),
             context_digest: process.get_stack_word(5),
-            requester_account_id: process.get_active_account_id()?,
-            requester_note_id: process.get_active_note_id()?,
         })
     }
 }
@@ -772,11 +765,7 @@ impl IesSealRequest {
 /// Leaves out the digests, which let anyone who sees them check guesses of a plaintext.
 impl fmt::Debug for IesSealRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("IesSealRequest")
-            .field("ctx", &self.ctx)
-            .field("requester_account_id", &self.requester_account_id)
-            .field("requester_note_id", &self.requester_note_id)
-            .finish_non_exhaustive()
+        f.debug_struct("IesSealRequest").field("ctx", &self.ctx).finish_non_exhaustive()
     }
 }
 
