@@ -36,9 +36,8 @@ use crate::vm::{AdviceInputs, AdviceMap};
 /// - Account code upgrade: the [`AccountCodeUpgrade`] of the native account if the transaction
 ///   upgrades its code.
 /// - IES seal seed: the [`IesSealSeed`] from which the host derives the ephemeral secrets of the
-///   IES `seal` requests. Use a fresh seed for every transaction. Re-executing or proving the
-///   transaction with the same arguments reproduces its envelopes. Executing a transaction that
-///   seals without a seed fails.
+///   IES `seal` requests. Use a fresh seed for every transaction and reuse it only to re-execute or
+///   prove that transaction. Executing a transaction that seals without a seed fails.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransactionArgs {
     tx_script: Option<TransactionScript>,

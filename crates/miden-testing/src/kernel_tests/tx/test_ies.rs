@@ -9,28 +9,18 @@ use anyhow::Context;
 use miden_processor::ExecutionError;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountHeader,
-    AccountId,
-};
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountHeader};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
 use miden_protocol::crypto::ies::ecgfp5_eidos::{self, Envelope};
 use miden_protocol::note::NoteType;
-use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-    ACCOUNT_ID_SENDER,
-};
+use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::transaction::{ExecutedTransaction, IesSealSeed, TransactionScript};
 use miden_protocol::{Felt, MAX_IES_SEAL_REQUESTS_PER_TX, WORD_SIZE, Word, ZERO};
 use miden_standards::account::auth::{Approver, ApproverSet, MultisigAuthArgs};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
-use miden_standards::testing::note::NoteBuilder;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use miden_tx::{LocalTransactionProver, TransactionExecutorError, TransactionKernelError};
 use rand_chacha::ChaCha20Rng;
@@ -172,91 +162,6 @@ async fn ies_seal_secret_depends_on_transaction() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
     }
     assert_ne!(ephemeral_keys[0], ephemeral_keys[1]);
-
-    Ok(())
-}
-
-/// Tests that a note that repeats the request of another requester, in a second execution of the
-/// same transaction with the same seed at a later reference block, does not get that request's
-/// ephemeral secret.
-///
-/// The transaction script seals in both executions. The note seals only in the second one, before
-/// the transaction script and with the same plaintext, context and recipient, so its request has
-/// the request index that the request of the transaction script had in the first execution.
-#[tokio::test]
-async fn ies_seal_secret_depends_on_requester() -> anyhow::Result<()> {
-    let recipient_secret = secret_key(1);
-    let sealing_code = sealing_code(&[recipient_secret.public_key()]);
-    let account = mock_account();
-    let mut mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
-    mock_chain.prove_next_block()?;
-    let first_block = mock_chain.latest_block_header().block_num();
-    mock_chain.prove_next_block()?;
-    let second_block = mock_chain.latest_block_header().block_num();
-
-    let probing_note =
-        NoteBuilder::new(AccountId::try_from(ACCOUNT_ID_SENDER)?, ChaCha20Rng::from_seed([5; 32]))
-            .code(format!(
-                r#"
-                use miden::core::sys
-                use miden::protocol::output_note
-                use miden::protocol::tx
-
-                @note_script
-                pub proc main
-                    exec.tx::get_reference_block_number push.{second_block} gte
-                    # => [is_second_execution]
-
-                    if.true
-                        {sealing_code}
-                        # => []
-
-                        padw padw push.{recipient} push.{note_type} push.0
-                        call.::mock::account::create_note
-                        # => [note_idx, pad(15)]
-
-                        dup push.{ENVELOPES_PTR} push.{ENVELOPE_NUM_WORDS}
-                        push.{ENVELOPE_ATTACHMENT_SCHEME}
-                        exec.output_note::add_attachment_from_memory
-                        # => [note_idx, pad(15)]
-
-                        dup exec.output_note::seal
-                        # => [note_idx, pad(15)]
-                    end
-
-                    exec.sys::truncate_stack
-                    # => [pad(16)]
-                end
-                "#,
-                recipient = Word::from([9, 9, 9, 9u32]),
-                note_type = NoteType::Private.as_u8(),
-            ))
-            .dynamically_linked_packages(CodeBuilder::mock_packages())
-            .build()?;
-    let tx_script = compile_tx_script(&sealing_code, 1, None)?;
-    let execute_at = async |reference_block| {
-        mock_chain
-            .build_transaction(account.id())
-            .tx_script(tx_script.clone())
-            .unauthenticated_input_note(probing_note.clone())
-            .reference_block(reference_block)
-            .build()?
-            .execute()
-            .await
-            .context("failed to execute the transaction")
-    };
-
-    // In the first execution, the note of the transaction script is the only output note. In the
-    // second one, the note of the probing note comes first.
-    let first_tx = execute_at(first_block).await?;
-    assert_eq!(first_tx.output_notes().num_notes(), 1);
-    let second_tx = execute_at(second_block).await?;
-    assert_eq!(second_tx.output_notes().num_notes(), 2);
-
-    let probe = envelope(&second_tx, 0)?;
-    let plaintext = ecgfp5_eidos::open(&recipient_secret, &felts(CONTEXT), &probe)?;
-    assert_eq!(plaintext, felts(PLAINTEXT));
-    assert_ne!(probe.ephemeral_key(), envelope(&first_tx, 0)?.ephemeral_key());
 
     Ok(())
 }
@@ -473,15 +378,12 @@ async fn ies_seal_derives_the_secret_from_the_request_event() -> anyhow::Result<
     );
     let executed_tx = execute(None, compile_tx_script(&code, 1, None)?).await?;
 
-    // The mock transaction builder's default seed. The transaction script has no active note.
-    let account_id = executed_tx.account_id();
+    // The mock transaction builder's default seed.
     let expected_key = IesSealSeed::new([0; 32])
         .derive_ephemeral_secret(
-            account_id,
+            executed_tx.account_id(),
             AccountHeader::from(executed_tx.initial_account()).to_commitment(),
             executed_tx.input_notes().commitment(),
-            account_id,
-            None,
             0,
             &recipient,
             context_digest,
