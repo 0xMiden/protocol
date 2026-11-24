@@ -139,6 +139,33 @@ async fn ies_seal_secret_depends_on_plaintext() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Tests that the same request with the same seed in the next transaction of the same account
+/// derives another ephemeral secret.
+#[tokio::test]
+async fn ies_seal_secret_depends_on_transaction() -> anyhow::Result<()> {
+    let account = mock_account();
+    let mut mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
+    mock_chain.prove_next_block()?;
+    let tx_script = compile_tx_script(&sealing_code(&[secret_key(1).public_key()]), 1, None)?;
+
+    let mut ephemeral_keys = Vec::new();
+    for _ in 0..2 {
+        let executed_tx = mock_chain
+            .build_transaction(account.id())
+            .tx_script(tx_script.clone())
+            .build()?
+            .execute()
+            .await?;
+        ephemeral_keys.push(envelope(&executed_tx, 0)?.ephemeral_key());
+
+        mock_chain.add_pending_executed_transaction(&executed_tx)?;
+        mock_chain.prove_next_block()?;
+    }
+    assert_ne!(ephemeral_keys[0], ephemeral_keys[1]);
+
+    Ok(())
+}
+
 /// Tests that the signed execution of a two-pass authentication flow with the same transaction
 /// arguments reproduces the summary the signers approved, and that the summary depends on the IES
 /// seal seed.

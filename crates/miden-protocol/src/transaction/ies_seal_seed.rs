@@ -1,10 +1,12 @@
 use core::fmt;
 
 use miden_crypto::hash::blake::Blake3_256;
+use rand::{CryptoRng, Rng};
 use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::SeedableRng;
 
 use crate::Word;
+use crate::account::AccountId;
 use crate::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
 use crate::utils::serde::{
     ByteReader,
@@ -20,14 +22,16 @@ use crate::utils::serde::{
 /// The secret seed from which the transaction host derives the ephemeral secrets of the IES `seal`
 /// requests of a transaction.
 ///
-/// Each ephemeral secret is derived from the seed, the index of the request in the transaction,
-/// the recipient and the digests of the context and the plaintext (see
-/// [`Self::derive_ephemeral_secret`]). So
-/// executing, re-executing and proving a transaction with the same seed produce the same
-/// envelopes, and a seed reused for another plaintext derives an unrelated secret.
+/// Use a fresh seed for every transaction, e.g. from [`Self::with_rng`], and reuse it only to
+/// re-execute or prove that transaction, which then produces the same envelopes.
 ///
-/// Anyone who knows the seed can check guesses of the plaintexts sealed with it, so draw it from a
-/// cryptographic random number generator and keep it as private as the plaintexts.
+/// Each secret is derived from the seed, the transaction, the index of the request and its
+/// recipient, context and plaintext (see [`Self::derive_ephemeral_secret`]). This guards against
+/// an accidentally reused seed: another transaction or another plaintext gets an unrelated secret,
+/// and running the same transaction again gives the same envelope, which reveals nothing new.
+///
+/// Anyone who knows the seed can check guesses of the plaintexts sealed with it, so keep it as
+/// private as the plaintexts.
 #[derive(Clone, PartialEq, Eq)]
 pub struct IesSealSeed([u8; 32]);
 
@@ -40,14 +44,28 @@ impl IesSealSeed {
         Self(seed)
     }
 
+    /// Returns a new [`IesSealSeed`] drawn from the provided cryptographic random number generator.
+    pub fn with_rng<R: Rng + CryptoRng>(rng: &mut R) -> Self {
+        let mut seed = [0; 32];
+        rng.fill_bytes(&mut seed);
+        Self(seed)
+    }
+
     /// Returns the ephemeral secret for the IES `seal` request with index `request_idx` in the
-    /// transaction, which encrypts the plaintext with `plaintext_digest` under the context with
+    /// transaction of the native account `account_id` that starts from the state with
+    /// `initial_account_commitment` and consumes the notes with `input_notes_commitment`. The
+    /// request encrypts the plaintext with `plaintext_digest` under the context with
     /// `context_digest` to `recipient`.
     ///
-    /// The secret is drawn from a ChaCha20 generator seeded with the BLAKE3 hash of a domain
-    /// separator, the seed, the request index, the recipient key commitment and the two digests.
+    /// The secret is drawn from a ChaCha20 generator seeded with the BLAKE3 hash of the
+    /// concatenation of a domain separator, the seed, the account ID prefix and suffix (8 bytes
+    /// each), the two transaction commitments (32 bytes each), the request index (4 bytes), the
+    /// recipient key commitment and the two digests (32 bytes each), all little-endian.
     pub fn derive_ephemeral_secret(
         &self,
+        account_id: AccountId,
+        initial_account_commitment: Word,
+        input_notes_commitment: Word,
         request_idx: u32,
         recipient: &PublicKey,
         context_digest: Word,
@@ -57,6 +75,10 @@ impl IesSealSeed {
             [
                 Self::DERIVATION_DOMAIN,
                 &self.0,
+                &account_id.prefix().as_u64().to_le_bytes(),
+                &account_id.suffix().as_canonical_u64().to_le_bytes(),
+                &initial_account_commitment.as_bytes(),
+                &input_notes_commitment.as_bytes(),
                 &request_idx.to_le_bytes(),
                 &recipient.to_commitment().as_bytes(),
                 &context_digest.as_bytes(),
@@ -93,29 +115,68 @@ impl Deserializable for IesSealSeed {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::account_id::{ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_SENDER};
+
+    /// The inputs of [`IesSealSeed::derive_ephemeral_secret`].
+    #[derive(Clone)]
+    struct Inputs {
+        seed: IesSealSeed,
+        account_id: AccountId,
+        initial_account_commitment: Word,
+        input_notes_commitment: Word,
+        request_idx: u32,
+        recipient: PublicKey,
+        context_digest: Word,
+        plaintext_digest: Word,
+    }
+
+    impl Inputs {
+        fn ephemeral_key(&self) -> PublicKey {
+            self.seed
+                .derive_ephemeral_secret(
+                    self.account_id,
+                    self.initial_account_commitment,
+                    self.input_notes_commitment,
+                    self.request_idx,
+                    &self.recipient,
+                    self.context_digest,
+                    self.plaintext_digest,
+                )
+                .public_key()
+        }
+    }
 
     #[test]
     fn ephemeral_secret_depends_on_every_input() {
-        let seed = IesSealSeed::new([1; 32]);
-        let recipient = SecretKey::from_bytes(&[2; 40]).unwrap().public_key();
-        let [first_digest, second_digest] = [1_u32, 2].map(|value| Word::from([value; 4]));
-        let ephemeral_key = |seed: &IesSealSeed, request_idx, recipient, context, plaintext| {
-            seed.derive_ephemeral_secret(request_idx, recipient, context, plaintext)
-                .public_key()
+        let digest = |value: u32| Word::from([value; 4]);
+        let recipient = |seed: u8| SecretKey::from_bytes(&[seed; 40]).unwrap().public_key();
+        let inputs = Inputs {
+            seed: IesSealSeed::new([1; 32]),
+            account_id: AccountId::try_from(ACCOUNT_ID_SENDER).unwrap(),
+            initial_account_commitment: digest(1),
+            input_notes_commitment: digest(2),
+            request_idx: 0,
+            recipient: recipient(2),
+            context_digest: digest(3),
+            plaintext_digest: digest(4),
         };
+        let expected = inputs.ephemeral_key();
+        assert_eq!(inputs.clone().ephemeral_key(), expected);
 
-        let expected = ephemeral_key(&seed, 0, &recipient, first_digest, second_digest);
-        assert_eq!(ephemeral_key(&seed, 0, &recipient, first_digest, second_digest), expected);
-
-        let other_recipient = SecretKey::from_bytes(&[3; 40]).unwrap().public_key();
-        for other in [
-            ephemeral_key(&IesSealSeed::new([4; 32]), 0, &recipient, first_digest, second_digest),
-            ephemeral_key(&seed, 1, &recipient, first_digest, second_digest),
-            ephemeral_key(&seed, 0, &other_recipient, first_digest, second_digest),
-            ephemeral_key(&seed, 0, &recipient, second_digest, first_digest),
-            ephemeral_key(&seed, 0, &recipient, first_digest, first_digest),
-        ] {
-            assert_ne!(other, expected);
+        let changes: [fn(&mut Inputs); 8] = [
+            |inputs| inputs.seed = IesSealSeed::new([5; 32]),
+            |inputs| inputs.account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(),
+            |inputs| inputs.initial_account_commitment = Word::from([6_u32; 4]),
+            |inputs| inputs.input_notes_commitment = Word::from([6_u32; 4]),
+            |inputs| inputs.request_idx = 1,
+            |inputs| inputs.recipient = SecretKey::from_bytes(&[3; 40]).unwrap().public_key(),
+            |inputs| inputs.context_digest = inputs.plaintext_digest,
+            |inputs| inputs.plaintext_digest = inputs.context_digest,
+        ];
+        for change in changes {
+            let mut changed = inputs.clone();
+            change(&mut changed);
+            assert_ne!(changed.ephemeral_key(), expected);
         }
     }
 }

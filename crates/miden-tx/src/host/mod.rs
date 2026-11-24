@@ -407,8 +407,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     }
 
     /// Derives the ephemeral secret for the IES `seal` request of
-    /// `miden::protocol::ies::ecgfp5_eidos::seal` and records it for the key agreement request of
-    /// the core library's `seal` that follows.
+    /// `miden::protocol::ies::ecgfp5_eidos::seal` in this transaction and records it for the key
+    /// agreement request of the core library's `seal` that follows.
     ///
     /// The digests come from the VM, so the host does constant work per request. Code that emits
     /// the request event itself, with digests of data it does not encrypt, only affects its own
@@ -423,6 +423,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let seed = self.ies_seal_seed.as_ref().ok_or(TransactionKernelError::IesSealSeedMissing)?;
         let ephemeral_secret = seed.derive_ephemeral_secret(
+            self.initial_account_header.id(),
+            self.initial_account_header.to_commitment(),
+            self.input_notes.commitment(),
             self.num_ies_seal_requests,
             &request.recipient,
             request.context_digest,

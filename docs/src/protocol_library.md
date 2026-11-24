@@ -226,7 +226,7 @@ Asset procedures provide utilities for creating fungible and non-fungible assets
 
 ## Encryption Procedures (`miden::protocol::ies::ecgfp5_eidos`)
 
-Encryption procedures encrypt data to an EcGFp5 public key with the EcGFp5/Eidos integrated encryption scheme. The host derives the ephemeral secret of each encryption from the IES seal seed in the transaction arguments, so that re-execution and proving with the same arguments reproduce the envelope. Anyone who knows the seed can check guesses of the encrypted plaintexts.
+Encryption procedures encrypt data to an EcGFp5 public key with the EcGFp5/Eidos integrated encryption scheme. The host derives the ephemeral secret of each encryption from the IES seal seed in the transaction arguments, the transaction, the index of the request, the public key, the context and the plaintext, so that re-execution and proving with the same arguments reproduce the envelope. Use a fresh seed for every transaction and reuse it only to re-execute or prove that transaction. Binding the secret to the transaction and to the plaintext guards against an accidentally reused seed. Anyone who knows the seed can check guesses of the encrypted plaintexts.
 
 | Procedure | Description | Context |
 | --------- | ----------- | ------- |
