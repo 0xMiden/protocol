@@ -11,8 +11,9 @@
 #!  ASSET_ID_{n-1}, ASSET_VALUE_{n-1}]
 #!
 #! The attachment content is the envelope
-#! `[R(5), tag(2), plaintext_len, ciphertext(2 * plaintext_len)]`, that is `8 + 4n` words, sealed
-#! under the context `[ENCRYPTED_ASSETS_ATTACHMENT_SCHEME, ENCRYPTED_ASSETS_FORMAT_VERSION]`.
+#! `[ephemeral_public_key(5), auth_tag(2), plaintext_len, ciphertext(2 * plaintext_len)]`, that is
+#! `8 + 4n` words, sealed under the context
+#! `[ENCRYPTED_ASSETS_ATTACHMENT_SCHEME, ENCRYPTED_ASSETS_FORMAT_VERSION]`.
 
 use {ASSET_SIZE} from miden::protocol::asset
 use {MAX_ASSETS_PER_NOTE, WORD_NUM_ELEMENTS} from miden::protocol::constants
@@ -58,7 +59,8 @@ const PLAINTEXT_HEADER_LEN = 3 * WORD_NUM_ELEMENTS
 # The number of elements of the plaintext of a note with the maximum number of assets.
 const MAX_PLAINTEXT_LEN = PLAINTEXT_HEADER_LEN + MAX_ASSETS_PER_NOTE * ASSET_SIZE
 
-# The number of elements of [R(5), tag(2), plaintext_len] at the start of the envelope.
+# The number of elements of [ephemeral_public_key(5), auth_tag(2), plaintext_len] at the start of
+# the envelope.
 const ENVELOPE_HEADER_LEN = 8
 
 # The number of elements of the IES context.
@@ -210,7 +212,8 @@ proc encrypt_note_details(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmen
     exec.ies::seal
     # => [plaintext_len]
 
-    # the envelope is [R(5), tag(2), plaintext_len, ciphertext(2 * plaintext_len)]
+    # the envelope is
+    # [ephemeral_public_key(5), auth_tag(2), plaintext_len, ciphertext(2 * plaintext_len)]
     mul.2 add.ENVELOPE_HEADER_LEN locaddr.ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC add
     locaddr.ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC
     # => [envelope_ptr, envelope_end_ptr]

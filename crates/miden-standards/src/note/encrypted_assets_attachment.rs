@@ -53,8 +53,8 @@ const ISSUER_KEY_TAIL_INDEX: u32 = 1;
 /// ```
 ///
 /// The attachment content is the EcGFp5/Eidos envelope of the plaintext under [`Self::CONTEXT`],
-/// `[R(5), tag(2), plaintext_len, ciphertext(2 * plaintext_len)]`, which is `8 + 4n` words. It
-/// carries no identifier of the issuer key.
+/// `[ephemeral_public_key(5), auth_tag(2), plaintext_len, ciphertext(2 * plaintext_len)]`, which
+/// is `8 + 4n` words. It carries no identifier of the issuer key.
 ///
 /// The issuer decrypts the attachment of a note with [`Self::decrypt_and_verify_note`], which
 /// keeps only a plaintext from which the note's ID is recomputed, and computes the note's
