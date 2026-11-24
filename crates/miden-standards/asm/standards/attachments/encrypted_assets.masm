@@ -86,10 +86,10 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING = "active account has no issuer pu
 #!
 #! A public note gets no attachment and the procedure returns attachment scheme 0 and the empty
 #! word. For a private note, the procedure encrypts the note's details to the issuer public key
-#! stored in the active account's `ISSUER_KEY_SLOT`, inserts the envelope into the advice map under
-#! its commitment and returns the scheme and commitment of the attachment. Since it reads the
-#! issuer key, it also applies the default expiration delta. Faucets call it from their
-#! `on_before_note_sealed` callback.
+#! stored in the active account's `ISSUER_KEY_SLOT`, inserts the attachment into the advice map
+#! under its commitment and returns its scheme and commitment. Since it reads the issuer key, it
+#! also applies the default expiration delta. Faucets call it from their `on_before_note_sealed`
+#! callback.
 #!
 #! The note's recipient preimage must be in the advice map.
 #!
@@ -103,15 +103,15 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING = "active account has no issuer pu
 #! Outputs:
 #!   Operand stack: [attachment_scheme, ATTACHMENT_COMMITMENT]
 #!   Advice map: {
-#!     ATTACHMENT_COMMITMENT: [[ENVELOPE]],
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]],
 #!   }
 #!
 #! Where:
 #! - note_idx is the index of the output note.
 #! - attachment_scheme is ENCRYPTED_ASSETS_ATTACHMENT_SCHEME for a private note, and for a public
 #!   note 0, the attachment scheme the kernel reserves to signal that no attachment is returned.
-#! - ATTACHMENT_COMMITMENT is the commitment to the envelope for a private note and the empty word
-#!   for a public note.
+#! - ATTACHMENT_COMMITMENT is the commitment to the attachment for a private note and the empty
+#!   word for a public note.
 #!
 #! Panics if:
 #! - the note index does not point to an output note.
@@ -145,7 +145,7 @@ end
 # =================================================================================================
 
 #! Encrypts the details of the output note with the provided index to the issuer's public key and
-#! inserts the envelope into the advice map under its commitment.
+#! inserts the attachment into the advice map under its commitment.
 #!
 #! Inputs:  [note_idx]
 #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT]
@@ -153,7 +153,7 @@ end
 #! Where:
 #! - note_idx is the index of the output note.
 #! - attachment_scheme is ENCRYPTED_ASSETS_ATTACHMENT_SCHEME.
-#! - ATTACHMENT_COMMITMENT is the commitment to the envelope.
+#! - ATTACHMENT_COMMITMENT is the commitment to the attachment.
 #!
 #! Panics if:
 #! - the advice map has no preimage for the note's recipient, or it does not hash to the recipient.
@@ -203,17 +203,17 @@ proc encrypt_note_details(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmen
     exec.ies::seal
     # => [plaintext_len]
 
-    # the envelope is
+    # the attachment is the envelope
     # [ephemeral_public_key(5), auth_tag(2), plaintext_len, ciphertext(2 * plaintext_len)]
     mul.2 add.ENVELOPE_HEADER_LEN locaddr.ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC add
     locaddr.ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC
-    # => [envelope_ptr, envelope_end_ptr]
+    # => [attachment_ptr, attachment_end_ptr]
 
     dup.1 dup.1 exec.eidos::hash_words
-    # => [ATTACHMENT_COMMITMENT, envelope_ptr, envelope_end_ptr]
+    # => [ATTACHMENT_COMMITMENT, attachment_ptr, attachment_end_ptr]
 
     adv.insert_mem
-    # => [ATTACHMENT_COMMITMENT, envelope_ptr, envelope_end_ptr]
+    # => [ATTACHMENT_COMMITMENT, attachment_ptr, attachment_end_ptr]
 
     movup.4 drop movup.4 drop
     # => [ATTACHMENT_COMMITMENT]
