@@ -40,6 +40,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO,
     ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED,
     ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_COMMITMENT_WITHOUT_ATTACHMENTS,
+    ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_ENTRY_PADDING_NOT_ZERO,
     ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_LENGTH_MISMATCH,
     ERR_OUTPUT_NOTE_CALLBACK_TOO_MANY_ATTACHMENTS,
     ERR_OUTPUT_NOTE_IS_SEALED,
@@ -1199,6 +1200,38 @@ async fn test_note_sealed_callback_attachment_list_is_verified(
         execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], Vec::new()).await?;
 
     assert_transaction_executor_error!(result, expected_error);
+
+    Ok(())
+}
+
+/// Tests that sealing fails if an entry of the attachment list returned by an
+/// `on_before_note_sealed` callback holds a non-zero element after its attachment scheme, at the
+/// provided position of the entry's first word.
+#[rstest::rstest]
+#[case::first_padding_element(1)]
+#[case::second_padding_element(2)]
+#[case::third_padding_element(3)]
+#[tokio::test]
+async fn test_note_sealed_callback_attachment_list_entry_padding_must_be_zero(
+    #[case] padding_idx: usize,
+) -> anyhow::Result<()> {
+    let (_, mut list, mut advice_map_entries) =
+        attachment_list(&[(20, Word::from([5, 6, 7, 8u32]))]);
+    let mut scheme_word = [20, 0, 0, 0u32];
+    scheme_word[padding_idx] = 1;
+    list[0] = Word::from(scheme_word);
+    let list_commitment = Hasher::hash_elements(Word::words_as_elements(&list));
+    advice_map_entries.push((list_commitment, list));
+    let note_callback_masm =
+        note_sealed_callback_masm_returning(1, list_commitment, &advice_map_entries);
+
+    let (_, result) =
+        execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], Vec::new()).await?;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_ENTRY_PADDING_NOT_ZERO
+    );
 
     Ok(())
 }

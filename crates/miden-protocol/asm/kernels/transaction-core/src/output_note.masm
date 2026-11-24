@@ -82,6 +82,9 @@ const ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_COMMITMENT_WITHOUT_ATTACHMENTS =
 const ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_LENGTH_MISMATCH =
     "attachment list returned by a note callback does not match its number of attachments"
 
+const ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_ENTRY_PADDING_NOT_ZERO =
+    "attachment list returned by a note callback must pad each attachment scheme with zeros"
+
 const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS =
     "non-fungible asset that already exists in the note cannot be added again"
 
@@ -936,6 +939,7 @@ end
 #! - num_attachments exceeds 4.
 #! - the number of list elements does not match num_attachments.
 #! - the computed hash of the list elements does not match ATTACHMENT_LIST_COMMITMENT.
+#! - the three elements after the attachment scheme of an entry are not all zero.
 #! - a listed attachment is invalid or exceeds the note's attachment limits (see `add_attachment`).
 @locals(32)
 proc add_attachment_list(
@@ -977,11 +981,21 @@ proc add_attachment_list(
     # => [has_entries, entry_ptr, list_end_ptr, note_idx]
 
     while.true
-        # load the attachment commitment and scheme of the entry
-        padw dup.4 add.WORD_NUM_ELEMENTS mem_loadw_le
-        # => [ATTACHMENT_COMMITMENT, entry_ptr, list_end_ptr, note_idx]
+        # load the attachment scheme of the entry and assert that the rest of its word is zero
+        padw dup.4 mem_loadw_le
+        # => [attachment_scheme, padding(3), entry_ptr, list_end_ptr, note_idx]
 
-        dup.4 mem_load dup.7 movdn.5
+        movdn.3
+        assertz.err=ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_ENTRY_PADDING_NOT_ZERO
+        assertz.err=ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_ENTRY_PADDING_NOT_ZERO
+        assertz.err=ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_ENTRY_PADDING_NOT_ZERO
+        # => [attachment_scheme, entry_ptr, list_end_ptr, note_idx]
+
+        # load the attachment commitment of the entry
+        padw dup.5 add.WORD_NUM_ELEMENTS mem_loadw_le
+        # => [ATTACHMENT_COMMITMENT, attachment_scheme, entry_ptr, list_end_ptr, note_idx]
+
+        movup.4 dup.7 movdn.5
         # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, entry_ptr, list_end_ptr, note_idx]
 
         exec.add_attachment
