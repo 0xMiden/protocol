@@ -1,0 +1,18 @@
+[package]
+name              = "miden-standards-faucets-policies-transfer-encrypted-assets"
+version.workspace = true
+
+[lib]
+kind      = "account-component"
+namespace = "miden::standards::components::faucets::policies::transfer::encrypted_assets"
+path      = "encrypted_assets.masm"
+
+[dependencies]
+miden-core.workspace      = true
+miden-protocol.workspace  = true
+miden-standards.workspace = true
+
+[package.metadata.account-component]
+description = "Send policy returning the encrypted asset attachment of private notes"
+name        = "miden::standards::faucets::policies::transfer::encrypted_assets"
+version     = "1.0.0"

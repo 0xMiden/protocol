@@ -39,8 +39,9 @@ use miden_protocol::transaction::{
     TransactionLogs,
     TransactionSummary,
 };
+use miden_protocol::utils::FeltSliceExt;
 use miden_protocol::vm::EventId;
-use miden_protocol::{Felt, WORD_SIZE, Word};
+use miden_protocol::{Felt, Word};
 
 use crate::host::{TransactionBaseHost, TransactionKernelProcess};
 use crate::{LinkMap, TransactionKernelError};
@@ -806,11 +807,10 @@ fn extract_transaction_log(
         .ok_or_else(|| TransactionKernelError::other("missing transaction log content"))?;
     // The kernel checks word alignment before emitting this event. Hash padding does not change
     // the advice map value; retain this check when decoding the host-side record as well.
-    let (words, remainder) = elements.as_chunks::<WORD_SIZE>();
-    if !remainder.is_empty() || words.len() > TransactionLog::MAX_NUM_WORDS {
-        return Err(TransactionKernelError::other("invalid transaction log content length"));
-    }
-    let content = words.iter().copied().map(Word::new).collect();
+    let content = elements
+        .to_words()
+        .filter(|words| words.len() <= TransactionLog::MAX_NUM_WORDS)
+        .ok_or_else(|| TransactionKernelError::other("invalid transaction log content length"))?;
     TransactionLog::new(emitter, topic, content)
         .map_err(|err| TransactionKernelError::other_with_source("invalid transaction log", err))
 }
@@ -1043,18 +1043,11 @@ fn extract_note_attachment(
         ));
     }
 
-    if !elements.len().is_multiple_of(WORD_SIZE) {
-        return Err(TransactionKernelError::other(
+    let words = elements.to_words().ok_or_else(|| {
+        TransactionKernelError::other(
             "num elements in attachment advice map value must be multiple of word size",
-        ));
-    }
-
-    let words: Vec<Word> = elements
-        .as_chunks::<WORD_SIZE>()
-        .0
-        .iter()
-        .map(|chunk| Word::from([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect();
+        )
+    })?;
 
     let content = NoteAttachmentContent::new(words).map_err(|source| {
         TransactionKernelError::other_with_source(

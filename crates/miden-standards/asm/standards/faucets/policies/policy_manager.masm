@@ -165,23 +165,25 @@ pub proc set_burn_policy(new_policy_root: AccountProcedureRoot)
     # => [pad(16)]
 end
 
-#! Invokes the active send policy. Stored in the protocol-reserved `on_before_note_sealed` callback
-#! slot and `dyncall`-invoked by the kernel once when an output note holding assets of this faucet
-#! is sealed.
+#! Invokes the active send policy and returns its outputs. Stored in the protocol-reserved
+#! `on_before_note_sealed` callback slot and `dyncall`-invoked by the kernel once when an output
+#! note holding assets of this faucet is sealed.
 #!
 #! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
 #! after the reference block and applies the pause check, so both apply even when no send policy
 #! is active. Then binds [`ACTIVE_SEND_POLICY_PROC_ROOT_SLOT`] and delegates to
-#! [`execute_transfer_policy`], which invokes the policy with this procedure's inputs. Returns no
-#! attachment for the note.
+#! [`execute_transfer_policy`], which invokes the policy with this procedure's inputs and returns
+#! its outputs.
 #!
 #! Inputs:  [note_idx, pad(15)]
-#! Outputs: [0, EMPTY_WORD, pad(11)]
+#! Outputs: [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
 #!
 #! Where:
 #! - note_idx is the index of the output note being sealed.
-#! - 0 is the number of attachments returned for the note, so the attachment list commitment is
-#!   EMPTY_WORD.
+#! - num_attachments is the number of attachments the active send policy returns for the note. It
+#!   is 0 if the policy returns none or no send policy is active.
+#! - ATTACHMENT_LIST_COMMITMENT is the commitment to the list of those attachments, or the empty
+#!   word if num_attachments is 0.
 #!
 #! Panics if:
 #! - the account is paused.
@@ -199,10 +201,8 @@ pub proc invoke_send_policy(note_idx: u16) -> (NoteAttachmentCount, NoteAttachme
     push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2]
     # => [slot_id_suffix, slot_id_prefix, note_idx, pad(15)]
 
-    # the policy's outputs are dropped, so this returns no attachment for the note: 0 attachments
-    # and the empty attachment list commitment
     exec.execute_transfer_policy
-    # => [0, EMPTY_WORD, pad(11)]
+    # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
 end
 
 #! Returns active send policy root.
@@ -253,7 +253,8 @@ end
 #! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
 #! after the reference block and applies the pause check, so both apply even when no receive
 #! policy is active. Then binds [`ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT`] and delegates to
-#! [`execute_transfer_policy`], which invokes the policy with this procedure's inputs.
+#! [`execute_transfer_policy`], which invokes the policy with this procedure's inputs. Drops the
+#! policy's outputs.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
@@ -278,6 +279,9 @@ pub proc invoke_receive_policy(asset: Asset)
     # => [slot_id_suffix, slot_id_prefix, ASSET_ID, ASSET_VALUE, pad(8)]
 
     exec.execute_transfer_policy
+    # => [policy_outputs(16)]
+
+    dropw dropw dropw dropw
     # => [pad(16)]
 end
 
@@ -645,7 +649,7 @@ proc assert_allowed_receive_policy_root(receive_policy_root: AccountProcedureRoo
 end
 
 #! Reads the active transfer policy root from the provided slot and invokes the policy via
-#! `dyncall` with the provided inputs, dropping the policy's outputs. Shared by
+#! `dyncall` with the provided inputs, returning the policy's outputs. Shared by
 #! `invoke_send_policy` / `invoke_receive_policy`, which bind different slots and pass on their own
 #! callback inputs, so each policy kind receives the inputs of its asset callback.
 #!
@@ -658,18 +662,20 @@ end
 #! is accepted; otherwise the policy is invoked via `dyncall`.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, policy_inputs(16)]
-#! Outputs: []
+#! Outputs: [policy_outputs(16)]
 #!
 #! Where:
 #! - slot_id_{suffix, prefix} identify the storage slot holding the active policy root.
 #! - policy_inputs are the 16 elements the policy is invoked with.
+#! - policy_outputs are the 16 elements the policy returns, or 16 zeros if no policy is
+#!   configured.
 #!
 #! Panics if:
 #! - the invoked policy predicate fails.
 #!
 #! Invocation: exec
 @locals(4)
-proc execute_transfer_policy(slot_id: StorageSlotId, policy_inputs: [felt; 16])
+proc execute_transfer_policy(slot_id: StorageSlotId, policy_inputs: [felt; 16]) -> [felt; 16]
     exec.active_account::get_item
     # => [POLICY_ROOT, policy_inputs(16)]
 
@@ -679,7 +685,7 @@ proc execute_transfer_policy(slot_id: StorageSlotId, policy_inputs: [felt; 16])
     if.true
         # No policy configured: accept the transfer and drop the policy inputs.
         dropw dropw dropw dropw dropw
-        # => []
+        # => [pad(16)]
     else
         loc_storew_le.POLICY_PROC_ROOT_PTR dropw
         # => [policy_inputs(16)]
@@ -689,8 +695,6 @@ proc execute_transfer_policy(slot_id: StorageSlotId, policy_inputs: [felt; 16])
 
         dyncall
         # => [policy_outputs(16)]
-
-        dropw dropw dropw dropw
-        # => []
     end
+    # => [policy_outputs(16)]
 end

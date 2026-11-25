@@ -5,7 +5,8 @@
 //! - File at the root (e.g. `allow_all`, `basic_blocklist`, `basic_allowlist`) = a transfer policy
 //!   variant. Each exports a `check_send_policy` and/or a `check_receive_policy` procedure that the
 //!   manager's `invoke_send_policy` / `invoke_receive_policy` wrapper dispatches to via `dyncall`
-//!   (after the pause check) once the active policy is set.
+//!   (after the pause check) once the active policy is set. `encrypted_assets` exports only a
+//!   `check_send_policy` procedure.
 //! - Folder at the root (e.g. `blocklist`, `allowlist`) = a primitive bundle: storage namespace +
 //!   helpers + auth-gated admin component(s) that maintain the storage. Primitives are not transfer
 //!   policies by themselves; they are consumed by policy variants.
@@ -19,12 +20,14 @@ use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot}
 use thiserror::Error;
 
 use crate::code_builder::CodeBuilder;
+use crate::note::EncryptedAssetsIssuerKey;
 
 mod allow_all;
 mod allowlist;
 mod basic_allowlist;
 mod basic_blocklist;
 mod blocklist;
+mod encrypted_assets;
 mod supply_restriction;
 mod supply_restriction_policy;
 
@@ -33,6 +36,7 @@ pub use allowlist::{AllowlistManager, AllowlistStorage};
 pub use basic_allowlist::BasicAllowlist;
 pub use basic_blocklist::BasicBlocklist;
 pub use blocklist::{BlocklistManager, BlocklistStorage};
+pub use encrypted_assets::EncryptedAssetsSendPolicy;
 pub use supply_restriction::{
     SupplyRestrictionError,
     SupplyRestrictionManager,
@@ -85,19 +89,24 @@ pub enum TransferPolicyError {
 /// ## Interface
 ///
 /// The wrapper is the faucet's `on_before_note_sealed` callback, which the kernel invokes once
-/// when an output note holding the faucet's assets is sealed. The policy procedure receives the
-/// inputs of that callback. The wrapper drops the policy's outputs and returns no attachment for
-/// the note:
+/// when an output note holding the faucet's assets is sealed. The policy procedure has the
+/// interface of that callback, and the wrapper returns the policy's outputs to the kernel:
 ///
 /// ```text
 /// Inputs:  [note_idx, pad(15)]
-/// Outputs: [pad(16)]
+/// Outputs: [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
 /// ```
 ///
 /// It reads the note itself and the note creator via `native_account::get_id`.
 /// `output_note::get_assets` returns all of the note's assets, so a policy that inspects the
 /// faucet's assets selects them by comparing `asset::id_to_faucet_id` with
 /// `active_account::get_id`.
+///
+/// A policy that returns attachments for the note puts their attachment list into the advice map
+/// under `ATTACHMENT_LIST_COMMITMENT` and the elements of each attachment under its commitment, and
+/// the kernel appends them to the note. A `num_attachments` of `0` returns no attachment and
+/// requires `ATTACHMENT_LIST_COMMITMENT` to be the empty word. Of the bundled policies, only
+/// [`Self::with_encrypted_assets`] returns an attachment.
 ///
 /// ## Minting
 ///
@@ -111,9 +120,10 @@ pub enum TransferPolicyError {
 ///
 /// Send policies run through FPI. Policies that read mutable, security-sensitive state must set
 /// an expiration delta in the execution path that reads that state. The built-in blocklist,
-/// allowlist and supply restriction policies apply the standards default; custom policies should
-/// call `miden::standards::expiration::apply_default` or `tx::update_expiration_block_delta`
-/// directly with a custom expiration delta.
+/// allowlist and supply restriction policies, and the encrypted assets policy for private notes,
+/// apply the standards default; custom policies should call
+/// `miden::standards::expiration::apply_default` or `tx::update_expiration_block_delta` directly
+/// with a custom expiration delta.
 ///
 /// ## Companion components
 ///
@@ -198,10 +208,39 @@ impl SendPolicy {
         }
     }
 
+    /// Returns a send policy that attaches the
+    /// [`EncryptedAssetsAttachment`](crate::note::EncryptedAssetsAttachment), encrypted to
+    /// `issuer_key`, to every private output note holding the faucet's assets, so the issuer can
+    /// track them. Public notes get no attachment.
+    ///
+    /// Resolves to [`EncryptedAssetsSendPolicy::send_root`] and ships the companion
+    /// [`EncryptedAssetsSendPolicy`] component and `issuer_key` as the component that installs
+    /// the key and lets the faucet's authority rotate it (see [`EncryptedAssetsIssuerKey`]). The
+    /// manager installs the components of a policy root once, so registering this policy again
+    /// with another key keeps the first key.
+    ///
+    /// A private note seals only if the transaction's advice map holds its recipient preimage, so
+    /// a note whose creator knows only its recipient digest cannot hold the faucet's assets. A
+    /// MINT note with a private output note holds only that digest: the faucet mints it only if
+    /// the transaction supplies the preimage, so a network faucet cannot. The same holds for the
+    /// private payback note of a SWAP note that requests the faucet's asset. The transaction
+    /// arguments must also carry an [`IesSealSeed`](miden_protocol::transaction::IesSealSeed).
+    ///
+    /// [`Self::merge`] drops the attachment, so a policy that combines other checks with this one
+    /// executes them and then `exec`s `encrypted_assets::check_send_policy`, as a custom policy.
+    pub fn with_encrypted_assets(issuer_key: EncryptedAssetsIssuerKey) -> Self {
+        Self {
+            root: EncryptedAssetsSendPolicy::send_root(),
+            components: vec![EncryptedAssetsSendPolicy.into(), issuer_key.into()],
+        }
+    }
+
     /// Returns a send policy resolving to `root` and shipping the provided companion
     /// `components` (anything that can be converted into an [`AccountComponent`]).
     ///
-    /// The procedure at `root` is invoked with the send policy inputs `[note_idx, pad(15)]`.
+    /// The procedure at `root` is invoked with the send policy inputs `[note_idx, pad(15)]` and
+    /// returns the send policy outputs `[num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]`
+    /// (see [`SendPolicy`]).
     ///
     /// # Errors
     ///
@@ -218,6 +257,8 @@ impl SendPolicy {
 
     /// Returns a send policy that accepts an output note only if all of the provided `policies`
     /// accept it. The policies are invoked in the provided order, each with the send policy inputs.
+    /// The merged policy returns no attachment, so it drops the attachments that the `policies`
+    /// return.
     ///
     /// Only the merged policy is registered with a [`super::TokenPolicyManager`], not the
     /// individual `policies`.
