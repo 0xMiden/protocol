@@ -331,7 +331,7 @@ pub proc create_and_fund_fee_note(serial_number_block: BlockNumber, initial_nonc
     dupw.1 dupw.1
     # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
-    exec.native_account::remove_asset dropw
+    exec.fees::remove_fee_asset dropw
     # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     exec.output_note::add_asset
