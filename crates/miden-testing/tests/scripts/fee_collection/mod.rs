@@ -250,9 +250,13 @@ impl Test {
         /// execution. Defaults to 0.
         #[builder(default = 0)]
         num_failing_feature_notes: usize,
+        /// Verification base fee of the chain, which the network account pays its transaction fee
+        /// from. Defaults to 0, so the account pays no transaction fee.
+        #[builder(default = 0)]
+        verification_base_fee: u32,
     ) -> anyhow::Result<Self> {
         let mut rng = EidosRandomCoin::new(Word::empty());
-        let mut builder = MockChain::builder();
+        let mut builder = MockChain::builder().verification_base_fee(verification_base_fee);
         let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
 
         let mut feature_notes: Vec<Note> = (0..num_feature_notes)
