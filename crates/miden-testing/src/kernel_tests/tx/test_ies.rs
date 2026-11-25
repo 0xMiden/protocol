@@ -168,17 +168,16 @@ async fn signed_execution_reproduces_unauthorized_summary() -> anyhow::Result<()
         Word::from([1, 2, 3, 4u32]),
     );
     mock_chain.prove_next_block()?;
-    let tx_builder = || {
-        mock_chain
-            .build_transaction(account.clone())
-            .tx_script(tx_script.clone())
-            .auth_args(auth_args.to_commitment())
-            .add_advice_map_entry(auth_args.to_commitment(), auth_args.to_elements())
-            .required_block(auth_args.bound_block_num())
-    };
+    let tx_builder = mock_chain
+        .build_transaction(account)
+        .tx_script(tx_script)
+        .auth_args(auth_args.to_commitment())
+        .add_advice_map_entry(auth_args.to_commitment(), auth_args.to_elements())
+        .required_block(auth_args.bound_block_num());
 
     // The unauthorized execution runs at the bound block, the signed one at the next block.
-    let tx_summary = tx_builder()
+    let tx_summary = tx_builder
+        .clone()
         .reference_block(auth_args.bound_block_num())
         .build()?
         .execute()
@@ -191,7 +190,8 @@ async fn signed_execution_reproduces_unauthorized_summary() -> anyhow::Result<()
     let signature = BasicAuthenticator::new(&[signer])
         .get_signature(signer_commitment, &SigningInputs::TransactionSummary(tx_summary.clone()))
         .await?;
-    let executed_tx = tx_builder()
+    let executed_tx = tx_builder
+        .clone()
         .add_signature(signer_commitment, msg, signature)
         .build()?
         .execute()
@@ -200,7 +200,7 @@ async fn signed_execution_reproduces_unauthorized_summary() -> anyhow::Result<()
     assert!(executed_tx.block_header().block_num() > auth_args.bound_block_num());
 
     // Another seed changes the envelope and thereby the summary.
-    let other_summary = tx_builder()
+    let other_summary = tx_builder
         .ies_seal_seed(Some(IesSealSeed::new([1; 32])))
         .build()?
         .execute()
