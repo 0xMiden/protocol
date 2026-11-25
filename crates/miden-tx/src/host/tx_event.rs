@@ -744,7 +744,7 @@ pub(crate) struct IesSealRequest {
     pub(super) public_key: [Felt; 5],
     /// The digest of the plaintext.
     pub(super) plaintext_digest: Word,
-    /// The digest of the context.
+    /// The digest of the IES context.
     pub(super) context_digest: Word,
 }
 
