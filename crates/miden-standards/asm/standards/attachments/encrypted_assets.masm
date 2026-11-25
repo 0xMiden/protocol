@@ -262,13 +262,14 @@ proc encrypt_note_details(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmen
     # encrypt the plaintext to the issuer's public key
     dup locaddr.ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC
     push.IES_CONTEXT_LEN locaddr.ENCRYPT_NOTE_DETAILS_IES_CONTEXT_LOC
-    # => [context_ptr, context_len, dst_ptr, plaintext_len, plaintext_len]
+    # => [context_ptr, context_len, envelope_ptr, plaintext_len, plaintext_len]
 
     movup.3 locaddr.ENCRYPT_NOTE_DETAILS_PLAINTEXT_LOC
-    # => [src_ptr, plaintext_len, context_ptr, context_len, dst_ptr, plaintext_len]
+    # => [plaintext_ptr, plaintext_len, context_ptr, context_len, envelope_ptr, plaintext_len]
 
     exec.get_issuer_public_key
-    # => [public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr, plaintext_len]
+    # => [public_key(5), plaintext_ptr, plaintext_len, context_ptr, context_len, envelope_ptr,
+    #     plaintext_len]
 
     exec.ecgfp5_eidos::seal
     # => [plaintext_len]

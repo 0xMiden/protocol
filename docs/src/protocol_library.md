@@ -232,4 +232,4 @@ Encryption procedures encrypt data to an EcGFp5 public key with the EcGFp5/Eidos
 
 | Procedure | Description | Context |
 | --------- | ----------- | ------- |
-| `seal`    | Encrypts the plaintext to the public key and writes the envelope `[ephemeral_public_key(5), auth_tag(2), plaintext_len, ciphertext(2*plaintext_len)]` to the destination, where `ephemeral_public_key` is the sender's ephemeral public key `R = rG` and `auth_tag` is the AEAD authentication tag. The context is authenticated but not encrypted.<br/><br/>**Inputs:** `[public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]`<br/>**Outputs:** `[]` | Any     |
+| `seal`    | Encrypts the plaintext to the public key and writes the envelope `[ephemeral_public_key(5), auth_tag(2), plaintext_len, ciphertext(2*plaintext_len)]` to the destination, where `ephemeral_public_key` is the sender's ephemeral public key `R = rG` and `auth_tag` is the AEAD authentication tag. The context is authenticated but not encrypted.<br/><br/>**Inputs:** `[public_key(5), plaintext_ptr, plaintext_len, context_ptr, context_len, envelope_ptr]`<br/>**Outputs:** `[]` | Any     |

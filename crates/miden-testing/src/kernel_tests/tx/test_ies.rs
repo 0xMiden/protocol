@@ -341,12 +341,12 @@ async fn ies_seal_derives_the_secret_from_the_request_event() -> anyhow::Result<
         {public_key}
         {context_digest}
         {plaintext_digest}
-        # => [PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5), src_ptr, plaintext_len,
-        #     context_ptr, context_len, dst_ptr]
+        # => [PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5), plaintext_ptr, plaintext_len,
+        #     context_ptr, context_len, envelope_ptr]
 
         emit.event("miden::protocol::ies::ecgfp5_eidos::seal")
         dropw dropw dropw drop
-        # => [src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
+        # => [plaintext_ptr, plaintext_len, context_ptr, context_len, envelope_ptr]
 
         {commitment}
         exec.::miden::core::crypto::ies::ecgfp5_eidos::seal
