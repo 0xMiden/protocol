@@ -85,19 +85,24 @@ pub enum TransferPolicyError {
 /// ## Interface
 ///
 /// The wrapper is the faucet's `on_before_note_sealed` callback, which the kernel invokes once
-/// when an output note holding the faucet's assets is sealed. The policy procedure receives the
-/// inputs of that callback. The wrapper drops the policy's outputs and returns no attachment for
-/// the note:
+/// when an output note holding the faucet's assets is sealed. The policy procedure has the
+/// interface of that callback, and the wrapper returns the policy's outputs to the kernel:
 ///
 /// ```text
 /// Inputs:  [note_idx, pad(15)]
-/// Outputs: [pad(16)]
+/// Outputs: [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
 /// ```
 ///
 /// It reads the note itself and the note creator via `native_account::get_id`.
 /// `output_note::get_assets` returns all of the note's assets, so a policy that inspects the
 /// faucet's assets selects them by comparing `asset::id_to_faucet_id` with
 /// `active_account::get_id`.
+///
+/// A policy that returns attachments for the note puts their attachment list into the advice map
+/// under `ATTACHMENT_LIST_COMMITMENT` and the elements of each attachment under its commitment, and
+/// the kernel appends them to the note. A `num_attachments` of `0` returns no attachment and
+/// requires `ATTACHMENT_LIST_COMMITMENT` to be the empty word. The bundled policies return no
+/// attachment.
 ///
 /// ## Minting
 ///
@@ -201,7 +206,9 @@ impl SendPolicy {
     /// Returns a send policy resolving to `root` and shipping the provided companion
     /// `components` (anything that can be converted into an [`AccountComponent`]).
     ///
-    /// The procedure at `root` is invoked with the send policy inputs `[note_idx, pad(15)]`.
+    /// The procedure at `root` is invoked with the send policy inputs `[note_idx, pad(15)]` and
+    /// returns the send policy outputs `[num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]`
+    /// (see [`SendPolicy`]).
     ///
     /// # Errors
     ///
@@ -218,6 +225,8 @@ impl SendPolicy {
 
     /// Returns a send policy that accepts an output note only if all of the provided `policies`
     /// accept it. The policies are invoked in the provided order, each with the send policy inputs.
+    /// The merged policy returns no attachment, so it drops the attachments that the `policies`
+    /// return.
     ///
     /// Only the merged policy is registered with a [`super::TokenPolicyManager`], not the
     /// individual `policies`.

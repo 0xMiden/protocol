@@ -1,25 +1,27 @@
-use {Asset} from miden::protocol::types
+use {Asset, NoteAttachmentCount, NoteAttachmentListCommitment} from miden::protocol::types
 # Generic transfer policy procedures shared by policy manager flows.
 
 # POLICY PROCEDURES
 # ================================================================================================
 
-#! Send policy that accepts every output note.
+#! Send policy that accepts every output note and returns no attachment for it.
 #!
 #! Invoked as the active send policy via `TokenPolicyManager`, which limits the transaction's
 #! expiration and applies the account-wide pause check.
 #!
 #! Inputs:  [note_idx, pad(15)]
-#! Outputs: [pad(16)]
+#! Outputs: [0, EMPTY_WORD, pad(11)]
 #!
 #! Where:
 #! - note_idx is the index of the output note being sealed.
+#! - 0 is the number of attachments returned for the note, so the attachment list commitment is
+#!   EMPTY_WORD.
 #!
 #! Invocation: call
 @account_procedure
-pub proc check_send_policy(note_idx: u16)
+pub proc check_send_policy(note_idx: u16) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
     drop
-    # => [pad(16)]
+    # => [0, EMPTY_WORD, pad(11)]
 end
 
 #! Receive policy that accepts every asset.
