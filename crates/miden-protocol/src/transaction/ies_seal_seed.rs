@@ -1,11 +1,10 @@
+use alloc::vec::Vec;
 use core::fmt;
 
-use miden_crypto::hash::blake::Blake3_256;
 use rand::{CryptoRng, Rng};
 use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::SeedableRng;
 
-use crate::Word;
 use crate::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
 use crate::utils::serde::{
     ByteReader,
@@ -14,6 +13,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
+use crate::{Felt, Hasher, IES_SEAL_EPHEMERAL_SECRET_DOMAIN, Word};
 
 // IES SEAL SEED
 // ================================================================================================
@@ -37,9 +37,6 @@ use crate::utils::serde::{
 pub struct IesSealSeed([u8; 32]);
 
 impl IesSealSeed {
-    /// Domain separator of [`Self::derive_ephemeral_secret`], which versions the derivation.
-    const DERIVATION_DOMAIN: &[u8] = b"miden IES EcGFp5/Eidos seal ephemeral secret v1";
-
     /// Returns a new [`IesSealSeed`] with the provided bytes.
     pub fn new(seed: [u8; 32]) -> Self {
         Self(seed)
@@ -56,9 +53,11 @@ impl IesSealSeed {
     /// transaction, which encrypts the plaintext with `plaintext_digest` under the context with
     /// `context_digest` to `recipient`.
     ///
-    /// The secret is drawn from a ChaCha20 generator seeded with the BLAKE3 hash of the
-    /// concatenation of a domain separator, the seed, the request index (4 bytes), the recipient
-    /// key commitment and the two digests (32 bytes each), all little-endian.
+    /// The secret is the [`SecretKey::with_rng`] draw from a ChaCha20 generator seeded with
+    /// [`Word::as_bytes`] of the Eidos hash in [`IES_SEAL_EPHEMERAL_SECRET_DOMAIN`] of 22 elements:
+    /// the seed as eight `u32` limbs, each four consecutive seed bytes read as little-endian, the
+    /// request index, the recipient's [`PublicKey::to_elements`], the context digest and the
+    /// plaintext digest.
     pub fn derive_ephemeral_secret(
         &self,
         request_idx: u32,
@@ -66,19 +65,20 @@ impl IesSealSeed {
         context_digest: Word,
         plaintext_digest: Word,
     ) -> SecretKey {
-        let rng_seed = Blake3_256::hash_iter(
-            [
-                Self::DERIVATION_DOMAIN,
-                &self.0,
-                &request_idx.to_le_bytes(),
-                &recipient.to_commitment().as_bytes(),
-                &context_digest.as_bytes(),
-                &plaintext_digest.as_bytes(),
-            ]
-            .into_iter(),
-        );
+        let elements: Vec<Felt> = self
+            .0
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|limb| Felt::from(u32::from_le_bytes(*limb)))
+            .chain([Felt::from(request_idx)])
+            .chain(recipient.to_elements())
+            .chain(context_digest)
+            .chain(plaintext_digest)
+            .collect();
+        let rng_seed = Hasher::hash_elements_in_domain(&elements, IES_SEAL_EPHEMERAL_SECRET_DOMAIN);
 
-        SecretKey::with_rng(&mut ChaCha20Rng::from_seed(rng_seed.into()))
+        SecretKey::with_rng(&mut ChaCha20Rng::from_seed(rng_seed.as_bytes()))
     }
 }
 
