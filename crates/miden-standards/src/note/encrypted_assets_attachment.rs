@@ -53,9 +53,9 @@ procedure_root!(
 
 static ISSUER_KEY_SLOT_NAMES: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
     [
-        StorageSlotName::new("miden::standards::attachments::encrypted_assets::issuer_key_0")
+        StorageSlotName::new("miden::standards::attachments::encrypted_assets::issuer_key_head")
             .expect("storage slot name should be valid"),
-        StorageSlotName::new("miden::standards::attachments::encrypted_assets::issuer_key_1")
+        StorageSlotName::new("miden::standards::attachments::encrypted_assets::issuer_key_tail")
             .expect("storage slot name should be valid"),
     ]
 });
@@ -271,12 +271,12 @@ impl EncryptedAssetsAttachment {
 /// The public key to which `miden::standards::attachments::encrypted_assets::build_attachment`
 /// encrypts the [`EncryptedAssetsAttachment`] of a private note.
 ///
-/// A faucet stores the key in two value slots:
+/// A faucet stores the key in two value slots, its head and its tail:
 ///
 /// ```text
-/// miden::standards::attachments::encrypted_assets::issuer_key_0:
+/// miden::standards::attachments::encrypted_assets::issuer_key_head:
 ///     [public_key_0, public_key_1, public_key_2, public_key_3]
-/// miden::standards::attachments::encrypted_assets::issuer_key_1:
+/// miden::standards::attachments::encrypted_assets::issuer_key_tail:
 ///     [public_key_4, 0, 0, 0]
 /// ```
 ///
@@ -321,7 +321,8 @@ impl EncryptedAssetsIssuerKey {
         *ENCRYPTED_ASSETS_SET_ISSUER_KEY_ROOT
     }
 
-    /// Returns the [`StorageSlotName`]s of the two issuer key slots.
+    /// Returns the [`StorageSlotName`]s of the head and the tail slot of the issuer key, in this
+    /// order.
     pub fn slot_names() -> &'static [StorageSlotName; 2] {
         &ISSUER_KEY_SLOT_NAMES
     }
@@ -331,15 +332,15 @@ impl EncryptedAssetsIssuerKey {
         self.public_key
     }
 
-    /// Consumes the issuer key and returns the two [`StorageSlot`]s that hold it.
+    /// Consumes the issuer key and returns its head and tail [`StorageSlot`]s, in this order.
     pub fn into_storage_slots(self) -> [StorageSlot; 2] {
         let [e0, e1, e2, e3, e4] = self.public_key.to_elements();
-        let [slot_name_0, slot_name_1] = Self::slot_names().clone();
+        let [head_slot_name, tail_slot_name] = Self::slot_names().clone();
 
         [
-            StorageSlot::with_value(slot_name_0, Word::new([e0, e1, e2, e3])),
+            StorageSlot::with_value(head_slot_name, Word::new([e0, e1, e2, e3])),
             StorageSlot::with_value(
-                slot_name_1,
+                tail_slot_name,
                 Word::new([e4, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
             ),
         ]
