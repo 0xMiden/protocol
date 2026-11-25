@@ -90,7 +90,7 @@ pub enum TransferPolicyError {
 ///
 /// ```text
 /// Inputs:  [note_idx, pad(15)]
-/// Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+/// Outputs: [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
 /// ```
 ///
 /// It reads the note itself and the note creator via `native_account::get_id`.
@@ -98,10 +98,11 @@ pub enum TransferPolicyError {
 /// faucet's assets selects them by comparing `asset::id_to_faucet_id` with
 /// `active_account::get_id`.
 ///
-/// A policy that returns an attachment for the note puts the attachment's elements into the
-/// advice map under `ATTACHMENT_COMMITMENT`, and the kernel appends it to the note. An
-/// `attachment_scheme` of `0` returns no attachment and requires `ATTACHMENT_COMMITMENT` to be
-/// the empty word. The bundled policies return no attachment.
+/// A policy that returns attachments for the note puts their attachment list into the advice map
+/// under `ATTACHMENT_LIST_COMMITMENT` and the elements of each attachment under its commitment, and
+/// the kernel appends them to the note. A `num_attachments` of `0` returns no attachment and
+/// requires `ATTACHMENT_LIST_COMMITMENT` to be the empty word. The bundled policies return no
+/// attachment.
 ///
 /// ## Minting
 ///
@@ -206,8 +207,8 @@ impl SendPolicy {
     /// `components` (anything that can be converted into an [`AccountComponent`]).
     ///
     /// The procedure at `root` is invoked with the send policy inputs `[note_idx, pad(15)]` and
-    /// returns the send policy outputs `[attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]` (see
-    /// [`SendPolicy`]).
+    /// returns the send policy outputs `[num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]`
+    /// (see [`SendPolicy`]).
     ///
     /// # Errors
     ///
@@ -224,6 +225,8 @@ impl SendPolicy {
 
     /// Returns a send policy that accepts an output note only if all of the provided `policies`
     /// accept it. The policies are invoked in the provided order, each with the send policy inputs.
+    /// The merged policy returns no attachment, so it drops the attachments that the `policies`
+    /// return.
     ///
     /// Only the merged policy is registered with a [`super::TokenPolicyManager`], not the
     /// individual `policies`.

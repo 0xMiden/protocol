@@ -21,7 +21,7 @@ use miden_protocol::asset::{
 };
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
-use miden_protocol::errors::tx_kernel::ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_COMMITMENT_WITHOUT_SCHEME;
+use miden_protocol::errors::tx_kernel::ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_COMMITMENT_WITHOUT_ATTACHMENTS;
 use miden_protocol::note::{Note, NoteAttachment, NoteAttachmentScheme, NoteTag, NoteType};
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
@@ -351,51 +351,27 @@ pub(crate) fn assert_minted_note(
 /// The index of the note that [`execute_note_sealing_tx`] seals through the send policy.
 ///
 /// It is not 0, so that a send policy that returns the note index on top of its outputs returns a
-/// non-zero attachment scheme.
+/// non-zero number of attachments.
 const SEALED_NOTE_IDX: usize = 1;
 
-/// Builds a custom send policy that returns a single-word attachment with the provided scheme and
-/// word, or no attachment if `attachment` is `None`.
-///
-/// The policy puts the attachment word into the advice map under its commitment.
-fn custom_send_policy(attachment: Option<(u16, Word)>) -> anyhow::Result<SendPolicy> {
-    let policy_body = match attachment {
-        None => String::from(
-            "drop
-            # => [attachment_reserved_scheme, EMPTY_WORD, pad(11)]",
-        ),
-        Some((attachment_scheme, attachment_word)) => format!(
-            "drop
-            # => [pad(16)]
-
-            push.{attachment_word} loc_storew_le.0
-            exec.::miden::core::crypto::hashes::eidos::hash
-            # => [ATTACHMENT_COMMITMENT, pad(16)]
-
-            locaddr.0 dup add.4 movdn.5 movdn.4
-            # => [ATTACHMENT_COMMITMENT, start_ptr, end_ptr, pad(16)]
-
-            adv.insert_mem
-            movup.4 drop movup.4 drop
-            # => [ATTACHMENT_COMMITMENT, pad(16)]
-
-            push.{attachment_scheme}
-            exec.::miden::core::sys::truncate_stack
-            # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]"
-        ),
-    };
-
+/// Builds a custom send policy that returns no attachments together with the provided attachment
+/// list commitment, which the kernel accepts only if it is the empty word.
+fn custom_send_policy(attachment_list_commitment: Word) -> anyhow::Result<SendPolicy> {
     let component_name = "tests::attachment_send_policy";
     let policy_code = CodeBuilder::default().compile_component_code(
         component_name,
         format!(
             "
             #! Inputs:  [note_idx, pad(15)]
-            #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
-            @locals(4)
+            #! Outputs: [0, ATTACHMENT_LIST_COMMITMENT, pad(11)]
             @account_procedure
             pub proc check_send_policy
-                {policy_body}
+                drop
+                # => [pad(16)]
+
+                push.{attachment_list_commitment} push.0
+                exec.::miden::core::sys::truncate_stack
+                # => [0, ATTACHMENT_LIST_COMMITMENT, pad(11)]
             end
             "
         ),
@@ -849,11 +825,15 @@ async fn send_policy_inspects_the_faucet_assets_of_the_note(
 /// A send policy that returns no attachment, including each bundled send policy, and a faucet
 /// without an active send policy leave the sealed note as its creator built it.
 #[rstest::rstest]
-#[case::custom(|_| custom_send_policy(None).map(Some))]
+#[case::custom(|_| custom_send_policy(Word::empty()).map(Some))]
 #[case::allow_all(|_| Ok(Some(SendPolicy::allow_all())))]
 #[case::basic_blocklist(|_| Ok(Some(SendPolicy::empty_basic_blocklist())))]
 #[case::basic_allowlist(|sender| {
     Ok(Some(SendPolicy::with_basic_allowlist(AllowlistStorage::with_allowed_accounts([sender]))))
+})]
+#[case::supply_restriction(|_| Ok(Some(SendPolicy::empty_supply_restriction())))]
+#[case::merged(|_| {
+    Ok(Some(SendPolicy::merge([SendPolicy::allow_all(), SendPolicy::empty_basic_blocklist()])?))
 })]
 #[case::no_active_policy(|_| Ok(None))]
 #[tokio::test]
@@ -870,18 +850,17 @@ async fn send_policy_without_attachment_leaves_the_note_unchanged(
     Ok(())
 }
 
-/// The kernel validates the send policy's outputs, so a send policy that returns attachment scheme
-/// 0 with a non-empty commitment fails the transaction.
+/// The kernel validates the send policy's outputs, so a send policy that returns no attachments
+/// with a non-empty attachment list commitment fails the transaction.
 #[tokio::test]
-async fn send_policy_commitment_without_attachment_scheme_fails() -> anyhow::Result<()> {
-    let (_, result) = execute_note_sealing_tx(|_| {
-        custom_send_policy(Some((0, Word::from([5, 6, 7, 8u32])))).map(Some)
-    })
-    .await?;
+async fn send_policy_list_commitment_without_attachments_fails() -> anyhow::Result<()> {
+    let (_, result) =
+        execute_note_sealing_tx(|_| custom_send_policy(Word::from([5, 6, 7, 8u32])).map(Some))
+            .await?;
 
     assert_transaction_executor_error!(
         result,
-        ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_COMMITMENT_WITHOUT_SCHEME
+        ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_COMMITMENT_WITHOUT_ATTACHMENTS
     );
 
     Ok(())
