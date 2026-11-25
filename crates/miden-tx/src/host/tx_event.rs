@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use core::fmt;
 
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
@@ -178,6 +179,8 @@ pub(crate) enum TransactionEvent {
     Unauthorized {
         tx_summary: TransactionSummary,
     },
+
+    IesEcgfp5EidosSeal(IesSealRequest),
 
     LinkMapSet {
         advice_mutation: Vec<AdviceMutation>,
@@ -597,6 +600,10 @@ impl TransactionEvent {
                 Some(TransactionEvent::Unauthorized { tx_summary })
             },
 
+            TransactionEventId::IesEcgfp5EidosSeal => {
+                Some(TransactionEvent::IesEcgfp5EidosSeal(IesSealRequest::extract(process)?))
+            },
+
             TransactionEventId::LinkMapSet => Some(TransactionEvent::LinkMapSet {
                 advice_mutation: LinkMap::handle_set_event(process),
             }),
@@ -725,6 +732,38 @@ pub(crate) enum RecipientData {
         script_root: Word,
         note_storage: NoteStorage,
     },
+}
+
+// IES SEAL REQUEST
+// ================================================================================================
+
+/// An IES `seal` request of `miden::protocol::ies::ecgfp5_eidos::seal`.
+pub(crate) struct IesSealRequest {
+    /// The encoding of the recipient public key.
+    pub(super) public_key: [Felt; 5],
+    /// The digest of the plaintext.
+    pub(super) plaintext_digest: Word,
+    /// The digest of the context.
+    pub(super) context_digest: Word,
+}
+
+impl IesSealRequest {
+    /// Extracts the request from the stack of the `miden::protocol::ies::ecgfp5_eidos::seal` event.
+    fn extract(process: &ProcessorState) -> Result<Self, TransactionKernelError> {
+        // Expected stack state: [event, PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5)]
+        Ok(Self {
+            public_key: core::array::from_fn(|idx| process.get_stack_item(9 + idx)),
+            plaintext_digest: process.get_stack_word(1),
+            context_digest: process.get_stack_word(5),
+        })
+    }
+}
+
+/// Leaves out the digests, which let anyone who sees them check guesses of a plaintext.
+impl fmt::Debug for IesSealRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IesSealRequest").finish_non_exhaustive()
+    }
 }
 
 /// Extracts a transaction log after the kernel has authenticated its emitter and content.

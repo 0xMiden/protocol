@@ -30,6 +30,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::transaction::{
     AccountInputs,
+    IesSealSeed,
     InputNote,
     InputNotes,
     RawOutputNote,
@@ -127,6 +128,7 @@ where
         ref_block: BlockNumber,
         block_commitments: BTreeMap<BlockNumber, Word>,
         source_manager: Arc<dyn SourceManagerSync>,
+        ies_seal_seed: Option<IesSealSeed>,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
@@ -135,6 +137,7 @@ where
             mast_store,
             scripts_mast_store,
             acct_procedure_index_map,
+            ies_seal_seed,
         )?;
 
         Ok(Self {
@@ -699,6 +702,10 @@ where
                 // This always returns an error to abort the transaction.
                 TransactionEvent::Unauthorized { tx_summary } => {
                     Err(TransactionKernelError::Unauthorized(Box::new(tx_summary)))
+                },
+
+                TransactionEvent::IesEcgfp5EidosSeal(request) => {
+                    self.base_host.on_ies_seal_requested(request)
                 },
 
                 TransactionEvent::LinkMapSet { advice_mutation } => Ok(advice_mutation),

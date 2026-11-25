@@ -68,6 +68,8 @@ pub enum TransactionEventId {
 
     AuthRequest = AUTH_REQUEST_ID,
 
+    IesEcgfp5EidosSeal = IES_ECGFP5_EIDOS_SEAL_ID,
+
     PrologueStart = PROLOGUE_START_ID,
     PrologueEnd = PROLOGUE_END_ID,
 
@@ -98,8 +100,13 @@ impl TransactionEventId {
     ///
     /// The host enforces this: a privileged event emitted from a non-root context is rejected.
     pub fn is_privileged(&self) -> bool {
-        let is_unprivileged =
-            matches!(self, Self::AuthRequest | Self::InputNoteIndexLookup | Self::Unauthorized);
+        let is_unprivileged = matches!(
+            self,
+            Self::AuthRequest
+                | Self::InputNoteIndexLookup
+                | Self::IesEcgfp5EidosSeal
+                | Self::Unauthorized
+        );
         !is_unprivileged
     }
 
@@ -147,6 +154,7 @@ impl TransactionEventId {
             Self::TxLogAdded => &TX_LOG_ADDED_NAME,
             Self::TxBeforeBlockWitnessLoad => &TX_BEFORE_BLOCK_WITNESS_LOAD_NAME,
             Self::AuthRequest => &AUTH_REQUEST_NAME,
+            Self::IesEcgfp5EidosSeal => &IES_ECGFP5_EIDOS_SEAL_NAME,
             Self::PrologueStart => &PROLOGUE_START_NAME,
             Self::PrologueEnd => &PROLOGUE_END_NAME,
             Self::NotesProcessingStart => &NOTES_PROCESSING_START_NAME,
@@ -252,6 +260,8 @@ impl TryFrom<EventId> for TransactionEventId {
             TX_BEFORE_BLOCK_WITNESS_LOAD_ID => Ok(TransactionEventId::TxBeforeBlockWitnessLoad),
 
             AUTH_REQUEST_ID => Ok(TransactionEventId::AuthRequest),
+
+            IES_ECGFP5_EIDOS_SEAL_ID => Ok(TransactionEventId::IesEcgfp5EidosSeal),
 
             PROLOGUE_START_ID => Ok(TransactionEventId::PrologueStart),
             PROLOGUE_END_ID => Ok(TransactionEventId::PrologueEnd),

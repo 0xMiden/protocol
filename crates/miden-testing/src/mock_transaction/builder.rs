@@ -17,7 +17,7 @@ use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
-use miden_protocol::transaction::{RawOutputNote, TransactionArgs, TransactionScript};
+use miden_protocol::transaction::{IesSealSeed, RawOutputNote, TransactionArgs, TransactionScript};
 use miden_standards::account::auth::{FeeConversionInfo, commit_fee_conversion_info};
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::TransactionMastStore;
@@ -88,6 +88,7 @@ pub struct MockTransactionBuilder<'chain> {
     required_blocks: BTreeSet<BlockNumber>,
     note_args: BTreeMap<NoteId, Word>,
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
+    ies_seal_seed: Option<IesSealSeed>,
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     code_to_register: Vec<Arc<MastForest>>,
     source_manager: Option<Arc<dyn SourceManagerSync>>,
@@ -121,6 +122,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
             required_blocks: BTreeSet::new(),
             note_args: BTreeMap::new(),
             signatures: Vec::new(),
+            ies_seal_seed: Some(IesSealSeed::new([0; 32])),
             note_scripts: BTreeMap::new(),
             code_to_register: Vec::new(),
             source_manager: None,
@@ -306,6 +308,15 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
+    /// Sets the IES seal seed of the transaction arguments, or removes it with `None`.
+    ///
+    /// Defaults to a fixed seed, so that transactions that encrypt with
+    /// `miden::protocol::ies::ecgfp5_eidos::seal` execute without further setup.
+    pub fn ies_seal_seed(mut self, ies_seal_seed: Option<IesSealSeed>) -> Self {
+        self.ies_seal_seed = ies_seal_seed;
+        self
+    }
+
     /// Adds a note script to the mock transaction for testing.
     pub fn add_note_script(mut self, script: NoteScript) -> Self {
         self.note_scripts.insert(script.root(), script);
@@ -364,6 +375,9 @@ impl<'chain> MockTransactionBuilder<'chain> {
         tx_args = tx_args.with_auth_args(self.auth_args);
         if let Some(account_code_upgrade) = self.account_code_upgrade {
             tx_args = tx_args.with_account_code_upgrade(account_code_upgrade);
+        }
+        if let Some(ies_seal_seed) = self.ies_seal_seed {
+            tx_args = tx_args.with_ies_seal_seed(ies_seal_seed);
         }
         tx_args.extend_advice_inputs(self.advice_inputs);
         tx_args.extend_output_note_recipients(
