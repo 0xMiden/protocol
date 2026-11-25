@@ -124,7 +124,7 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO = "issuer public key for encrypted as
 #!   - the transaction arguments provide no IES seal seed.
 #!
 #! Invocation: exec
-pub proc build_attachment(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmentCommitment)
+pub proc new(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmentCommitment)
     dup exec.output_note::get_metadata
     # => [METADATA, note_idx]
 
@@ -176,7 +176,7 @@ end
 #! the account-wide `Authority` component.
 #!
 #! Attachments built before the rotation stay encrypted to the previous key. The key is checked to
-#! be a valid EcGFp5 public key only when `build_attachment` encrypts to it.
+#! be a valid EcGFp5 public key only when `new` encrypts to it.
 #!
 #! Inputs:  [public_key(5), pad(11)]
 #! Outputs: [pad(16)]

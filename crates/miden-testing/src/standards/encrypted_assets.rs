@@ -69,7 +69,7 @@ const ISSUER_CALLBACK_CODE: &str = "
     #! Outputs: [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
     @account_procedure
     pub proc on_before_note_sealed
-        exec.encrypted_assets::build_attachment
+        exec.encrypted_assets::new
         # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(15)]
 
         exec.output_note::single_attachment_list

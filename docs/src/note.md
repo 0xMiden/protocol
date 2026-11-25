@@ -100,7 +100,7 @@ Example use cases for attachments are:
 
 #### Encrypted asset attachments
 
-A faucet can attach the details of each private note that carries its asset, encrypted to the issuer's key, so that the issuer can track its asset. Its `on_before_note_sealed` callback calls `miden::standards::attachments::encrypted_assets::build_attachment`, which returns no attachment for a public note, and returns the result as an attachment list through `miden::protocol::output_note::single_attachment_list`. For a private note with `n` assets, it encrypts the plaintext (`3 + 2n` words, assets in note order)
+A faucet can attach the details of each private note that carries its asset, encrypted to the issuer's key, so that the issuer can track its asset. Its `on_before_note_sealed` callback calls `miden::standards::attachments::encrypted_assets::new`, which returns no attachment for a public note, and returns the result as an attachment list through `miden::protocol::output_note::single_attachment_list`. For a private note with `n` assets, it encrypts the plaintext (`3 + 2n` words, assets in note order)
 
 ```text
 [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSET_ID_0, ASSET_VALUE_0, ..., ASSET_ID_{n-1}, ASSET_VALUE_{n-1}]
