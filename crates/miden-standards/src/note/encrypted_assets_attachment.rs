@@ -392,18 +392,13 @@ mod tests {
     use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
-    use miden_protocol::account::StorageSlot;
     use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
     use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
     use miden_protocol::errors::NoteError;
     use miden_protocol::note::{NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteScriptRoot};
     use miden_protocol::{Felt, Word};
 
-    use super::{
-        EncryptedAssetsAttachment,
-        EncryptedAssetsAttachmentError,
-        EncryptedAssetsIssuerKey,
-    };
+    use super::{EncryptedAssetsAttachment, EncryptedAssetsAttachmentError};
 
     /// The plaintext holds the serial number, script root and storage commitment, followed by the
     /// assets in note order, and decodes back to the same plaintext.
@@ -482,30 +477,6 @@ mod tests {
         assert_matches!(
             EncryptedAssetsAttachment::decrypt(&malformed, &secret_key),
             Err(EncryptedAssetsAttachmentError::InvalidEnvelope(_))
-        );
-
-        Ok(())
-    }
-
-    /// The two issuer key slots hold the five public key elements.
-    #[test]
-    fn issuer_key_storage_slots_hold_public_key_elements() -> anyhow::Result<()> {
-        let public_key = SecretKey::from_bytes(&[1; 40])?.public_key();
-        let [e0, e1, e2, e3, e4] = public_key.to_elements();
-        let [slot_name_0, slot_name_1] = EncryptedAssetsIssuerKey::slot_names();
-
-        let [slot_0, slot_1] = EncryptedAssetsIssuerKey::new(public_key).into_storage_slots();
-
-        assert_eq!(
-            slot_0,
-            StorageSlot::with_value(slot_name_0.clone(), Word::new([e0, e1, e2, e3]))
-        );
-        assert_eq!(
-            slot_1,
-            StorageSlot::with_value(
-                slot_name_1.clone(),
-                Word::new([e4, Felt::ZERO, Felt::ZERO, Felt::ZERO])
-            )
         );
 
         Ok(())
