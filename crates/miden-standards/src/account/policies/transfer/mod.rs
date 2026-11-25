@@ -211,8 +211,8 @@ impl SendPolicy {
     /// Returns a send policy that attaches the
     /// [`EncryptedAssetsAttachment`](crate::note::EncryptedAssetsAttachment), encrypted to
     /// `issuer_key`, to every private output note holding the faucet's assets, so the issuer can
-    /// track them. Public notes get no attachment. A private note may hold only the faucet's
-    /// asset, since the attachment would show its other assets to the issuer.
+    /// track them. Public notes get no attachment. A private note may hold only one asset, since
+    /// the attachment would show the assets of other faucets to the issuer.
     ///
     /// Resolves to [`EncryptedAssetsSendPolicy::send_root`] and ships the companion
     /// [`EncryptedAssetsSendPolicy`] component and `issuer_key` as the component that installs

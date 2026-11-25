@@ -35,7 +35,7 @@ procedure_root!(
 /// installs the [`EncryptedAssetsIssuerKey`](crate::note::EncryptedAssetsIssuerKey). When active,
 /// the policy returns the [`EncryptedAssetsAttachment`](crate::note::EncryptedAssetsAttachment) of
 /// every private output note holding the faucet's assets, encrypted to that key, and rejects a
-/// private note that also holds other assets. Public notes get no attachment.
+/// private note that holds more than one asset. Public notes get no attachment.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EncryptedAssetsSendPolicy;
 

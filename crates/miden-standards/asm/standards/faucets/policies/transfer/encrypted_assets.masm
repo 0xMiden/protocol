@@ -2,7 +2,7 @@
 #
 # Encrypted assets send policy: returns the encrypted asset attachment of each private output note
 # holding the issuing faucet's assets, built by `miden::standards::attachments::encrypted_assets`,
-# and rejects a private note that also holds other assets.
+# and rejects a private note that holds more than one asset.
 
 use {NoteAttachmentCount, NoteAttachmentListCommitment} from miden::protocol::types
 use {ENCRYPTED_ASSETS_ATTACHMENT_SCHEME} from miden::standards::attachments::encrypted_assets
@@ -22,8 +22,8 @@ const ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS = "private note with an encr
 #! Returns no attachment for a public note. For a private note, encrypts the note's details to the
 #! issuer key in the issuing faucet's storage (see `encrypted_assets::build_attachment`) and limits
 #! the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the
-#! reference block. A private note may hold only the issuing faucet's asset, since the attachment
-#! holds all of the note's assets and would show the other ones to the issuer. A send policy that
+#! reference block. A private note may hold only one asset, since the attachment holds all of the
+#! note's assets and would show the assets of other faucets to the issuer. A send policy that
 #! combines other checks with the attachment executes its checks and then `exec`s this procedure
 #! with its own inputs, i.e. with the stack exactly `[note_idx, pad(15)]`.
 #!
