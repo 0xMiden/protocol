@@ -209,7 +209,7 @@ impl StandardNote {
         match self {
             Self::P2ID => NumStorageItems::Exact(P2idNote::NUM_STORAGE_ITEMS),
             Self::P2IDE => NumStorageItems::Exact(P2ideNote::NUM_STORAGE_ITEMS),
-            Self::SWAP => NumStorageItems::Exact(SwapNote::NUM_STORAGE_ITEMS),
+            Self::SWAP => SwapNote::NUM_STORAGE_ITEMS,
             Self::PSWAP => NumStorageItems::Exact(PswapNote::NUM_STORAGE_ITEMS),
             Self::MINT => MintNote::NUM_STORAGE_ITEMS,
             Self::BURN => NumStorageItems::Exact(BurnNote::NUM_STORAGE_ITEMS),

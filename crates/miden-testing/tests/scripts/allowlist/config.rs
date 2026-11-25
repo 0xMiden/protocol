@@ -3,7 +3,7 @@
 //!
 //! The suite covers the note itself: that each variant dispatches to the matching procedure, and
 //! that the script's own guards reject malformed storage. The allowlist semantics (the
-//! `check_policy` predicate, the noop cases) and the `Authority` rejection of an unauthorized
+//! policy predicates, the noop cases) and the `Authority` rejection of an unauthorized
 //! sender are covered by the parent [`super`] suite.
 
 use miden_protocol::account::{AccountId, AccountType, StorageMapKey};
