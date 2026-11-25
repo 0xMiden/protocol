@@ -72,8 +72,8 @@ impl SwapNote {
     /// See [`SwapPayback`] for how `payback_note_type` shapes the SWAP note storage.
     ///
     /// Sealing the payback note invokes the `on_before_note_sealed` callback of the requested
-    /// asset's faucet, which can return an attachment that the kernel appends after the payback
-    /// attachments. That attachment takes one of the payback note's attachment slots.
+    /// asset's faucet, which can return attachments that the kernel appends after the payback
+    /// attachments. Those attachments take the payback note's remaining attachment slots.
     ///
     /// # Errors
     ///

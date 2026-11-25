@@ -2,6 +2,7 @@ use {
     Asset,
     Bool,
     NoteAttachmentCommitment,
+    NoteAttachmentCount,
     NoteAttachmentScheme,
     NoteAttachmentsCommitment,
     NoteId,
@@ -68,7 +69,7 @@ end
 #! Call this once the note's assets and attachments are final. Every output note must be sealed
 #! before the transaction ends, otherwise the transaction epilogue panics. The callbacks are invoked
 #! once per faucet, in the order in which each faucet first occurs among the note's assets, and the
-#! attachment each callback returns is appended to the note, so the note's attachments and ID are
+#! attachments each callback returns are appended to the note, so the note's attachments and ID are
 #! final only once `seal` returns. Sealing is idempotent: sealing an already sealed note returns
 #! without invoking any callback.
 #!
@@ -81,7 +82,8 @@ end
 #! - the note index is greater or equal to the total number of output notes.
 #! - a faucet's `on_before_note_sealed` callback procedure root is not part of its account code.
 #! - a faucet's `on_before_note_sealed` callback panics.
-#! - an attachment returned by a callback is invalid or exceeds the note's attachment limits.
+#! - a callback returns an invalid attachment list, or attachments that are invalid or exceed the
+#!   note's attachment limits.
 #!
 #! Invocation: exec
 pub proc seal(note_index: u16)
@@ -597,7 +599,7 @@ end
 pub proc write_attachment_commitments_to_memory(
     dest_ptr: ptr<NoteAttachmentCommitment>,
     note_index: u16
-) -> u8
+) -> NoteAttachmentCount
     swap exec.get_attachments_commitment
     # => [ATTACHMENTS_COMMITMENT, dest_ptr]
 
