@@ -88,7 +88,7 @@ miden_crypto::eidos_domain_registry! {
                 encoding: FeltSequence,
                 description: "IES seal ephemeral secret derivation.",
                 schema: "param0 = 22 Felts; param1 = param2 = 0; \
-                    seed as eight little-endian u32 limbs, request index, \
+                    seed as eight u32 limbs of four little-endian bytes each, request index, \
                     recipient public key (5), context digest, plaintext digest; \
                     zero-pad the final block",
             }

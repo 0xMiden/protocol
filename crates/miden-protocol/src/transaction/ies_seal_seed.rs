@@ -1,4 +1,3 @@
-use alloc::vec::Vec;
 use core::fmt;
 
 use rand::{CryptoRng, Rng};
@@ -6,6 +5,7 @@ use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::SeedableRng;
 
 use crate::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
+use crate::utils::bytes_to_packed_u32_elements;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -65,17 +65,11 @@ impl IesSealSeed {
         context_digest: Word,
         plaintext_digest: Word,
     ) -> SecretKey {
-        let elements: Vec<Felt> = self
-            .0
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|limb| Felt::from(u32::from_le_bytes(*limb)))
-            .chain([Felt::from(request_idx)])
-            .chain(recipient.to_elements())
-            .chain(context_digest)
-            .chain(plaintext_digest)
-            .collect();
+        let mut elements = bytes_to_packed_u32_elements(&self.0);
+        elements.push(Felt::from(request_idx));
+        elements.extend(recipient.to_elements());
+        elements.extend(context_digest);
+        elements.extend(plaintext_digest);
         let rng_seed = Hasher::hash_elements_in_domain(&elements, IES_SEAL_EPHEMERAL_SECRET_DOMAIN);
 
         SecretKey::with_rng(&mut ChaCha20Rng::from_seed(rng_seed.as_bytes()))
