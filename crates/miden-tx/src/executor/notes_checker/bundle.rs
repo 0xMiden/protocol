@@ -49,6 +49,11 @@ pub(super) enum NoteBundle {
 }
 
 impl NoteBundle {
+    /// Returns `true` if the bundle carries FEE_SPONSORSHIP notes.
+    pub(super) fn has_sponsorships(&self) -> bool {
+        matches!(self, Self::Feature { sponsorships, .. } if !sponsorships.is_empty())
+    }
+
     /// Returns the notes forming the bundle, the feature note first.
     pub(super) fn notes(&self) -> impl Iterator<Item = &Note> {
         let (first, sponsorships) = match self {
@@ -98,11 +103,6 @@ impl NoteBundle {
 pub(super) struct NoteBundles(Vec<NoteBundle>);
 
 impl NoteBundles {
-    /// Returns the bundles.
-    pub(super) fn bundles(&self) -> &[NoteBundle] {
-        &self.0
-    }
-
     /// Returns `true` if there are no bundles.
     pub(super) fn is_empty(&self) -> bool {
         self.0.is_empty()
@@ -118,15 +118,6 @@ impl NoteBundles {
         self.0.into_iter().flat_map(NoteBundle::into_notes).collect()
     }
 
-    /// Removes and returns the bundle at `idx`.
-    ///     
-    /// # Panics
-    ///
-    /// Panics if the `idx` is out of bounds.
-    pub(super) fn remove(&mut self, idx: usize) -> NoteBundle {
-        self.0.remove(idx)
-    }
-
     /// Removes and returns the bundle holding the note with `note_id`, or `None` if no bundle
     /// holds it.
     pub(super) fn remove_containing(&mut self, note_id: NoteId) -> Option<NoteBundle> {
@@ -135,6 +126,15 @@ impl NoteBundles {
             .iter()
             .position(|bundle| bundle.notes().any(|note| note.id() == note_id))?;
         Some(self.0.remove(idx))
+    }
+}
+
+impl IntoIterator for NoteBundles {
+    type Item = NoteBundle;
+    type IntoIter = alloc::vec::IntoIter<NoteBundle>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
@@ -168,8 +168,10 @@ impl NoteBundler {
     /// - its feature note is absent, and the native account cannot reclaim it.
     /// - its feature note is itself a FEE_SPONSORSHIP note.
     ///
-    /// The bundles keep the order of the notes heading them, and the sponsorships in a bundle keep
-    /// their relative order.
+    /// The bundles carrying sponsorships come first, since they are what the account collects fees
+    /// from, so a bundle that only passes once fees are collected is tried after them. Within each
+    /// group the bundles keep the order of the notes heading them, and the sponsorships in a bundle
+    /// keep their relative order.
     pub(super) fn bundle(&self, notes: &[Note]) -> (NoteBundles, Vec<FailedNote>) {
         let note_indices: BTreeMap<NoteId, usize> =
             notes.iter().enumerate().map(|(idx, note)| (note.id(), idx)).collect();
@@ -230,6 +232,9 @@ impl NoteBundler {
             }
         }
 
-        (NoteBundles(bundles.into_values().collect()), rejected)
+        let mut bundles: Vec<NoteBundle> = bundles.into_values().collect();
+        bundles.sort_by_key(|bundle| !bundle.has_sponsorships());
+
+        (NoteBundles(bundles), rejected)
     }
 }

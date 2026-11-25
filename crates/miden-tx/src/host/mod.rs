@@ -16,6 +16,7 @@ pub(crate) use code_patch::code_patch_advice;
 use code_patch::{CodePatchSource, code_witness_advice};
 
 pub(crate) mod note_builder;
+use miden_core_lib::handlers::ecgfp5_eidos::ECGFP5_EIDOS_SEAL_EVENT_NAME;
 use miden_protocol::CoreLibrary;
 use miden_protocol::transaction::{
     TransactionEventId,
@@ -41,11 +42,10 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
-use miden_processor::event::{EventError, EventHandlerRegistry};
+use miden_processor::event::{EventError, EventHandlerRegistry, NoopEventHandler};
 use miden_processor::mast::MastForest;
 use miden_processor::trace::RowIndex;
 use miden_processor::{Felt, LoadedMastForest, MastForestStore, ProcessorState};
-use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
     AccountCodeUpgrade,
@@ -65,6 +65,7 @@ use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::code_tree::{CodePatch, CodeWitness, PartialCodeTree};
 use miden_protocol::code::ProcedureRoot;
+use miden_protocol::crypto::ecdh::ecgfp5::PublicKey;
 use miden_protocol::note::{
     NoteAttachment,
     NoteId,
@@ -73,6 +74,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::transaction::{
+    IesSealSeed,
     InputNote,
     InputNotes,
     RawOutputNote,
@@ -82,7 +84,9 @@ use miden_protocol::transaction::{
     TransactionSummaryMetadata,
     TransactionSummaryUserParams,
 };
+use miden_protocol::{MAX_IES_SEAL_REQUESTS_PER_TX, Word};
 pub(crate) use tx_event::{
+    IesSealRequest,
     RecipientData,
     TransactionEvent,
     TransactionProgressEvent,
@@ -141,6 +145,12 @@ pub struct TransactionBaseHost<'store, STORE> {
 
     /// Handle the VM default events _before_ passing it to user defined ones.
     core_lib_handlers: EventHandlerRegistry,
+
+    /// The seed from which the ephemeral secrets of the IES `seal` requests are derived.
+    ies_seal_seed: Option<IesSealSeed>,
+
+    /// The number of IES `seal` requests answered so far.
+    num_ies_seal_requests: u32,
 }
 
 impl<'store, STORE> TransactionBaseHost<'store, STORE> {
@@ -160,6 +170,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
         code_tree: PartialCodeTree,
+        ies_seal_seed: Option<IesSealSeed>,
     ) -> Result<Self, TransactionKernelError> {
         let new_public_account_code =
             (account.is_new() && account.id().is_public()).then(|| account.code().clone());
@@ -173,6 +184,12 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
                     .register(event_id, handler)
                     .expect("There are no duplicates in the core library handlers");
             }
+
+            // The key agreement advice is already provided by `on_ies_seal_requested`.
+            registry
+                .register(ECGFP5_EIDOS_SEAL_EVENT_NAME, Arc::new(NoopEventHandler))
+                .expect("the core library handlers do not handle the IES seal event");
+
             registry
         };
         Ok(Self {
@@ -189,6 +206,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             new_public_account_code,
             code_tree,
             core_lib_handlers,
+            ies_seal_seed,
+            num_ies_seal_requests: 0,
         })
     }
 
@@ -404,6 +423,50 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// as a response to an `AuthRequest` event.
     pub fn on_auth_requested(&self, signature: Vec<Felt>) -> Vec<AdviceMutation> {
         vec![AdviceMutation::extend_advice_stack_with(signature)]
+    }
+
+    /// Derives the ephemeral secret for the IES `seal` request of
+    /// `miden::protocol::ies::ecgfp5_eidos::seal` in this transaction and returns the key agreement
+    /// advice that the core library's `seal` consumes.
+    ///
+    /// The digests come from the VM, so the host does constant work per request. Code that emits
+    /// the request event itself, with any digests, gets the secret of any request of the same
+    /// transaction and seed with the same recipient, digests and request index, also from another
+    /// execution, see [`IesSealSeed`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the transaction already made [`MAX_IES_SEAL_REQUESTS_PER_TX`] requests.
+    /// - the transaction arguments provide no IES seal seed.
+    /// - the public key of the request is not a valid EcGFp5 public key.
+    pub(crate) fn on_ies_seal_requested(
+        &mut self,
+        request: IesSealRequest,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        if self.num_ies_seal_requests >= MAX_IES_SEAL_REQUESTS_PER_TX {
+            return Err(TransactionKernelError::TooManyIesSealRequests);
+        }
+        let seed = self.ies_seal_seed.as_ref().ok_or(TransactionKernelError::IesSealSeedMissing)?;
+        let recipient = PublicKey::from_elements(request.public_key)
+            .map_err(TransactionKernelError::IesPublicKeyInvalid)?;
+
+        let ephemeral_secret = seed.derive_ephemeral_secret(
+            self.initial_account_header.id(),
+            self.initial_account_header.to_commitment(),
+            self.input_notes.commitment(),
+            self.num_ies_seal_requests,
+            &recipient,
+            request.context_digest,
+            request.plaintext_digest,
+        );
+        self.num_ies_seal_requests += 1;
+
+        let advice = recipient.advise(&ephemeral_secret);
+        Ok(vec![
+            AdviceMutation::extend_merkle_store(advice.merkle_nodes().iter().cloned()),
+            AdviceMutation::extend_advice_stack_with(advice.elements()),
+        ])
     }
 
     /// Adds an asset to the output note identified by the note index.

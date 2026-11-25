@@ -28,6 +28,9 @@ const ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT =
 
 const ERR_EPILOGUE_NONCE_CANNOT_BE_0 = "nonce cannot be 0 after an account-creating transaction"
 
+const ERR_EPILOGUE_OUTPUT_NOTE_NOT_SEALED =
+    "every output note must be sealed before the transaction ends"
+
 # CONSTANTS
 # =================================================================================================
 
@@ -86,6 +89,37 @@ proc copy_output_notes_to_advice_map(output_notes_commitment: Commitment) -> Com
         movup.4 drop movup.4 drop
     end
     # => [OUTPUT_NOTES_COMMITMENT]
+end
+
+#! Asserts that every output note created by the transaction is sealed.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - any output note is not sealed.
+proc assert_output_notes_sealed()
+    # compute the end boundary of the output notes section
+    exec.memory::get_num_output_notes exec.memory::get_output_note_ptr
+    # => [output_notes_end_ptr]
+
+    push.OUTPUT_NOTE_SECTION_OFFSET
+    # => [output_note_ptr, output_notes_end_ptr]
+
+    dup.1 dup.1 neq
+    # => [should_loop, output_note_ptr, output_notes_end_ptr]
+
+    while.true
+        dup exec.memory::is_output_note_sealed
+        assert.err=ERR_EPILOGUE_OUTPUT_NOTE_NOT_SEALED
+        # => [output_note_ptr, output_notes_end_ptr]
+
+        add.NOTE_MEM_SIZE dup.1 dup.1 neq
+        # => [should_loop, output_note_ptr, output_notes_end_ptr]
+    end
+
+    drop drop
+    # => []
 end
 
 # BUILD OUTPUT VAULT
@@ -262,6 +296,7 @@ end
 #! Finalizes the transaction by performing the following steps:
 #! - loads the code patch of the public code that the transaction created so far.
 #! - invokes the native account's authentication procedure.
+#! - asserts that every output note is sealed.
 #! - applies a pending code upgrade of the native account.
 #! - computes the output notes commitment and the hash of the transaction logs commitment and
 #!   expiration block number.
@@ -287,6 +322,7 @@ end
 #! - 4..8: ACCOUNT_PATCH_COMMITMENT
 #!
 #! Panics if:
+#! - any output note is not sealed after the authentication procedure returns.
 #! - the assets that were in input notes or in the account vault at the beginning of
 #!   transaction execution are not in output notes or in the account vault at the end of the
 #!   transaction.
@@ -311,6 +347,10 @@ pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, Commitme
     # ------ Execute the account's authentication procedure ------
 
     exec.execute_auth_procedure
+    # => []
+
+    # the check runs after the auth procedure, since it can create notes as well
+    exec.assert_output_notes_sealed
     # => []
 
     # nonce cannot be 0 after the first transaction

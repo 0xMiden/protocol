@@ -16,8 +16,9 @@ use miden_standards::account::faucets::{NonFungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, P2idNote};
 use miden_testing::{AccountState, Auth, MockChainBuilder, MockTransaction};
@@ -88,8 +89,8 @@ fn add_fee_funded_network_non_fungible_faucet(
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::owner_only())
         .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
@@ -152,7 +153,7 @@ pub fn tx_consume_mint_note_fungible_network() -> Result<MockTransaction> {
             .build()?,
     );
 
-    let mint_storage = MintNoteStorage::new_public(
+    let mint_storage = MintNoteStorage::new_public_output(
         p2id_output_note.recipient().clone(),
         mint_asset,
         NoteTag::with_account_target(target_account.id()),
@@ -199,7 +200,7 @@ pub fn tx_consume_mint_note_non_fungible_network() -> Result<MockTransaction> {
             .build()?,
     );
 
-    let mint_storage = MintNoteStorage::new_public(
+    let mint_storage = MintNoteStorage::new_public_output(
         p2id_output_note.recipient().clone(),
         mint_asset,
         NoteTag::with_account_target(target_account.id()),

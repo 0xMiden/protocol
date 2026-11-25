@@ -460,7 +460,7 @@ fn note_creating_auth_account(note: &Note) -> anyhow::Result<Account> {
         @auth_script
         pub proc auth
             push.{recipient} push.{note_type} push.{tag}
-            exec.output_note::create drop
+            exec.output_note::create exec.output_note::seal
 
             exec.native_account::incr_nonce drop
             dropw dropw dropw dropw

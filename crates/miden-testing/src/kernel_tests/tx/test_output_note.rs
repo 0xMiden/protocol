@@ -1024,6 +1024,9 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
             assert_eq.err="number of assets in the note having asset_0 and asset_1 is incorrect"
             # => [note_idx]
 
+            exec.output_note::seal
+            # => []
+
             # truncate the stack
             exec.sys::truncate_stack
         end
@@ -1086,8 +1089,8 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
 
         @transaction_script
         pub proc main
-            # create an output note with one asset
-            {output_note} drop
+            # create and seal an output note with one asset
+            {output_note}
             # => []
 
             # get the recipient (the only existing note has 0'th index)
@@ -1113,7 +1116,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
             exec.sys::truncate_stack
         end
         "#,
-        output_note = create_output_note(&output_note),
+        output_note = create_sealed_output_note(&output_note),
         RECIPIENT = output_note.recipient().digest(),
         METADATA = output_note.metadata().to_metadata_word(),
     );
@@ -1229,11 +1232,11 @@ async fn test_get_assets() -> anyhow::Result<()> {
             exec.sys::truncate_stack
         end
         ",
-        create_note_0 = create_output_note(&p2any_note_0_assets),
+        create_note_0 = create_sealed_output_note(&p2any_note_0_assets),
         check_note_0 = check_assets_code(0, 0, &p2any_note_0_assets),
-        create_note_1 = create_output_note(&p2id_note_1_asset),
+        create_note_1 = create_sealed_output_note(&p2id_note_1_asset),
         check_note_1 = check_assets_code(1, 8, &p2id_note_1_asset),
-        create_note_2 = create_output_note(&p2id_note_2_assets),
+        create_note_2 = create_sealed_output_note(&p2id_note_2_assets),
         check_note_2 = check_assets_code(2, 16, &p2id_note_2_assets),
     );
 
@@ -1367,8 +1370,11 @@ async fn test_add_fifth_attachment_fails() -> anyhow::Result<()> {
             # => [note_idx]
 
             # add attachment 5 (should fail)
-            push.17.18.19.20 push.5
+            dup push.17.18.19.20 push.5
             exec.output_note::add_word_attachment
+            # => [note_idx]
+
+            exec.output_note::seal
             # => []
         end
         ";
@@ -1405,13 +1411,16 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
-            call.::mock::account::create_note
-            # => [note_idx]
+            call.::mock::account::create_note dup
+            # => [note_idx, note_idx]
 
             push.{ATTACHMENT}
             push.{attachment_scheme}
-            # => [attachment_scheme, ATTACHMENT, note_idx]
+            # => [attachment_scheme, ATTACHMENT, note_idx, note_idx]
             exec.output_note::add_word_attachment
+            # => [note_idx]
+
+            exec.output_note::seal
             # => []
 
             # truncate the stack
@@ -1476,8 +1485,8 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
-            call.::mock::account::create_note
-            # => [note_idx]
+            call.::mock::account::create_note dup
+            # => [note_idx, note_idx]
 
             # Store attachment words to memory
             {store_attachment_words}
@@ -1485,8 +1494,11 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
             push.{attachment_ptr}
             push.{num_words}
             push.{attachment_scheme}
-            # => [attachment_scheme, num_words, ptr, note_idx]
+            # => [attachment_scheme, num_words, ptr, note_idx, note_idx]
             exec.output_note::add_attachment_from_memory
+            # => [note_idx]
+
+            exec.output_note::seal
             # => []
 
             # truncate the stack
@@ -1718,6 +1730,9 @@ async fn test_write_attachment_commitments_to_memory() -> anyhow::Result<()> {
             assert_eqw.err=\"attachment commitment 1 mismatch\"
             # => []
 
+            push.0 exec.output_note::seal
+            # => []
+
             # truncate the stack
             exec.sys::truncate_stack
         end
@@ -1848,6 +1863,9 @@ async fn test_write_attachment_to_memory() -> anyhow::Result<()> {
             # => [ATTACHMENT1_WORD1]
             push.{attachment1_word1}
             assert_eqw.err="attachment 1 word 1 mismatch"
+            # => []
+
+            push.0 exec.output_note::seal
             # => []
 
             # truncate the stack
@@ -2281,6 +2299,21 @@ fn create_output_note(note: &Note) -> String {
             ASSET_VALUE = asset.to_value_word()
         ));
     }
+
+    create_note_code
+}
+
+/// Returns a `masm` code which creates an output note, adds some assets to it and seals it.
+///
+/// The calling script must import `miden::protocol::output_note`.
+fn create_sealed_output_note(note: &Note) -> String {
+    let mut create_note_code = create_output_note(note);
+    create_note_code.push_str(
+        "
+        exec.output_note::seal
+        # => []
+    ",
+    );
 
     create_note_code
 }

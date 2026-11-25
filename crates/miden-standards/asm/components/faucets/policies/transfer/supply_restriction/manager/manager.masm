@@ -1,0 +1,12 @@
+# Authority-gated supply restriction admin component.
+#
+# Re-exports `freeze`, `unfreeze` and `confiscate` from
+# `miden::standards::faucets::policies::transfer::supply_restriction::manager`.
+#
+# Pair with the [`Authority`] component, the fungible faucet component and a component that
+# installs the `restricted_amounts` storage slot — typically the supply restriction policy
+# component.
+
+pub use {freeze} from miden::standards::faucets::policies::transfer::supply_restriction::manager
+pub use {unfreeze} from miden::standards::faucets::policies::transfer::supply_restriction::manager
+pub use {confiscate} from miden::standards::faucets::policies::transfer::supply_restriction::manager

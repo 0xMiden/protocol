@@ -265,6 +265,7 @@ impl MockTransaction {
             block_commitments,
             tx_inputs.block_header().code_tree_root(),
             self.source_manager(),
+            tx_inputs.tx_args().ies_seal_seed().cloned(),
         )
         .expect("partial account from a full account should contain its complete storage");
 

@@ -7,6 +7,11 @@
 
 use miden_protocol::errors::MasmError;
 
+/// Error Message: "native account vault holds less of the fee asset than the fee to pay"
+pub(super) const ERR_FEE_INSUFFICIENT_BALANCE: MasmError = MasmError::from_static_str(
+    "native account vault holds less of the fee asset than the fee to pay",
+);
+
 /// Error Message: "the FEE_SPONSORSHIP notes bound to an input note do not cover its required fee"
 pub(super) const ERR_FEE_MANAGER_INPUT_NOTE_FEE_NOT_COVERED: MasmError = MasmError::from_static_str(
     "the FEE_SPONSORSHIP notes bound to an input note do not cover its required fee",
@@ -32,6 +37,10 @@ mod tests {
 
     #[test]
     fn copies_match_generated_errors() {
+        assert_eq!(
+            ERR_FEE_INSUFFICIENT_BALANCE.message(),
+            standards::ERR_FEE_INSUFFICIENT_BALANCE.message()
+        );
         assert_eq!(
             ERR_FEE_MANAGER_INPUT_NOTE_FEE_NOT_COVERED.message(),
             standards::ERR_FEE_MANAGER_INPUT_NOTE_FEE_NOT_COVERED.message()
