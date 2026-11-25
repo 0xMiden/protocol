@@ -46,23 +46,38 @@ use miden_standards::account::faucets::{
 };
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
+    BlocklistManager,
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     SupplyRestrictionManager,
+    SupplyRestrictionStorage,
     TokenPolicyManager,
 };
-use miden_standards::note::config::{SupplyRestrictionConfig, SupplyRestrictionConfigNote};
+use miden_standards::errors::standards::{
+    ERR_ACCOUNT_IS_BLOCKED,
+    ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE,
+};
+use miden_standards::note::config::{
+    BlocklistConfig,
+    BlocklistConfigNote,
+    SupplyRestrictionConfig,
+    SupplyRestrictionConfigNote,
+};
 use miden_standards::note::{
     BurnNote,
     MintNote,
     MintNoteStorage,
     NetworkNoteExt,
+    P2idNote,
     P2idNoteStorage,
     SwapNote,
     TxFeeNote,
 };
 use miden_standards::tx_script::SendNotesTransactionScript;
-use miden_testing::{AccountState, Auth, MockChain};
+use miden_testing::{AccountState, Auth, MockChain, assert_transaction_executor_error};
+use miden_tx::TransactionExecutorError;
 use rand::RngExt;
 
 // CONSTANTS
@@ -495,16 +510,20 @@ async fn credit_issuance_and_repayment() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The stablecoin issuer confiscates an amount from a holder and re-mints it to a recovery
+/// The stablecoin issuer confiscates part of a holder's balance and re-mints it to a recovery
 /// account, e.g. after the holder lost access to its keys.
 ///
-/// Confiscating removes the amount from the token supply and re-minting adds it back, so the net
-/// effect on the token supply is zero. The holder's balance is unchanged, but it is fully
-/// confiscated, so only the recovery account's balance counts towards the circulating supply.
+/// The holder is blocked until the amount is confiscated, so it cannot move the amount away in the
+/// meantime. Confiscating removes the amount from the token supply and re-minting adds it back, so
+/// the net effect on the token supply is zero. The holder's balance is unchanged, but after it is
+/// unblocked it can only spend the part that is not confiscated.
 #[tokio::test]
 async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
     const HOLDER_AMOUNT: u32 = 500;
-    let amount = AssetAmount::from(HOLDER_AMOUNT);
+    const CONFISCATED_AMOUNT: u32 = 300;
+    const SPENDABLE_AMOUNT: u32 = HOLDER_AMOUNT - CONFISCATED_AMOUNT;
+    let holder_amount = AssetAmount::from(HOLDER_AMOUNT);
+    let confiscated = AssetAmount::from(CONFISCATED_AMOUNT);
 
     let mut builder = MockChain::builder();
     let issuer_id = AccountId::mock_private(1);
@@ -515,11 +534,16 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
         .symbol(TokenSymbol::new("STBL")?)
         .decimals(6)
         .max_supply(FungibleAsset::MAX_AMOUNT)
-        .token_supply(amount)
+        .token_supply(holder_amount)
         .build()?;
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::owner_only())
         .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(SendPolicy::merge([
+            SendPolicy::empty_basic_blocklist(),
+            SendPolicy::empty_supply_restriction(),
+        ])?)
+        .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
         .build();
     let faucet_seed = builder.rng_mut().random();
     let stablecoin_faucet = builder.add_account_from_builder(
@@ -529,25 +553,45 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
             .with_component(stablecoin)
             .with_components(AccessControl::Ownable2Step { owner: issuer_id })
             .with_components(token_policy_manager)
+            .with_component(BlocklistManager)
             .with_component(SupplyRestrictionManager),
         AccountState::Exists,
     )?;
     let stablecoin_faucet_id = stablecoin_faucet.id();
-    let stablecoin_asset = FungibleAsset::new(stablecoin_faucet_id, amount.as_u64())?;
+    let holder_asset = FungibleAsset::new(stablecoin_faucet_id, holder_amount.as_u64())?;
 
     let holder = builder.add_existing_wallet_with_assets(
         Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
-        [stablecoin_asset.into()],
+        [holder_asset.into()],
     )?;
     let recovery =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
+
+    // the issuer's notes to block and unblock the holder
+    let [block_note, unblock_note] = [
+        BlocklistConfig::BlockAccount { account: holder.id() },
+        BlocklistConfig::UnblockAccount { account: holder.id() },
+    ]
+    .map(|config| {
+        BlocklistConfigNote::builder()
+            .sender(issuer_id)
+            .target(stablecoin_faucet_id)
+            .config(config)
+            .serial_number(rand::rng().random())
+            .build()
+            .map(Note::from)
+    });
+    let (block_note, unblock_note) = (block_note?, unblock_note?);
 
     // the issuer's notes to confiscate the holder's stablecoins and re-mint them to the recovery
     // account in a public P2ID note
     let confiscate_note: Note = SupplyRestrictionConfigNote::builder()
         .sender(issuer_id)
         .target(stablecoin_faucet_id)
-        .config(SupplyRestrictionConfig::Confiscate { account: holder.id(), amount })
+        .config(SupplyRestrictionConfig::Confiscate {
+            account: holder.id(),
+            amount: confiscated,
+        })
         .serial_number(rand::rng().random())
         .build()?
         .into();
@@ -555,30 +599,42 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
         .sender(issuer_id)
         .mint_storage(MintNoteStorage::new_public_output(
             P2idNoteStorage::new(recovery.id()).into_recipient(rand::rng().random()),
-            stablecoin_asset,
+            FungibleAsset::new(stablecoin_faucet_id, confiscated.as_u64())?,
             NoteTag::with_account_target(recovery.id()),
         )?)
         .serial_number(rand::rng().random())
         .build()?
         .into();
-    for note in [&confiscate_note, &remint_note] {
+    for note in [&block_note, &confiscate_note, &remint_note, &unblock_note] {
         builder.add_output_note(RawOutputNote::Full(note.clone()));
     }
 
     let mut mock_chain = builder.build()?;
     let supply_before_confiscation = stablecoin_token_supply(&mock_chain, stablecoin_faucet_id)?;
 
-    // STEP 1: the faucet consumes the confiscate note
+    // STEP 1: the issuer blocks the holder, so its balance cannot change anymore
+    // --------------------------------------------------------------------------------------------
+
+    mock_chain.consume_notes_and_commit(stablecoin_faucet_id, [block_note]).await?;
+
+    let result =
+        send_stablecoins(&mock_chain, &holder, stablecoin_faucet_id, SPENDABLE_AMOUNT).await?;
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_BLOCKED);
+
+    // STEP 2: the faucet consumes the confiscate note
     // --------------------------------------------------------------------------------------------
 
     mock_chain
         .consume_notes_and_commit(stablecoin_faucet_id, [confiscate_note])
         .await?;
 
-    assert_eq!(stablecoin_token_supply(&mock_chain, stablecoin_faucet_id)?, AssetAmount::ZERO);
-    assert_eq!(confiscated_amount(&mock_chain, stablecoin_faucet_id, holder.id())?, amount);
+    assert_eq!(
+        stablecoin_token_supply(&mock_chain, stablecoin_faucet_id)?,
+        (holder_amount - confiscated)?
+    );
+    assert_eq!(confiscated_amount(&mock_chain, stablecoin_faucet_id, holder.id())?, confiscated);
 
-    // STEP 2: the faucet consumes the MINT note, re-minting the amount to the recovery account
+    // STEP 3: the faucet consumes the MINT note, re-minting the amount to the recovery account
     // --------------------------------------------------------------------------------------------
 
     let remint_tx =
@@ -587,11 +643,18 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
     else {
         anyhow::bail!("the faucet must create exactly the full P2ID note");
     };
-    mock_chain.consume_notes_and_commit(recovery.id(), [p2id_note.clone()]).await?;
+    let receive_tx = mock_chain
+        .build_transaction(recovery.id())
+        .authenticated_input_note(p2id_note.clone())
+        .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(stablecoin_faucet_id)?])
+        .build()?
+        .execute()
+        .await?;
+    commit(&mut mock_chain, &receive_tx)?;
 
     let stablecoin_asset_id = AssetId::new_fungible(stablecoin_faucet_id);
     let recovery_account = mock_chain.committed_account(recovery.id())?;
-    assert_eq!(recovery_account.vault().get_balance(stablecoin_asset_id)?, amount);
+    assert_eq!(recovery_account.vault().get_balance(stablecoin_asset_id)?, confiscated);
 
     // the confiscation and the re-mint cancel out
     assert_eq!(
@@ -599,10 +662,29 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
         supply_before_confiscation
     );
 
-    // the holder still holds the confiscated stablecoins, which a send policy must keep it from
-    // spending
+    // STEP 4: the issuer unblocks the holder, which can spend only what is not confiscated
+    // --------------------------------------------------------------------------------------------
+
+    mock_chain
+        .consume_notes_and_commit(stablecoin_faucet_id, [unblock_note])
+        .await?;
+
     let holder_account = mock_chain.committed_account(holder.id())?;
-    assert_eq!(holder_account.vault().get_balance(stablecoin_asset_id)?, amount);
+    assert_eq!(holder_account.vault().get_balance(stablecoin_asset_id)?, holder_amount);
+
+    let result =
+        send_stablecoins(&mock_chain, &holder, stablecoin_faucet_id, SPENDABLE_AMOUNT + 1).await?;
+    assert_transaction_executor_error!(
+        result,
+        ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE
+    );
+
+    let send_tx =
+        send_stablecoins(&mock_chain, &holder, stablecoin_faucet_id, SPENDABLE_AMOUNT).await??;
+    commit(&mut mock_chain, &send_tx)?;
+
+    let holder_account = mock_chain.committed_account(holder.id())?;
+    assert_eq!(holder_account.vault().get_balance(stablecoin_asset_id)?, confiscated);
 
     Ok(())
 }
@@ -670,8 +752,34 @@ fn confiscated_amount(
     // the restricted amounts are stored as [frozen, confiscated, 0, 0]
     let restricted_amounts = faucet
         .storage()
-        .get_map_item(SupplyRestrictionManager::restricted_amounts_slot(), key)?;
+        .get_map_item(SupplyRestrictionStorage::restricted_amounts_slot(), key)?;
     Ok(AssetAmount::try_from(restricted_amounts[1])?)
+}
+
+/// Executes a transaction in which `holder` sends `amount` stablecoins in a P2ID note.
+async fn send_stablecoins(
+    mock_chain: &MockChain,
+    holder: &Account,
+    stablecoin_faucet_id: AccountId,
+    amount: u32,
+) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
+    let note: Note = P2idNote::builder()
+        .sender(holder.id())
+        .target(AccountId::mock_private(2))
+        .assets(vec![FungibleAsset::new(stablecoin_faucet_id, amount.into())?])
+        .serial_number(rand::rng().random())
+        .build()?
+        .into();
+    let script =
+        SendNotesTransactionScript::new(&holder.code_interface(), &[PartialNote::from(note)])?;
+
+    Ok(mock_chain
+        .build_transaction(holder.id())
+        .send_notes_script(&script)
+        .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(stablecoin_faucet_id)?])
+        .build()?
+        .execute()
+        .await)
 }
 
 /// Executes a transaction against `sender` that creates `note`.

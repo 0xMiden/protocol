@@ -929,8 +929,8 @@
   },
   "consume SUPPLY_RESTRICTION_CONFIG note (network account)": {
     "provenance": "producer_measured",
-    "prologue": 5480,
-    "total_cycles": 27931,
+    "prologue": 5466,
+    "total_cycles": 27917,
     "notes_processing": 4521,
     "note_execution": [
       {
@@ -944,14 +944,14 @@
       "auth_procedure": 10631
     },
     "trace": {
-      "core_rows": 27977,
-      "chiplets_rows": 6315,
+      "core_rows": 27963,
+      "chiplets_rows": 6316,
       "eidos_compression_rows": 59808,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
         "hasher_rows": 4400,
         "bitwise_rows": 87,
-        "memory_rows": 1826,
+        "memory_rows": 1827,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }

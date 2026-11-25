@@ -3,7 +3,7 @@
 //!
 //! Layout convention inside this module:
 //! - File at the root (e.g. `allow_all`, `basic_blocklist`, `basic_allowlist`) = a transfer policy
-//!   variant. Each exports a `check_send_policy` and a `check_receive_policy` procedure that the
+//!   variant. Each exports a `check_send_policy` and/or a `check_receive_policy` procedure that the
 //!   manager's `invoke_send_policy` / `invoke_receive_policy` wrapper dispatches to via `dyncall`
 //!   (after the pause check) once the active policy is set.
 //! - Folder at the root (e.g. `blocklist`, `allowlist`) = a primitive bundle: storage namespace +
@@ -26,13 +26,19 @@ mod basic_allowlist;
 mod basic_blocklist;
 mod blocklist;
 mod supply_restriction;
+mod supply_restriction_policy;
 
 pub use allow_all::TransferAllowAll;
 pub use allowlist::{AllowlistManager, AllowlistStorage};
 pub use basic_allowlist::BasicAllowlist;
 pub use basic_blocklist::BasicBlocklist;
 pub use blocklist::{BlocklistManager, BlocklistStorage};
-pub use supply_restriction::SupplyRestrictionManager;
+pub use supply_restriction::{
+    SupplyRestrictionError,
+    SupplyRestrictionManager,
+    SupplyRestrictionStorage,
+};
+pub use supply_restriction_policy::SupplyRestrictionPolicy;
 
 // CONSTANTS
 // ================================================================================================
@@ -97,17 +103,17 @@ pub enum TransferPolicyError {
 ///
 /// Note that minting crosses the send callback: the note created by `mint_and_send` runs
 /// `on_before_note_sealed` when it is sealed, with the issuing faucet itself as the native account,
-/// indistinguishable at that point from an ordinary send. The bundled blocklist and allowlist
-/// policies therefore exempt the issuer by comparing the active account ID (the issuing faucet)
-/// against the native account ID.
+/// indistinguishable at that point from an ordinary send. The bundled blocklist, allowlist and
+/// supply restriction policies therefore exempt the issuer by comparing the active account ID (the
+/// issuing faucet) against the native account ID.
 ///
 /// ## Expiration
 ///
 /// Send policies run through FPI. Policies that read mutable, security-sensitive state must set
-/// an expiration delta in the execution path that reads that state. The built-in blocklist and
-/// allowlist policies apply the standards default; custom policies should call
-/// `miden::standards::expiration::apply_default` or `tx::update_expiration_block_delta` directly
-/// with a custom expiration delta.
+/// an expiration delta in the execution path that reads that state. The built-in blocklist,
+/// allowlist and supply restriction policies apply the standards default; custom policies should
+/// call `miden::standards::expiration::apply_default` or `tx::update_expiration_block_delta`
+/// directly with a custom expiration delta.
 ///
 /// ## Companion components
 ///
@@ -173,6 +179,22 @@ impl SendPolicy {
         Self {
             root: BasicAllowlist::send_root(),
             components: vec![BasicAllowlist::from(allow_list).into()],
+        }
+    }
+
+    /// Returns a send policy that rejects output notes which would spend frozen or confiscated
+    /// amounts of their creator (the native account), starting without restricted accounts. To seed
+    /// initial entries use [`Self::with_supply_restriction`].
+    pub fn empty_supply_restriction() -> Self {
+        Self::with_supply_restriction(SupplyRestrictionStorage::new())
+    }
+
+    /// Returns a supply restriction send policy. The provided [`SupplyRestrictionStorage`] seeds
+    /// the initial restricted amounts at component-construction time.
+    pub fn with_supply_restriction(storage: SupplyRestrictionStorage) -> Self {
+        Self {
+            root: SupplyRestrictionPolicy::send_root(),
+            components: vec![SupplyRestrictionPolicy::new(storage).into()],
         }
     }
 

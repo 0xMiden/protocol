@@ -6,7 +6,8 @@
 #
 # Companion components required on the faucet:
 # - `Authority`.
-# - The fungible faucet component — provides the token config slot that `confiscate` updates.
+# - `SupplyRestrictionPolicy`.
+# - `FungibleFaucet`.
 
 use {AccountId, AssetAmount} from miden::protocol::types
 use miden::standards::access::authority

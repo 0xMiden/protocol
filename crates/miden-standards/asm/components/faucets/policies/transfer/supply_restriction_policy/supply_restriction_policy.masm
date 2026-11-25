@@ -1,0 +1,6 @@
+# The MASM code of the supply restriction send policy account component.
+#
+# Exposes the `check_send_policy` which can be registered as a send policy on a
+# `TokenPolicyManager`.
+
+pub use {check_send_policy} from miden::standards::faucets::policies::transfer::supply_restriction_policy
