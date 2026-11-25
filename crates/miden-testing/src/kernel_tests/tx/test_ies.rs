@@ -12,6 +12,7 @@ use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent};
 use miden_protocol::assembly::DefaultSourceManager;
+use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
 use miden_protocol::crypto::ies::ecgfp5_eidos::{self, Envelope};
 use miden_protocol::note::NoteType;
@@ -144,8 +145,6 @@ async fn ies_seal_secret_depends_on_plaintext() -> anyhow::Result<()> {
 /// summary depends on the IES seal seed.
 #[tokio::test]
 async fn signed_execution_reproduces_unauthorized_summary() -> anyhow::Result<()> {
-    use miden_protocol::crypto::SequentialCommit;
-
     let signer =
         AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut ChaCha20Rng::from_seed([7; 32]));
     let signer_commitment = signer.public_key().to_commitment();
