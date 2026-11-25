@@ -5,8 +5,8 @@ use miden::core::crypto::ies::ecgfp5_eidos as core_ecgfp5_eidos
 # CONSTANTS
 # =================================================================================================
 
-# Event from which the host derives the ephemeral secret of the encryption, which it supplies when
-# the core library's `seal` requests key agreement. It is emitted with
+# Event from which the host derives the ephemeral secret of the encryption and pushes the key
+# agreement advice that the core library's `seal` consumes. It is emitted with
 # [PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5), ...] on the stack.
 const IES_ECGFP5_EIDOS_SEAL_EVENT = event("miden::protocol::ies::ecgfp5_eidos::seal")
 
@@ -37,6 +37,10 @@ const PUBLIC_KEY_TAIL_LOC = PUBLIC_KEY_LOC + 4
 #! digests of the context and the plaintext, which this procedure computes. Use a fresh seed for
 #! every transaction, see `IesSealSeed` in Rust.
 #!
+#! Do not call `miden::core::crypto::ies::ecgfp5_eidos::seal` directly in a transaction: it accepts
+#! any valid key agreement advice, so other code in the transaction can choose the ephemeral secret
+#! and decrypt the envelope.
+#!
 #! Inputs:  [public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
 #! Outputs: []
 #!
@@ -51,7 +55,7 @@ const PUBLIC_KEY_TAIL_LOC = PUBLIC_KEY_LOC + 4
 #! Panics if:
 #! - public_key is not a valid EcGFp5 public key.
 #! - the transaction arguments provide no IES seal seed.
-#! - the transaction already made MAX_IES_SEAL_REQUESTS_PER_TX (4096) IES seal requests.
+#! - the transaction already made MAX_IES_SEAL_REQUESTS_PER_TX (512) IES seal requests.
 #! - the pointers or lengths are invalid for `miden::core::crypto::ies::ecgfp5_eidos::seal`.
 #!
 #! Invocation: exec

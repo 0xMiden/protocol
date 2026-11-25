@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_processor::ExecutionError;
+use miden_processor::advice::AdviceError;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountHeader};
@@ -239,8 +240,7 @@ async fn signed_execution_reproduces_unauthorized_summary() -> anyhow::Result<()
 }
 
 /// Tests that the host rejects an IES seal request it cannot answer: one with a public key that is
-/// not a valid EcGFp5 point, one without an IES seal seed, and a call to the core library's `seal`
-/// that does not go through `miden::protocol::ies::ecgfp5_eidos::seal`.
+/// not a valid EcGFp5 point and one without an IES seal seed.
 #[rstest]
 #[case::invalid_public_key(
     // The all-zero encoding is the identity, which is not a valid public key.
@@ -254,13 +254,6 @@ async fn signed_execution_reproduces_unauthorized_summary() -> anyhow::Result<()
     seal_to_public_key(&secret_key(1).public_key().to_elements(), 0),
     None,
     |error: &TransactionKernelError| matches!(error, TransactionKernelError::IesSealSeedMissing),
-)]
-#[case::core_seal(
-    seal_to_commitment(secret_key(1).public_key().to_commitment(), 0),
-    Some(IesSealSeed::new([1; 32])),
-    |error: &TransactionKernelError| {
-        matches!(error, TransactionKernelError::IesSealWithoutProtocolProcedure)
-    },
 )]
 #[tokio::test]
 async fn ies_seal_rejects_unanswerable_request(
@@ -285,6 +278,23 @@ async fn ies_seal_rejects_unanswerable_request(
         result,
         matches ExecutionError::EventError { error: ref event_err, .. }
             if event_err.downcast_ref::<TransactionKernelError>().is_some_and(is_expected_error)
+    );
+
+    Ok(())
+}
+
+/// Tests that a call to the core library's `seal` without a preceding IES seal request finds no key
+/// agreement advice.
+#[tokio::test]
+async fn core_seal_without_request_fails() -> anyhow::Result<()> {
+    let recipient_commitment = secret_key(1).public_key().to_commitment();
+    let code = format!("{}\n{}", store_inputs(), seal_to_commitment(recipient_commitment, 0));
+
+    let result = execute(None, compile_tx_script(&code, 1, None)?).await;
+
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::AdviceError { err: AdviceError::StackReadFailed, .. }
     );
 
     Ok(())

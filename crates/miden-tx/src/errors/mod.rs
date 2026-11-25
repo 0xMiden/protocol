@@ -303,10 +303,6 @@ pub enum TransactionKernelError {
     InvalidEncodedSignatureLength { signature_key: Word, actual: usize },
     #[error("IES seal request has an invalid EcGFp5 public key")]
     IesPublicKeyInvalid(#[source] InvalidPublicKey),
-    #[error(
-        "key agreement request of the core library's IES seal was not made through miden::protocol::ies::ecgfp5_eidos::seal"
-    )]
-    IesSealWithoutProtocolProcedure,
     #[error("transaction arguments provide no IES seal seed for an IES seal request")]
     IesSealSeedMissing,
     #[error("transaction makes more than {max} IES seal requests", max = MAX_IES_SEAL_REQUESTS_PER_TX)]
