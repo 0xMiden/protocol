@@ -17,7 +17,7 @@ use miden_protocol::crypto::ies::ecgfp5_eidos::{self, Envelope};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::transaction::{ExecutedTransaction, IesSealSeed, TransactionScript};
-use miden_protocol::{Felt, MAX_IES_SEAL_REQUESTS_PER_TX, WORD_SIZE, Word, ZERO};
+use miden_protocol::{Felt, MAX_IES_SEAL_REQUESTS_PER_TX, WORD_SIZE, Word};
 use miden_standards::account::auth::{Approver, ApproverSet, MultisigAuthArgs};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -127,7 +127,7 @@ async fn ies_seal_secret_depends_on_plaintext() -> anyhow::Result<()> {
         "{}\npush.{} push.{PLAINTEXT_PTR} mem_store\n{}",
         store_inputs(),
         other_plaintext[0],
-        seal_to_public_key(&recipient.to_elements(), 0),
+        seal_to_public_key(&recipient, 0),
     );
     let other_tx = execute(None, compile_tx_script(&code, 1, None)?).await?;
 
@@ -216,14 +216,17 @@ async fn signed_execution_reproduces_unauthorized_summary() -> anyhow::Result<()
 #[rstest]
 #[case::invalid_public_key(
     // The all-zero encoding is the identity, which is not a valid public key.
-    seal_to_public_key(&[ZERO; 5], 0),
+    format!(
+        "{}\npush.0.0.0.0.0\nexec.::miden::protocol::ies::ecgfp5_eidos::seal",
+        push_seal_arguments(0),
+    ),
     Some(IesSealSeed::new([1; 32])),
     |error: &TransactionKernelError| {
         matches!(error, TransactionKernelError::IesPublicKeyInvalid(_))
     },
 )]
 #[case::missing_seed(
-    seal_to_public_key(&secret_key(1).public_key().to_elements(), 0),
+    seal_to_public_key(&secret_key(1).public_key(), 0),
     None,
     |error: &TransactionKernelError| matches!(error, TransactionKernelError::IesSealSeedMissing),
 )]
@@ -285,8 +288,8 @@ async fn ies_seal_requests_are_limited_per_transaction(
     let code = format!(
         r#"
         {public_key}
-        {context_digest}
-        {plaintext_digest}
+        push.{context_digest}
+        push.{plaintext_digest}
         push.{num_requests} dup neq.0
         # => [should_loop, num_requests, PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5)]
 
@@ -300,9 +303,9 @@ async fn ies_seal_requests_are_limited_per_transaction(
         drop dropw dropw dropw drop
         # => []
         "#,
-        public_key = push_reversed(&secret_key(1).public_key().to_elements()),
-        context_digest = push_reversed(Word::from([1, 2, 3, 4u32]).as_elements()),
-        plaintext_digest = push_reversed(Word::from([5, 6, 7, 8u32]).as_elements()),
+        public_key = push_public_key(&secret_key(1).public_key()),
+        context_digest = Word::from([1, 2, 3, 4u32]),
+        plaintext_digest = Word::from([5, 6, 7, 8u32]),
     );
     let result = execute(None, compile_tx_script(&code, 0, None)?).await;
 
@@ -338,8 +341,8 @@ async fn ies_seal_derives_the_secret_from_the_request_event() -> anyhow::Result<
         {store_inputs}
         {seal_arguments}
         {public_key}
-        {context_digest}
-        {plaintext_digest}
+        push.{context_digest}
+        push.{plaintext_digest}
         # => [PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5), plaintext_ptr, plaintext_len,
         #     context_ptr, context_len, envelope_ptr]
 
@@ -347,16 +350,14 @@ async fn ies_seal_derives_the_secret_from_the_request_event() -> anyhow::Result<
         dropw dropw dropw drop
         # => [plaintext_ptr, plaintext_len, context_ptr, context_len, envelope_ptr]
 
-        {commitment}
+        push.{commitment}
         exec.::miden::core::crypto::ies::ecgfp5_eidos::seal
         # => []
         "#,
         store_inputs = store_inputs(),
         seal_arguments = push_seal_arguments(0),
-        public_key = push_reversed(&recipient.to_elements()),
-        context_digest = push_reversed(context_digest.as_elements()),
-        plaintext_digest = push_reversed(plaintext_digest.as_elements()),
-        commitment = push_reversed(recipient.to_commitment().as_elements()),
+        public_key = push_public_key(&recipient),
+        commitment = recipient.to_commitment(),
     );
     let executed_tx = execute(None, compile_tx_script(&code, 1, None)?).await?;
 
@@ -515,7 +516,7 @@ fn sealing_code(recipients: &[PublicKey]) -> String {
     let seals = recipients
         .iter()
         .enumerate()
-        .map(|(idx, recipient)| seal_to_public_key(&recipient.to_elements(), idx));
+        .map(|(idx, recipient)| seal_to_public_key(recipient, idx));
 
     [store_inputs()].into_iter().chain(seals).collect::<Vec<_>>().join("\n")
 }
@@ -562,11 +563,11 @@ fn store_envelope_from_stack() -> String {
 
 /// Returns MASM that encrypts the plaintext under the context to `public_key` with
 /// `miden::protocol::ies::ecgfp5_eidos::seal`, writing the envelope with index `envelope_idx`.
-fn seal_to_public_key(public_key: &[Felt; 5], envelope_idx: usize) -> String {
+fn seal_to_public_key(public_key: &PublicKey, envelope_idx: usize) -> String {
     format!(
         "{}\n{}\nexec.::miden::protocol::ies::ecgfp5_eidos::seal",
         push_seal_arguments(envelope_idx),
-        push_reversed(public_key)
+        push_public_key(public_key)
     )
 }
 
@@ -574,9 +575,8 @@ fn seal_to_public_key(public_key: &[Felt; 5], envelope_idx: usize) -> String {
 /// with the core library's `seal`, writing the envelope with index `envelope_idx`.
 fn seal_to_commitment(commitment: Word, envelope_idx: usize) -> String {
     format!(
-        "{}\n{}\nexec.::miden::core::crypto::ies::ecgfp5_eidos::seal",
+        "{}\npush.{commitment}\nexec.::miden::core::crypto::ies::ecgfp5_eidos::seal",
         push_seal_arguments(envelope_idx),
-        push_reversed(commitment.as_elements())
     )
 }
 
@@ -605,9 +605,11 @@ fn push_seal_arguments(envelope_idx: usize) -> String {
     )
 }
 
-/// Returns MASM that pushes `elements` so that the first one is on top of the stack.
-fn push_reversed(elements: &[Felt]) -> String {
-    elements
+/// Returns MASM that pushes the elements of `public_key` so that the first one is on top of the
+/// stack.
+fn push_public_key(public_key: &PublicKey) -> String {
+    public_key
+        .to_elements()
         .iter()
         .rev()
         .map(|element| format!("push.{element}"))
