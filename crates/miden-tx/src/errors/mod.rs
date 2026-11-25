@@ -12,6 +12,7 @@ use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::asset::AssetId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::code::ProcedureRoot;
+use miden_protocol::crypto::ecdh::ecgfp5::InvalidPublicKey;
 use miden_protocol::crypto::merkle::smt::SmtProofError;
 use miden_protocol::errors::{
     AccountDeltaError,
@@ -27,7 +28,7 @@ use miden_protocol::errors::{
 };
 use miden_protocol::note::{NoteId, PartialNoteMetadata};
 use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, MAX_IES_SEAL_REQUESTS_PER_TX, Word};
 use miden_prover::ProverError;
 use thiserror::Error;
 
@@ -42,6 +43,9 @@ pub enum NoteCheckerError {
     TransactionPreparation(#[source] TransactionExecutorError),
     #[error("transaction execution prologue failed: {0}")]
     PrologueExecution(#[source] TransactionExecutorError),
+    /// The transaction script failed, which no choice of input notes changes.
+    #[error("transaction script execution failed: {0}")]
+    TransactionScriptExecution(#[source] TransactionExecutorError),
     #[error("transaction inputs creation failed: {0}")]
     TransactionInputs(#[source] TransactionInputError),
 }
@@ -55,10 +59,21 @@ pub(crate) enum TransactionCheckerError {
     TransactionPreparation(#[source] TransactionExecutorError),
     #[error("transaction execution prologue failed: {0}")]
     PrologueExecution(#[source] TransactionExecutorError),
+    /// The transaction script failed, after every note executed.
+    #[error("transaction script execution failed: {0}")]
+    TransactionScriptExecution(#[source] TransactionExecutorError),
     #[error("transaction execution epilogue failed: {error}")]
     EpilogueExecution {
         error: TransactionExecutorError,
         /// Cycle counts for notes that executed successfully before the epilogue failed.
+        successful_notes_cycle_counts: Vec<usize>,
+    },
+    /// The account's authentication requested a signature the executor could not provide, after
+    /// every note and the transaction script executed.
+    #[error("transaction execution stopped at the account's authentication: {error}")]
+    AuthorizationRequired {
+        error: TransactionExecutorError,
+        /// Cycle counts of the notes, all of which executed.
         successful_notes_cycle_counts: Vec<usize>,
     },
     #[error("transaction note execution failed on note index {failed_note_index}: {error}")]
@@ -80,7 +95,9 @@ impl From<TransactionCheckerError> for TransactionExecutorError {
         match error {
             TransactionCheckerError::TransactionPreparation(error) => error,
             TransactionCheckerError::PrologueExecution(error) => error,
+            TransactionCheckerError::TransactionScriptExecution(error) => error,
             TransactionCheckerError::EpilogueExecution { error, .. } => error,
+            TransactionCheckerError::AuthorizationRequired { error, .. } => error,
             TransactionCheckerError::NoteExecution { error, .. } => error,
         }
     }
@@ -288,6 +305,12 @@ pub enum TransactionKernelError {
         max = Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS
     )]
     InvalidEncodedSignatureLength { signature_key: Word, actual: usize },
+    #[error("IES seal request has an invalid EcGFp5 public key")]
+    IesPublicKeyInvalid(#[source] InvalidPublicKey),
+    #[error("transaction arguments provide no IES seal seed for an IES seal request")]
+    IesSealSeedMissing,
+    #[error("transaction makes more than {max} IES seal requests", max = MAX_IES_SEAL_REQUESTS_PER_TX)]
+    TooManyIesSealRequests,
     #[error("recipient data `{0:?}` in the advice provider is not well formed")]
     MalformedRecipientData(Vec<Felt>),
     #[error("cannot add asset to note with index {0}, note does not exist in the advice provider")]

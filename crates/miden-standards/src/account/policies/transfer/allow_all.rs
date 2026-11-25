@@ -21,16 +21,24 @@ const TRANSFER_ALLOW_ALL_LIBRARY_PATH: &str =
     "miden::standards::components::faucets::policies::transfer::allow_all";
 
 procedure_root!(
-    ALLOW_ALL_TRANSFER_POLICY_ROOT,
+    ALLOW_ALL_SEND_POLICY_ROOT,
     TRANSFER_ALLOW_ALL_LIBRARY_PATH,
-    TransferAllowAll::PROC_NAME,
+    TransferAllowAll::SEND_PROC_NAME,
+    TransferAllowAll::code()
+);
+
+procedure_root!(
+    ALLOW_ALL_RECEIVE_POLICY_ROOT,
+    TRANSFER_ALLOW_ALL_LIBRARY_PATH,
+    TransferAllowAll::RECEIVE_PROC_NAME,
     TransferAllowAll::code()
 );
 
 /// The storage-free `allow_all` transfer policy account component.
 ///
-/// Pair with a [`crate::account::policies::TokenPolicyManager`] whose allowed transfer-policies
-/// map includes [`TransferAllowAll::root`]. When active, every transfer succeeds.
+/// Pair with a [`crate::account::policies::TokenPolicyManager`] whose send and receive policy maps
+/// include [`TransferAllowAll::send_root`] and [`TransferAllowAll::receive_root`]. When active,
+/// every transfer succeeds.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TransferAllowAll;
 
@@ -38,16 +46,22 @@ impl TransferAllowAll {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::faucets::policies::transfer::allow_all";
 
-    pub(crate) const PROC_NAME: &str = "check_policy";
+    pub(crate) const SEND_PROC_NAME: &str = "check_send_policy";
+    pub(crate) const RECEIVE_PROC_NAME: &str = "check_receive_policy";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
         &ALLOW_ALL_TRANSFER_POLICY_PACKAGE.code
     }
 
-    /// Returns the procedure root of the `allow_all` transfer policy procedure.
-    pub fn root() -> AccountProcedureRoot {
-        *ALLOW_ALL_TRANSFER_POLICY_ROOT
+    /// Returns the procedure root of the send policy procedure.
+    pub fn send_root() -> AccountProcedureRoot {
+        *ALLOW_ALL_SEND_POLICY_ROOT
+    }
+
+    /// Returns the procedure root of the receive policy procedure.
+    pub fn receive_root() -> AccountProcedureRoot {
+        *ALLOW_ALL_RECEIVE_POLICY_ROOT
     }
 
     /// Returns the [`AccountComponentMetadata`] for this component.

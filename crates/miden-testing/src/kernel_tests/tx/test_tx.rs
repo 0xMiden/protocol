@@ -450,6 +450,12 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             exec.output_note::add_attachment_from_memory
             # => []
 
+            # seal the notes now that their assets and attachments are final
+            push.0 exec.output_note::seal
+            push.1 exec.output_note::seal
+            push.2 exec.output_note::seal
+            # => []
+
             exec.sys::truncate_stack
         end
     ",

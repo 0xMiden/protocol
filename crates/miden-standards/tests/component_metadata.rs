@@ -39,6 +39,8 @@ use miden_standards::account::policies::{
     MintAllowAll,
     MintOwnerOnly,
     MintPolicy,
+    SupplyRestrictionManager,
+    SupplyRestrictionPolicy,
     TokenPolicyManager,
     TransferAllowAll,
 };
@@ -81,6 +83,8 @@ fn components() -> Vec<(&'static str, AccountComponentMetadata)> {
         (BasicAllowlist::NAME, BasicAllowlist::component_metadata()),
         (BasicBlocklist::NAME, BasicBlocklist::component_metadata()),
         (BlocklistManager::NAME, BlocklistManager::component_metadata()),
+        (SupplyRestrictionManager::NAME, SupplyRestrictionManager::component_metadata()),
+        (SupplyRestrictionPolicy::NAME, SupplyRestrictionPolicy::component_metadata()),
         (BasicConstantFeePolicy::NAME, BasicConstantFeePolicy::component_metadata()),
         (ConstantFeeManager::NAME, ConstantFeeManager::component_metadata()),
         (CodeInspection::NAME, CodeInspection::component_metadata()),

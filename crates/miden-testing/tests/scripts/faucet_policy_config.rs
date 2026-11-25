@@ -5,7 +5,7 @@
 //! to `owner_only`) plus the note-level guards. The send and receive branches run the identical
 //! script path (`load_policy_root_window` + a `set_*_policy` call) and differ only in variant and
 //! call target, which are covered by the `faucet_policy_config` unit storage tests; there is no
-//! built-in alternative `TransferPolicy` to switch to without bespoke policy setup.
+//! built-in alternative `SendPolicy` to switch to without bespoke policy setup.
 
 extern crate alloc;
 
@@ -23,8 +23,9 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::errors::standards::{
     ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC,
@@ -67,8 +68,8 @@ fn create_faucet_with_policies(
         .allowed_mint_policy(MintPolicy::owner_only())
         .active_burn_policy(BurnPolicy::allow_all())
         .allowed_burn_policy(BurnPolicy::owner_only())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
     let account_builder = AccountBuilder::new([43; 32])

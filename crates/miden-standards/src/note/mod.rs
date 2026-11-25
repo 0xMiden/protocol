@@ -19,6 +19,7 @@ use self::config::{
     OwnerConfigNote,
     PauseConfigNote,
     RbacConfigNote,
+    SupplyRestrictionConfigNote,
 };
 
 pub mod config;
@@ -63,6 +64,13 @@ pub use account_code_upgrade_attachment::{
     AccountCodeUpgradeAttachmentError,
 };
 
+mod encrypted_assets_attachment;
+pub use encrypted_assets_attachment::{
+    EncryptedAssetsAttachment,
+    EncryptedAssetsAttachmentError,
+    EncryptedAssetsIssuerKey,
+};
+
 mod network_note;
 pub use network_note::{AccountTargetNetworkNote, NetworkNoteExt};
 
@@ -91,6 +99,7 @@ pub enum StandardNote {
     PAUSE_CONFIG,
     OWNER_CONFIG,
     RBAC_CONFIG,
+    SUPPLY_RESTRICTION_CONFIG,
     AUTHORITY_CONFIG,
     NETWORK_ACCOUNT_CONFIG,
     UPGRADE,
@@ -156,6 +165,9 @@ impl StandardNote {
         if root == RbacConfigNote::script_root() {
             return Some(Self::RBAC_CONFIG);
         }
+        if root == SupplyRestrictionConfigNote::script_root() {
+            return Some(Self::SUPPLY_RESTRICTION_CONFIG);
+        }
         if root == AuthorityConfigNote::script_root() {
             return Some(Self::AUTHORITY_CONFIG);
         }
@@ -196,6 +208,7 @@ impl StandardNote {
             Self::PAUSE_CONFIG => "PAUSE_CONFIG",
             Self::OWNER_CONFIG => "OWNER_CONFIG",
             Self::RBAC_CONFIG => "RBAC_CONFIG",
+            Self::SUPPLY_RESTRICTION_CONFIG => "SUPPLY_RESTRICTION_CONFIG",
             Self::AUTHORITY_CONFIG => "AUTHORITY_CONFIG",
             Self::NETWORK_ACCOUNT_CONFIG => "NETWORK_ACCOUNT_CONFIG",
             Self::UPGRADE => "UPGRADE",
@@ -209,7 +222,7 @@ impl StandardNote {
         match self {
             Self::P2ID => NumStorageItems::Exact(P2idNote::NUM_STORAGE_ITEMS),
             Self::P2IDE => NumStorageItems::Exact(P2ideNote::NUM_STORAGE_ITEMS),
-            Self::SWAP => NumStorageItems::Exact(SwapNote::NUM_STORAGE_ITEMS),
+            Self::SWAP => SwapNote::NUM_STORAGE_ITEMS,
             Self::PSWAP => NumStorageItems::Exact(PswapNote::NUM_STORAGE_ITEMS),
             Self::MINT => MintNote::NUM_STORAGE_ITEMS,
             Self::BURN => NumStorageItems::Exact(BurnNote::NUM_STORAGE_ITEMS),
@@ -232,6 +245,9 @@ impl StandardNote {
             Self::PAUSE_CONFIG => NumStorageItems::Exact(PauseConfigNote::NUM_STORAGE_ITEMS),
             Self::OWNER_CONFIG => OwnerConfigNote::NUM_STORAGE_ITEMS,
             Self::RBAC_CONFIG => RbacConfigNote::NUM_STORAGE_ITEMS,
+            Self::SUPPLY_RESTRICTION_CONFIG => {
+                NumStorageItems::Exact(SupplyRestrictionConfigNote::NUM_STORAGE_ITEMS)
+            },
             Self::AUTHORITY_CONFIG => AuthorityConfigNote::NUM_STORAGE_ITEMS,
             Self::NETWORK_ACCOUNT_CONFIG => {
                 NumStorageItems::Exact(NetworkAccountConfigNote::NUM_STORAGE_ITEMS)
@@ -260,6 +276,7 @@ impl StandardNote {
             Self::PAUSE_CONFIG => PauseConfigNote::script(),
             Self::OWNER_CONFIG => OwnerConfigNote::script(),
             Self::RBAC_CONFIG => RbacConfigNote::script(),
+            Self::SUPPLY_RESTRICTION_CONFIG => SupplyRestrictionConfigNote::script(),
             Self::AUTHORITY_CONFIG => AuthorityConfigNote::script(),
             Self::NETWORK_ACCOUNT_CONFIG => NetworkAccountConfigNote::script(),
             Self::UPGRADE => UpgradeNote::script(),
@@ -286,6 +303,7 @@ impl StandardNote {
             Self::PAUSE_CONFIG => PauseConfigNote::script_root(),
             Self::OWNER_CONFIG => OwnerConfigNote::script_root(),
             Self::RBAC_CONFIG => RbacConfigNote::script_root(),
+            Self::SUPPLY_RESTRICTION_CONFIG => SupplyRestrictionConfigNote::script_root(),
             Self::AUTHORITY_CONFIG => AuthorityConfigNote::script_root(),
             Self::NETWORK_ACCOUNT_CONFIG => NetworkAccountConfigNote::script_root(),
             Self::UPGRADE => UpgradeNote::script_root(),
@@ -495,7 +513,8 @@ pub(crate) fn decode_optional_block_height(
 /// and block height.
 ///
 /// The status does not account for any authorization that may be required to consume the
-/// note, nor does it indicate whether the account has sufficient fees to consume it.
+/// note. It reports an account that cannot pay the transaction's fees only when the execution
+/// reaches the fee payment.
 #[derive(Debug)]
 pub enum NoteConsumptionStatus {
     /// The note can be consumed by the account at the specified block height.
@@ -504,6 +523,9 @@ pub enum NoteConsumptionStatus {
     ConsumableAfter(BlockNumber),
     /// The note can be consumed by the account if proper authorization is provided.
     ConsumableWithAuthorization,
+    /// The note executes, but the account's vault holds less of the fee asset than the
+    /// transaction's fees, so the note may be consumable once the account holds more of it.
+    InsufficientFee,
     /// The note cannot be consumed by the account at the specified conditions (i.e., block
     /// height and account state).
     UnconsumableConditions,
@@ -521,6 +543,7 @@ impl Clone for NoteConsumptionStatus {
             NoteConsumptionStatus::ConsumableWithAuthorization => {
                 NoteConsumptionStatus::ConsumableWithAuthorization
             },
+            NoteConsumptionStatus::InsufficientFee => NoteConsumptionStatus::InsufficientFee,
             NoteConsumptionStatus::UnconsumableConditions => {
                 NoteConsumptionStatus::UnconsumableConditions
             },

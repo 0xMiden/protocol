@@ -1,11 +1,16 @@
-use miden_protocol::asset::FungibleAsset;
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountType};
+use miden_protocol::asset::{AssetCallbacks, FungibleAsset};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::ExecutedTransaction;
+use miden_standards::account::auth::NoAuth;
+use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::TxFeeNote;
 
 mod conversion;
 mod multisig;
+mod multisig_smart;
 mod network;
 mod no_auth;
 mod singlesig;
@@ -39,6 +44,63 @@ const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES: usize = 512;
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+/// Builds an existing faucet account whose `on_before_note_sealed` callback returns a single-word
+/// attachment for every sealed note holding its assets.
+pub(super) fn attaching_callback_faucet(seed: [u8; 32]) -> anyhow::Result<Account> {
+    const COMPONENT_NAME: &str = "tests::attaching_callback";
+
+    let code = CodeBuilder::default().compile_component_code(
+        COMPONENT_NAME,
+        "
+        use miden::core::crypto::hashes::eidos
+
+        @locals(12)
+        @account_procedure
+        pub proc on_before_note_sealed
+            drop
+            # => [pad(16)]
+
+            # put the attachment into the advice map under its commitment
+            push.1.2.3.4 loc_storew_le.0
+            exec.eidos::hash
+            # => [ATTACHMENT_COMMITMENT, pad(16)]
+
+            locaddr.0 dup add.4 movdn.5 movdn.4 adv.insert_mem
+            # => [ATTACHMENT_COMMITMENT, start_ptr, end_ptr, pad(16)]
+
+            # write the attachment list [attachment_scheme, 0, 0, 0, ATTACHMENT_COMMITMENT]
+            movup.4 drop movup.4 drop loc_storew_le.8 dropw
+            push.0.0.0.7 loc_storew_le.4 dropw
+            # => [pad(16)]
+
+            # put the attachment list into the advice map under its commitment
+            locaddr.4 dup add.8 swap dup.1 dup.1 exec.eidos::hash_words
+            # => [ATTACHMENT_LIST_COMMITMENT, start_ptr, end_ptr, pad(16)]
+
+            adv.insert_mem movup.4 drop movup.4 drop push.1
+            # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(16)]
+
+            exec.::miden::core::sys::truncate_stack
+            # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
+        end",
+    )?;
+    let root = code
+        .as_package()
+        .get_procedure_root_by_path(format!("{COMPONENT_NAME}::on_before_note_sealed").as_str())
+        .expect("callback procedure should exist");
+    let callback = AccountComponent::new(
+        code,
+        AssetCallbacks::new().on_before_note_sealed(root).into_storage_slots(),
+        AccountComponentMetadata::new(COMPONENT_NAME),
+    )?;
+
+    Ok(AccountBuilder::new(seed)
+        .account_type(AccountType::Public)
+        .with_component(NoAuth)
+        .with_component(callback)
+        .build_existing()?)
+}
 
 /// Asserts the executed transaction produced exactly one output note: a public TX_FEE note
 /// carrying a single native fee asset whose amount covers the required fee. Returns the fee

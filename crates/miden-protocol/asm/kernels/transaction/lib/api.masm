@@ -7,6 +7,7 @@ use {
     BlockNumber,
     Bool,
     NoteAssetsCommitment,
+    NoteAttachmentScheme,
     NoteId,
     NoteMetadata,
     NoteRecipient,
@@ -74,6 +75,9 @@ const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ID_WHILE_NO_NOTE_BEING_PROCESSED =
 const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO =
     "ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called"
 
+const ERR_FOREIGN_ACCOUNT_NOT_ISSUER_OF_NATIVE_VAULT_ASSET =
+    "a foreign account can only read assets it issued from the native account's vault"
+
 # AUTHENTICATION
 # =================================================================================================
 
@@ -99,6 +103,34 @@ proc authenticate_account_origin()
     # assert that the caller is from the user context and conditionally track the call
     exec.account::authenticate_procedure
     # => []
+end
+
+#! Asserts that the active account can read the asset with the provided ID from the native
+#! account's vault, which is the case if it is the native account or the issuer of the asset.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [ASSET_ID]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to read.
+#!
+#! Panics if:
+#! - the active account is not the native account and it is not the issuer of the asset.
+#!
+#! Invocation: exec
+proc assert_can_read_native_vault_asset(asset_id: AssetId) -> AssetId
+    exec.asset::id_to_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_ID]
+
+    exec.memory::get_account_id
+    # => [active_account_id_suffix, active_account_id_prefix, faucet_id_suffix, faucet_id_prefix, ASSET_ID]
+
+    exec.account_id::eq
+    # => [is_issuer, ASSET_ID]
+
+    exec.memory::is_native_account or
+    assert.err=ERR_FOREIGN_ACCOUNT_NOT_ISSUER_OF_NATIVE_VAULT_ASSET
+    # => [ASSET_ID]
 end
 
 #! Asserts that the invocation of a kernel procedure originates from the authentication procedure of
@@ -245,6 +277,7 @@ end
 #! - ACCOUNT_PROCEDURE_DATA are the roots of the procedures of the new account code.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the invocation of this procedure does not originate from the account context.
 #! - the current active account is not the native account of the transaction.
 #! - STORAGE_UPGRADE_COMMITMENT is not empty.
@@ -256,6 +289,10 @@ end
 pub proc account_upgrade(new_code_commitment: Commitment, storage_upgrade_commitment: Commitment, padding: [felt; 8]) -> [felt; 16]
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
@@ -381,6 +418,7 @@ end
 #!   also be the final nonce of the account after transaction execution.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the current active account is not the native account of the transaction.
 #! - the invocation of this procedure does not originate from the authentication procedure
 #!   of the account.
@@ -390,6 +428,10 @@ end
 pub proc account_incr_nonce(padding: [felt; 16]) -> (felt, [felt; 15])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [pad(16)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [pad(16)]
 
     # assert that nonce increment originates from the authentication procedure of the account
@@ -521,6 +563,7 @@ end
 #! - OLD_VALUE is the previous value of the item.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the invocation of this procedure does not originate from the account context.
 #! - the current active account is not the native account of the transaction.
@@ -529,6 +572,10 @@ end
 pub proc account_set_item(slot_id: StorageSlotId, value: word, padding: [felt; 10]) -> (word, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 
     # authenticate that the procedure invocation originates from the account context
@@ -648,6 +695,7 @@ end
 #! - KEY is the key of the new item.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
 #! - the invocation of this procedure does not originate from the account context.
@@ -657,6 +705,10 @@ end
 pub proc account_set_map_item(slot_id: StorageSlotId, key: word, new_value: word, padding: [felt; 6]) -> (word, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
 
     # authenticate that the procedure invocation originates from the account context
@@ -742,6 +794,7 @@ end
 #!     after ASSET_VALUE was added to it.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the asset is not valid.
 #! - the total value of the fungible asset is greater than or equal to 2^63 after the new asset was 
 #!   added.
@@ -753,6 +806,10 @@ end
 pub proc account_add_asset(asset: Asset, padding: [felt; 8]) -> (AssetValue, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
@@ -775,6 +832,7 @@ end
 #! - FINAL_ASSET_VALUE is the value of the asset remaining in the vault after removal.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the fungible asset is not found in the vault.
 #! - the amount of the fungible asset in the vault is less than the amount to be removed.
 #! - the non-fungible asset is not found in the vault.
@@ -787,6 +845,10 @@ pub proc account_remove_asset(asset: Asset, padding: [felt; 8]) -> (AssetValue, 
     exec.memory::assert_native_account
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
@@ -796,27 +858,46 @@ pub proc account_remove_asset(asset: Asset, padding: [felt; 8]) -> (AssetValue, 
     # => [FINAL_ASSET_VALUE, pad(12)]
 end
 
-#! Returns the asset associated with the provided asset ID in the active account's vault.
+#! Returns the asset associated with the provided asset ID in the vault of the native or the active
+#! account.
 #!
-#! Inputs:  [ASSET_ID, pad(12)]
+#! Inputs:  [is_native, ASSET_ID, pad(11)]
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:
+#! - is_native is a boolean flag that indicates whether the asset was requested from the vault of
+#!   the native or the active account.
 #! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
 #!   present.
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
+#! - is_native is 1, the active account is not the native account and it is not the issuer of the
+#!   asset.
 #!
 #! Invocation: dynexec
-pub proc account_get_asset(asset_id: AssetId, padding: [felt; 12]) -> (AssetValue, [felt; 12])
+pub proc account_get_asset(
+    is_native: Bool,
+    asset_id: AssetId,
+    padding: [felt; 11]
+) -> (AssetValue, [felt; 12])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET_ID, pad(12)]
+    # => [is_native, ASSET_ID, pad(11)]
 
-    exec.asset::validate_id
-    # => [ASSET_ID, pad(12)]
+    movdn.4 exec.asset::validate_id
+    # => [ASSET_ID, is_native, pad(11)]
+
+    # check that the active account can read the asset if the native account's vault is requested
+    dup.4
+    if.true
+        exec.assert_can_read_native_vault_asset
+    end
+    # => [ASSET_ID, is_native, pad(11)]
+
+    movup.4
+    # => [is_native, ASSET_ID, pad(11)]
 
     exec.account::get_asset
     # => [ASSET_VALUE, pad(12)]
@@ -834,18 +915,19 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
-#! - the current active account is not the native account of the transaction.
+#! - the active account is not the native account and it is not the issuer of the asset.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_asset(asset_id: AssetId, padding: [felt; 12]) -> (AssetValue, [felt; 12])
-    # check that this procedure was executed against the native account
-    exec.memory::assert_native_account
-
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [ASSET_ID, pad(12)]
 
     exec.asset::validate_id
+    # => [ASSET_ID, pad(12)]
+
+    # check that the active account can read the asset from the native account's vault
+    exec.assert_can_read_native_vault_asset
     # => [ASSET_ID, pad(12)]
 
     exec.account::get_initial_asset
@@ -999,6 +1081,7 @@ end
 #! - ASSET_VALUE is the value of the asset to mint.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the invocation of this procedure does not originate from the account context.
 #! - the current active account is not the native account of the transaction.
 #! - the asset issuer is not the faucet the transaction is being executed against.
@@ -1008,6 +1091,10 @@ end
 pub proc faucet_mint_asset(asset: Asset, padding: [felt; 8]) -> [felt; 16]
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
@@ -1029,6 +1116,7 @@ end
 #! - ASSET_VALUE is the value of the asset to burn.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the invocation of this procedure does not originate from the account context.
 #! - the current active account is not the native account of the transaction.
 #! - the asset issuer is not the faucet the transaction is being executed against.
@@ -1043,6 +1131,10 @@ end
 pub proc faucet_burn_asset(asset: Asset, padding: [felt; 8]) -> [felt; 16]
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
@@ -1167,6 +1259,7 @@ end
 #!   the EMPTY_WORD if the entire asset was removed.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the note index is greater or equal to the total number of input notes.
 #! - is_active_note is false and the active account is not the native account.
 #! - is_active_note is false and the invocation does not originate from the account context.
@@ -1180,6 +1273,10 @@ end
 #!
 #! Invocation: dynexec
 pub proc input_note_remove_asset(is_active_note: Bool, asset: Asset, note_index: u16, padding: [felt; 6]) -> (AssetValue, [felt; 12])
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
+    # => [is_active_note, ASSET_ID, ASSET_VALUE, note_index, pad(6)]
+
     # bring note_index directly above is_active_note so the note pointer can be resolved
     movup.9 swap
     # => [is_active_note, note_index, ASSET_ID, ASSET_VALUE, pad(6)]
@@ -1229,6 +1326,7 @@ end
 #! - num_assets is the number of assets removed by this procedure.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the note index is greater or equal to the total number of input notes.
 #! - is_active_note is false and the active account is not the native account.
 #! - is_active_note is false and the invocation does not originate from the account context.
@@ -1237,6 +1335,10 @@ end
 #!
 #! Invocation: dynexec
 pub proc input_note_remove_all_assets(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteAssetsCommitment, u8, [felt; 11])
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
+    # => [is_active_note, note_index, pad(14)]
+
     exec.authenticate_indexed_input_note_asset_removal
     # => [is_active_note, note_index, pad(14)]
 
@@ -1559,6 +1661,7 @@ end
 #! - note_idx is the index of the created note.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the invocation of this procedure does not originate from the account context.
 #! - the active account is not the native account.
 #!
@@ -1570,6 +1673,10 @@ pub proc output_note_create(tag: NoteTag, note_type: NoteType, recipient: NoteRe
 
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [tag, note_type, RECIPIENT, pad(10)]
 
     exec.output_note::create
@@ -1587,6 +1694,7 @@ end
 #! - ASSET_VALUE is the value of the asset to add.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
 #! - the output note is sealed.
@@ -1597,6 +1705,10 @@ pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) 
     exec.memory::assert_native_account
     # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
+    # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
     dup.8 exec.output_note::assert_note_index_in_bounds drop
     # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
@@ -1604,26 +1716,32 @@ pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) 
     # => [pad(16)]
 end
 
-#! Prevents further changes to the specified output note's assets and attachments.
-#! Sealing is idempotent.
+#! Invokes the `on_before_note_sealed` callback of each distinct faucet with the asset callback flag
+#! enabled among the specified output note's assets, appends the attachments each callback returns
+#! to the note, and then prevents further changes to the note's assets and attachments.
+#!
+#! Sealing is idempotent: sealing an already sealed note invokes no callback.
 #!
 #! Inputs:  [note_idx, pad(15)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the active account is not the native account.
 #! - the note index points to a non-existent output note.
+#! - a callback procedure root is not part of its faucet's account code.
+#! - an invoked callback panics.
+#! - a callback returns an invalid attachment list, or attachments that are invalid or exceed the
+#!   note's attachment limits.
 #!
 #! Invocation: dynexec
 pub proc output_note_seal(note_idx: u16, padding: [felt; 15]) -> [felt; 16]
     exec.memory::assert_native_account
+    exec.memory::assert_not_in_asset_callback
     exec.output_note::assert_note_index_in_bounds
     # => [note_idx, pad(15)]
 
-    exec.memory::get_output_note_ptr
-    # => [note_ptr, pad(15)]
-
-    exec.memory::seal_output_note
+    exec.output_note::seal
     # => [pad(16)]
 end
 
@@ -1658,6 +1776,7 @@ end
 #! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
 #! - the output note is sealed.
@@ -1666,13 +1785,17 @@ end
 #! - the note already has 4 attachments.
 #!
 #! Invocation: dynexec
-pub proc output_note_add_attachment(attachment_scheme: u16, attachment: word, note_idx: u16, padding: [felt; 10]) -> [felt; 16]
+pub proc output_note_add_attachment(attachment_scheme: NoteAttachmentScheme, attachment: word, note_idx: u16, padding: [felt; 10]) -> [felt; 16]
     # assert that the provided note index is less than the total number of output notes
     dup.5 exec.output_note::assert_note_index_in_bounds drop
     # => [attachment_scheme, ATTACHMENT, note_idx, pad(10)]
 
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [attachment_scheme, ATTACHMENT, note_idx, pad(10)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [attachment_scheme, ATTACHMENT, note_idx, pad(10)]
 
     exec.output_note::add_attachment

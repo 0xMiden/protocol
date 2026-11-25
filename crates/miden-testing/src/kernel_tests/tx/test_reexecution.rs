@@ -30,8 +30,9 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::note::P2idNote;
 use miden_standards::tx_script::SendNotesTransactionScript;
@@ -44,6 +45,7 @@ use miden_tx::{
     TransactionMastStore,
 };
 
+use super::test_ies::{SealingAccount, execute_sealing_transaction, secret_key};
 use crate::{AccountState, Auth, MockChain};
 
 /// Tests that a transaction which uses FPI and a signature can be re-executed and proven from its
@@ -71,8 +73,8 @@ async fn executed_transaction_can_be_proven_and_reexecuted_from_its_inputs() -> 
                 TokenPolicyManager::builder()
                     .active_mint_policy(MintPolicy::allow_all())
                     .active_burn_policy(BurnPolicy::allow_all())
-                    .active_send_policy(TransferPolicy::empty_basic_blocklist())
-                    .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+                    .active_send_policy(SendPolicy::empty_basic_blocklist())
+                    .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
                     .build(),
             ),
         AccountState::Exists,
@@ -141,6 +143,31 @@ async fn executed_transaction_can_be_proven_and_reexecuted_from_its_inputs() -> 
         )
         .await?;
     assert_eq!(reexecuted_tx.id(), executed_tx.id());
+
+    Ok(())
+}
+
+/// Tests that a transaction that encrypts with IES `seal` can be re-executed and proven from its
+/// inputs, whose transaction arguments carry the IES seal seed.
+#[tokio::test]
+async fn sealing_transaction_can_be_reexecuted_from_its_inputs() -> anyhow::Result<()> {
+    let recipients = [secret_key(1).public_key(), secret_key(2).public_key()];
+    let executed_tx = execute_sealing_transaction(&recipients, SealingAccount::Native).await?;
+    let tx_inputs = executed_tx.tx_inputs().clone();
+
+    let data_store = TransactionInputsDataStore::new(tx_inputs.clone());
+    let reexecuted_tx = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store)
+        .execute_transaction(
+            tx_inputs.account().id(),
+            tx_inputs.ref_block(),
+            tx_inputs.input_notes().clone(),
+            tx_inputs.tx_args().clone(),
+        )
+        .await?;
+    assert_eq!(reexecuted_tx.id(), executed_tx.id());
+
+    let proven_tx = LocalTransactionProver::default().prove(reexecuted_tx)?;
+    assert_eq!(proven_tx.id(), executed_tx.id());
 
     Ok(())
 }

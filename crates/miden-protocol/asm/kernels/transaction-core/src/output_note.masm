@@ -1,7 +1,12 @@
 use {
+    AccountId,
     Asset,
+    Bool,
     NoteAssetsCommitment,
     NoteAttachmentCommitment,
+    NoteAttachmentCount,
+    NoteAttachmentListCommitment,
+    NoteAttachmentScheme,
     NoteAttachmentsCommitment,
     NoteMetadata,
     NoteRecipient,
@@ -16,6 +21,7 @@ use miden::tx_kernel_core::callbacks
 use miden::tx_kernel_core::fungible_asset
 use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::note
+use miden::protocol_utils::account_id
 use {MAX_OUTPUT_NOTES_PER_TX, WORD_NUM_ELEMENTS} from miden::tx_kernel_core::constants
 use {MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, NOTE_METADATA_VERSION_1, NOTE_TYPE_PUBLIC}
     from miden::tx_kernel_core::note
@@ -34,6 +40,10 @@ const ATTACHMENT_DEFAULT_SCHEMES = 0
 
 #! The attachment scheme value that is reserved to represent an absent attachment.
 const ATTACHMENT_RESERVED_SCHEME = 0
+
+# The number of elements of an attachment list entry: the attachment scheme padded to a word,
+# followed by the attachment commitment.
+const ATTACHMENT_LIST_ENTRY_SIZE = 8
 
 # ERRORS
 # =================================================================================================
@@ -63,6 +73,15 @@ const ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS = "number of attachments per note can
 
 const ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED =
     "total number of attachment words per note cannot exceed 512"
+
+const ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_COMMITMENT_WITHOUT_ATTACHMENTS =
+    "note callback returned a non-empty attachment list commitment with 0 attachments"
+
+const ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_LENGTH_MISMATCH =
+    "attachment list returned by a note callback does not match its number of attachments"
+
+const ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_ENTRY_PADDING_NOT_ZERO =
+    "attachment list returned by a note callback must pad each attachment scheme with zeros"
 
 const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS =
     "non-fungible asset that already exists in the note cannot be added again"
@@ -248,7 +267,7 @@ end
 #! - the max amount of fungible assets is exceeded.
 #! - the non-fungible asset already exists in the note.
 #! - the total number of ASSETs exceeds the maximum of 16.
-#! - the output note is sealed, including by the asset callback.
+#! - the output note is sealed.
 pub proc add_asset(asset: Asset, note_idx: u16)
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
@@ -258,24 +277,15 @@ pub proc add_asset(asset: Asset, note_idx: u16)
     exec.asset::validate
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
+    dup.8 exec.memory::get_output_note_ptr
+    exec.memory::is_output_note_sealed assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
+    # => [ASSET_ID, ASSET_VALUE, note_idx]
+
     # emit event to signal that a new asset is going to be added to the note
     emit.NOTE_BEFORE_ADD_ASSET_EVENT
     # => [ASSET_ID, ASSET_VALUE, note_idx]
 
-    # retain the original asset and note index while the callback validates a copy
-    repeat.9
-        dup.8
-    end
-    # => [ASSET_ID, ASSET_VALUE, note_idx, ASSET_ID, ASSET_VALUE, note_idx]
-
-    # invoke the callback
-    exec.callbacks::on_before_asset_added_to_note
-    # => [ASSET_ID, ASSET_VALUE, note_idx]
-
-    movup.8 exec.memory::get_output_note_ptr
-    # Check after the callback, which can itself seal the note.
-    dup exec.memory::is_output_note_sealed assertz.err=ERR_OUTPUT_NOTE_IS_SEALED
-    dup
+    movup.8 exec.memory::get_output_note_ptr dup
     # => [note_ptr, note_ptr, ASSET_ID, ASSET_VALUE]
 
     movdn.9 movdn.9
@@ -320,7 +330,7 @@ end
 #! - the note already has 4 attachments.
 #! - the output note is sealed.
 pub proc add_attachment(
-    attachment_scheme: u16,
+    attachment_scheme: NoteAttachmentScheme,
     attachment_commitment: NoteAttachmentCommitment,
     note_idx: u16
 )
@@ -395,6 +405,49 @@ pub proc add_attachment(
     # => [num_attachments, note_ptr, attachment_scheme]
 
     exec.set_attachment_schemes
+    # => []
+end
+
+#! Invokes the `on_before_note_sealed` callback of each distinct faucet with the asset callback flag
+#! enabled among the assets of the note specified by the index, and then seals the note.
+#!
+#! If the note is already sealed, the procedure returns without invoking any callback. The callbacks
+#! are invoked in the order in which each faucet first occurs among the note's assets. Each callback
+#! can return a list of attachments, which are appended to the note in list order right after the
+#! callback returns, so the note's attachments, metadata and ID are final only once the last
+#! callback returned. Once the note is sealed, its assets and attachments cannot be modified.
+#!
+#! Inputs:  [note_idx]
+#! Outputs: []
+#!
+#! Where:
+#! - note_idx is the index of the note to seal.
+#!
+#! Panics if:
+#! - a callback procedure root is not part of its faucet's account code.
+#! - an invoked callback panics.
+#! - a callback returns 0 attachments with a non-empty attachment list commitment.
+#! - an attachment list returned by a callback is invalid (see `add_attachment_list`).
+pub proc seal(note_idx: u16)
+    dup exec.memory::get_output_note_ptr
+    # => [note_ptr, note_idx]
+
+    dup exec.memory::is_output_note_sealed
+    # => [is_sealed, note_ptr, note_idx]
+
+    if.true
+        drop drop
+        # => []
+    else
+        swap dup.1
+        # => [note_ptr, note_idx, note_ptr]
+
+        exec.invoke_on_before_note_sealed_callbacks
+        # => [note_ptr]
+
+        exec.memory::seal_output_note
+        # => []
+    end
     # => []
 end
 
@@ -537,9 +590,9 @@ end
 #! - attachment_scheme is the user-defined scheme of the attachment.
 #! - note_ptr is the memory address at which the output note data begins.
 proc set_attachment_schemes(
-    num_attachments: u8,
+    num_attachments: NoteAttachmentCount,
     note_ptr: ptr<OutputNoteData>,
-    attachment_scheme: u16
+    attachment_scheme: NoteAttachmentScheme
 )
     # the schemes are stored as follows in the third felt:
     # 3rd felt: [
@@ -722,4 +775,286 @@ proc add_asset_raw(asset: Asset, note_ptr: ptr<OutputNoteData>)
         movup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_storew_le dropw
         # => []
     end
+end
+
+#! Invokes the `on_before_note_sealed` callback of each distinct faucet with the asset callback flag
+#! enabled among the assets of the specified note, in the order in which each faucet first occurs
+#! among the note's assets, and appends the attachments each callback returns to the note.
+#!
+#! Inputs:  [note_ptr, note_idx]
+#! Outputs: []
+#!
+#! Where:
+#! - note_ptr is the memory address at which the output note data begins.
+#! - note_idx is the index of the note whose callbacks are invoked.
+#!
+#! Panics if:
+#! - a callback procedure root is not part of its faucet's account code.
+#! - an invoked callback panics.
+#! - a callback returns 0 attachments with a non-empty attachment list commitment.
+#! - an attachment list returned by a callback is invalid (see `add_attachment_list`).
+proc invoke_on_before_note_sealed_callbacks(note_ptr: ptr<OutputNoteData>, note_idx: u16)
+    dup exec.memory::get_output_note_asset_data_ptr
+    # => [assets_start_ptr, note_ptr, note_idx]
+
+    swap exec.memory::get_output_note_num_assets
+    # => [num_assets, assets_start_ptr, note_idx]
+
+    # compute the pointer at which we should stop iterating
+    mul.ASSET_SIZE dup.1 add
+    # => [assets_end_ptr, assets_start_ptr, note_idx]
+
+    dup.1
+    # => [asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+    # enter the loop if the note has assets
+    dup dup.2 neq
+    # => [has_assets, asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+    while.true
+        padw dup.4 mem_loadw_le
+        # => [ASSET_ID, asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+        exec.asset::id_to_has_callbacks
+        # => [has_callbacks, ASSET_ID, asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+        if.true
+            exec.asset::id_into_faucet_id
+            # => [faucet_id_suffix, faucet_id_prefix, asset_ptr, assets_end_ptr, assets_start_ptr,
+            #     note_idx]
+
+            dup.5 dup.3 dup.6 movup.4 movup.4
+            # => [faucet_id_suffix, faucet_id_prefix, assets_start_ptr, asset_ptr, note_idx,
+            #     asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+            exec.maybe_invoke_on_before_note_sealed_callback
+            # => [asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+        else
+            dropw
+            # => [asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+        end
+        # => [asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+        add.ASSET_SIZE
+        # => [asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+        # continue looping while asset_ptr != assets_end_ptr
+        dup dup.2 neq
+        # => [should_loop, asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+    end
+    # => [asset_ptr, assets_end_ptr, assets_start_ptr, note_idx]
+
+    dropw
+    # => []
+end
+
+#! Invokes the `on_before_note_sealed` callback of the provided faucet for the specified note and
+#! appends the attachments the callback returns to the note, unless the callback for this faucet was
+#! already invoked.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, assets_start_ptr, asset_ptr, note_idx]
+#! Outputs: []
+#!
+#! Where:
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the ID of the faucet that issued
+#!   the asset at asset_ptr.
+#! - assets_start_ptr is the memory address of the note's first asset.
+#! - asset_ptr is the memory address of the note asset issued by the faucet.
+#! - note_idx is the index of the note whose callback is invoked.
+#!
+#! Panics if:
+#! - the callback procedure root is not part of the faucet's account code.
+#! - the invoked callback panics.
+#! - the callback returns 0 attachments with a non-empty attachment list commitment.
+#! - the attachment list returned by the callback is invalid (see `add_attachment_list`).
+proc maybe_invoke_on_before_note_sealed_callback(
+    faucet_id: AccountId,
+    assets_start_ptr: ptr<Asset>,
+    asset_ptr: ptr<Asset>,
+    note_idx: u16
+)
+    # check whether the faucet already occurs among the preceding assets in kernel memory;
+    # the callback flag is a bit of the faucet ID, so all assets of a faucet share it
+    dup.1 dup.1 movup.5 movup.5
+    # => [assets_start_ptr, asset_ptr, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix,
+    #     faucet_id_prefix, note_idx]
+
+    exec.has_asset_from_faucet
+    # => [is_preceding_faucet, faucet_id_suffix, faucet_id_prefix, note_idx]
+
+    if.true
+        # the callback of this faucet was already invoked
+        drop drop drop
+        # => []
+    else
+        dup.2 movdn.3
+        # => [faucet_id_suffix, faucet_id_prefix, note_idx, note_idx]
+
+        exec.callbacks::on_before_note_sealed
+        # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, note_idx]
+
+        # append the attachments returned by the callback, unless it returned none
+        dup neq.0
+        # => [has_attachments, num_attachments, ATTACHMENT_LIST_COMMITMENT, note_idx]
+
+        if.true
+            exec.add_attachment_list
+            # => []
+        else
+            # a callback that returns no attachment must not return a list commitment either
+            drop exec.word::eqz
+            assert.err=ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_COMMITMENT_WITHOUT_ATTACHMENTS
+            # => [note_idx]
+
+            drop
+            # => []
+        end
+    end
+end
+
+#! Appends the attachments of the provided attachment list to the note specified by the index, in
+#! list order.
+#!
+#! The list holds two words per attachment, `[attachment_scheme, 0, 0, 0]` followed by the
+#! attachment's commitment, and ATTACHMENT_LIST_COMMITMENT is the sequential hash of its elements.
+#! The list elements are fetched from the advice map using ATTACHMENT_LIST_COMMITMENT as the key and
+#! the commitment is verified by hashing them. Each attachment is added via `add_attachment`.
+#!
+#! Inputs:
+#!   Operand Stack: [num_attachments, ATTACHMENT_LIST_COMMITMENT, note_idx]
+#!   Advice map: {
+#!     ATTACHMENT_LIST_COMMITMENT: [[ATTACHMENT_LIST_ELEMENTS]],
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]], for each listed attachment
+#!   }
+#! Outputs: []
+#!
+#! Where:
+#! - num_attachments is the number of attachments in the list.
+#! - ATTACHMENT_LIST_COMMITMENT is the commitment to the attachment list.
+#! - note_idx is the index of the note to which the attachments are added.
+#!
+#! Panics if:
+#! - num_attachments exceeds 4.
+#! - the number of list elements does not match num_attachments.
+#! - the computed hash of the list elements does not match ATTACHMENT_LIST_COMMITMENT.
+#! - the three elements after the attachment scheme of an entry are not all zero.
+#! - a listed attachment is invalid or exceeds the note's attachment limits (see `add_attachment`).
+@locals(32)
+proc add_attachment_list(
+    num_attachments: NoteAttachmentCount,
+    attachment_list_commitment: NoteAttachmentListCommitment,
+    note_idx: u16
+)
+    # bound num_attachments by the note's attachment limit, so the list fits into local memory
+    dup u32assert.err=ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS
+    u32lte.MAX_ATTACHMENTS_PER_NOTE assert.err=ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS
+    # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, note_idx]
+
+    # push the list elements from the advice map onto the advice stack
+    movdn.4 adv.push_mapvaln
+    # OS => [ATTACHMENT_LIST_COMMITMENT, num_attachments, note_idx]
+    # AS => [num_elements, [ATTACHMENT_LIST_ELEMENTS]]
+
+    # assert the list holds an entry per attachment
+    adv_push movup.5 mul.ATTACHMENT_LIST_ENTRY_SIZE dup movup.2
+    assert_eq.err=ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_LENGTH_MISMATCH
+    # OS => [num_elements, ATTACHMENT_LIST_COMMITMENT, note_idx]
+    # AS => [[ATTACHMENT_LIST_ELEMENTS]]
+
+    # SAFETY: we have allocated 32 elements of local memory which is sufficient for the list of up
+    # to 4 attachments
+    u32div.WORD_NUM_ELEMENTS locaddr.0 swap
+    # OS => [num_words, list_ptr, ATTACHMENT_LIST_COMMITMENT, note_idx]
+    # AS => [[ATTACHMENT_LIST_ELEMENTS]]
+
+    # validate the sequential hash over the list elements is ATTACHMENT_LIST_COMMITMENT
+    exec.mem::pipe_double_words_preimage_to_memory
+    # OS => [list_end_ptr, note_idx]
+    # AS => []
+
+    locaddr.0
+    # => [entry_ptr, list_end_ptr, note_idx]
+
+    dup dup.2 neq
+    # => [has_entries, entry_ptr, list_end_ptr, note_idx]
+
+    while.true
+        # load the attachment scheme of the entry and assert that the rest of its word is zero
+        padw dup.4 mem_loadw_le
+        # => [attachment_scheme, padding(3), entry_ptr, list_end_ptr, note_idx]
+
+        movdn.3
+        assertz.err=ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_ENTRY_PADDING_NOT_ZERO
+        assertz.err=ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_ENTRY_PADDING_NOT_ZERO
+        assertz.err=ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_ENTRY_PADDING_NOT_ZERO
+        # => [attachment_scheme, entry_ptr, list_end_ptr, note_idx]
+
+        # load the attachment commitment of the entry
+        padw dup.5 add.WORD_NUM_ELEMENTS mem_loadw_le
+        # => [ATTACHMENT_COMMITMENT, attachment_scheme, entry_ptr, list_end_ptr, note_idx]
+
+        movup.4 dup.7 movdn.5
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, entry_ptr, list_end_ptr, note_idx]
+
+        exec.add_attachment
+        # => [entry_ptr, list_end_ptr, note_idx]
+
+        add.ATTACHMENT_LIST_ENTRY_SIZE
+        # => [entry_ptr, list_end_ptr, note_idx]
+
+        # continue looping while entry_ptr != list_end_ptr
+        dup dup.2 neq
+        # => [has_entries, entry_ptr, list_end_ptr, note_idx]
+    end
+    # => [entry_ptr, list_end_ptr, note_idx]
+
+    drop drop drop
+    # => []
+end
+
+#! Returns whether any of the assets in the provided memory range was issued by the provided faucet.
+#!
+#! Inputs:  [start_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix]
+#! Outputs: [is_found]
+#!
+#! Where:
+#! - start_ptr is the memory address of the first asset in the range.
+#! - end_ptr is the memory address right after the last asset in the range.
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet ID to look for.
+#! - is_found is 1 if an asset in the range was issued by the faucet, 0 otherwise.
+proc has_asset_from_faucet(start_ptr: ptr<Asset>, end_ptr: ptr<Asset>, faucet_id: AccountId) -> Bool
+    # initialize the loop variable is_found to false
+    push.0 movdn.4
+    # => [asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+
+    # enter the loop if the range is non-empty
+    dup dup.2 neq
+    # => [should_loop, asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+
+    while.true
+        padw dup.4 mem_loadw_le
+        # => [ASSET_ID, asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+
+        exec.asset::id_into_faucet_id
+        # => [asset_faucet_id_suffix, asset_faucet_id_prefix, asset_ptr, end_ptr, faucet_id_suffix,
+        #     faucet_id_prefix, is_found]
+
+        dup.5 dup.5 exec.account_id::eq
+        # => [is_matching_faucet, asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+
+        # set is_found = is_matching_faucet
+        swap.5 drop
+        # => [asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+
+        add.ASSET_SIZE
+        # => [asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+
+        # continue looping while (!is_found) && asset_ptr != end_ptr
+        dup dup.2 neq dup.5 not and
+        # => [should_loop, asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+    end
+    # => [asset_ptr, end_ptr, faucet_id_suffix, faucet_id_prefix, is_found]
+
+    dropw
+    # => [is_found]
 end
