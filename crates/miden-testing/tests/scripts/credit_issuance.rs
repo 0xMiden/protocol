@@ -103,7 +103,7 @@ use miden_testing::{
     MockChainBuilder,
     assert_transaction_executor_error,
 };
-use miden_tx::{LocalTransactionProver, TransactionExecutorError};
+use miden_tx::TransactionExecutorError;
 use rand::RngExt;
 
 // CONSTANTS
@@ -438,14 +438,14 @@ async fn credit_issuance_and_repayment() -> anyhow::Result<()> {
     // STEP 5: the payback is a private P2ID loan note paying the principal to the borrower
     // --------------------------------------------------------------------------------------------
 
-    let [loan_on_chain] = non_fee_output_notes(&consume_issue_note_tx)[..] else {
+    let [loan_note_header] = non_fee_output_notes(&consume_issue_note_tx)[..] else {
         anyhow::bail!("filling the issue note must create exactly the loan note");
     };
-    assert_eq!(loan_on_chain.metadata().note_type(), NoteType::Private);
+    assert_eq!(loan_note_header.metadata().note_type(), NoteType::Private);
 
     // the borrower derives the loan note from the terms and consumes it
-    let loan_note = setup.terms.loan_note(loan_on_chain.metadata())?;
-    assert_eq!(loan_note.id(), loan_on_chain.id());
+    let loan_note = setup.terms.loan_note(loan_note_header.metadata())?;
+    assert_eq!(loan_note.id(), loan_note_header.id());
 
     let consume_loan_note_tx = mock_chain
         .build_transaction(setup.borrower.id())
@@ -760,9 +760,9 @@ async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
 
     // Anyone sees in the block that the creditor created a private note, but only its header and
-    // attachments, not what it holds. The issuer decrypts the attachment: it learns the amount the
-    // creditor sent, checks that the attachment describes this note by recomputing the note's ID,
-    // and computes the nullifier that consuming the note will reveal.
+    // attachments, not what it holds. The issuer decrypts the attachment, which it accepts only if
+    // the decrypted details recompute the note's ID: it learns the amount the creditor sent, and
+    // computes the nullifier that consuming the note will reveal.
     let (loan_on_chain, loan_details) = issuer_decrypts_new_note(&mock_chain, &issuer_secret_key)?;
     assert_eq!(loan_details.assets(), &NoteAssets::new(vec![principal_asset.into()])?);
     assert_eq!(loan_details.note_id(loan_on_chain.metadata()), loan_on_chain.id());
@@ -770,7 +770,7 @@ async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
     // the nullifier is not on-chain until the note is consumed
     assert!(mock_chain.is_note_unspent(&loan_nullifier));
 
-    // without the issuer's secret key, the attachment reveals nothing about the note
+    // another key cannot decrypt the attachment
     let other_secret_key = SecretKey::with_rng(&mut rand::rng());
     assert!(
         EncryptedAssetsAttachment::decrypt_and_verify_note(
@@ -792,9 +792,9 @@ async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
     )
     .await?;
 
-    // the issuer finds the nullifier it computed in the new block: the loan note is spent
+    // the consumption reveals the nullifier the issuer computed, so the issuer sees the note spent
     assert_eq!(consume_loan_tx.input_notes().get_note(0).note().nullifier(), loan_nullifier);
-    assert!(mock_chain.latest_block().body().created_nullifiers().contains(&loan_nullifier));
+    assert!(mock_chain.is_note_consumed(&loan_nullifier));
 
     let borrower_account = mock_chain.committed_account(borrower.id())?;
     assert_eq!(borrower_account.vault().get_balance(stablecoin_asset_id)?, repayment_amount);
@@ -827,13 +827,7 @@ async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
         consume_repayment_tx.input_notes().get_note(0).note().nullifier(),
         repayment_nullifier
     );
-    assert!(
-        mock_chain
-            .latest_block()
-            .body()
-            .created_nullifiers()
-            .contains(&repayment_nullifier)
-    );
+    assert!(mock_chain.is_note_consumed(&repayment_nullifier));
 
     let creditor_account = mock_chain.committed_account(creditor.id())?;
     assert_eq!(creditor_account.vault().get_balance(stablecoin_asset_id)?, repayment_amount);
@@ -967,8 +961,8 @@ async fn send_stablecoins(
         .await)
 }
 
-/// Executes and proves a transaction in which `sender` sends `asset` to `target_id` in a private
-/// P2ID note, and adds the proven transaction to the chain.
+/// Executes a transaction in which `sender` sends `asset` to `target_id` in a private P2ID note,
+/// and adds it to the chain.
 ///
 /// The stablecoin faucet's send policy encrypts the details of the note, so the transaction
 /// provides them by expecting the note. Returns the note as the transaction created it, i.e. with
@@ -1005,15 +999,16 @@ async fn send_private_stablecoins(
         anyhow::bail!("the transaction must create exactly the full P2ID note");
     };
     let sent_note = sent_note.clone();
-
-    mock_chain.add_pending_proven_transaction(LocalTransactionProver::default().prove(send_tx)?);
-    mock_chain.prove_next_block()?;
+    commit(mock_chain, &send_tx)?;
 
     Ok(sent_note)
 }
 
 /// Executes a transaction in which the account `account_id` consumes the private `note` holding
 /// stablecoins, whose details it received off-chain, and adds it to the chain.
+///
+/// Adding the stablecoins to the vault invokes the faucet's asset callback, so the transaction
+/// reads the faucet as a foreign account.
 async fn consume_private_stablecoins(
     mock_chain: &mut MockChain,
     account_id: AccountId,
@@ -1035,8 +1030,7 @@ async fn consume_private_stablecoins(
 /// Returns the single private note of the latest block whose encrypted asset attachment decrypts
 /// with the issuer's `secret_key`, and the note details the issuer learns from it.
 ///
-/// The block holds the private notes as the proven transactions output them: only their headers
-/// and attachments.
+/// The block holds only the headers and attachments of its private notes.
 fn issuer_decrypts_new_note(
     mock_chain: &MockChain,
     secret_key: &SecretKey,
