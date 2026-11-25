@@ -1,0 +1,7 @@
+# The MASM code of the encrypted assets send policy account component.
+#
+# Exposes the `check_send_policy` procedure so its MAST root can be registered as the active (or
+# allowed) send policy on a `TokenPolicyManager`. Storage-free: the issuer key is installed by the
+# `miden::standards::attachments::encrypted_assets` component.
+
+pub use {check_send_policy} from miden::standards::faucets::policies::transfer::encrypted_assets

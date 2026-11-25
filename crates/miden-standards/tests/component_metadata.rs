@@ -35,6 +35,7 @@ use miden_standards::account::policies::{
     BurnAllowAll,
     BurnOwnerOnly,
     BurnPolicy,
+    EncryptedAssetsSendPolicy,
     MinBurnAmount,
     MintAllowAll,
     MintOwnerOnly,
@@ -46,6 +47,7 @@ use miden_standards::account::policies::{
 };
 use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
+use miden_standards::note::EncryptedAssetsIssuerKey;
 
 /// Returns each standard component's `NAME` paired with the metadata read from its package.
 fn components() -> Vec<(&'static str, AccountComponentMetadata)> {
@@ -83,6 +85,8 @@ fn components() -> Vec<(&'static str, AccountComponentMetadata)> {
         (BasicAllowlist::NAME, BasicAllowlist::component_metadata()),
         (BasicBlocklist::NAME, BasicBlocklist::component_metadata()),
         (BlocklistManager::NAME, BlocklistManager::component_metadata()),
+        (EncryptedAssetsSendPolicy::NAME, EncryptedAssetsSendPolicy::component_metadata()),
+        (EncryptedAssetsIssuerKey::NAME, EncryptedAssetsIssuerKey::component_metadata()),
         (SupplyRestrictionManager::NAME, SupplyRestrictionManager::component_metadata()),
         (SupplyRestrictionPolicy::NAME, SupplyRestrictionPolicy::component_metadata()),
         (BasicConstantFeePolicy::NAME, BasicConstantFeePolicy::component_metadata()),

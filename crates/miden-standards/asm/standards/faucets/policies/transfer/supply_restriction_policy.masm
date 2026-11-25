@@ -6,7 +6,7 @@
 # Receiving assets is never restricted, and the issuing faucet is exempt so that minting does not
 # depend on its own restricted amounts.
 
-use {AccountId} from miden::protocol::types
+use {AccountId, NoteAttachmentCount, NoteAttachmentListCommitment} from miden::protocol::types
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::native_account
@@ -23,7 +23,8 @@ const ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE = "transfer e
 # ================================================================================================
 
 #! Send policy that rejects output notes if the amount sent by the transaction so far would spend
-#! frozen or confiscated amounts of the native account on the issuing faucet.
+#! frozen or confiscated amounts of the native account on the issuing faucet, and returns no
+#! attachment for the accepted ones.
 #!
 #! A restricted account can only send what it held at the beginning of the transaction, so it must
 #! spend assets it receives in a later transaction.
@@ -32,10 +33,12 @@ const ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE = "transfer e
 #! after the reference block.
 #!
 #! Inputs:  [note_idx, pad(15)]
-#! Outputs: [pad(16)]
+#! Outputs: [0, EMPTY_WORD, pad(11)]
 #!
 #! Where:
 #! - note_idx is the index of the output note being sealed.
+#! - 0 is the number of attachments returned for the note, so the attachment list commitment is
+#!   EMPTY_WORD.
 #!
 #! Panics if:
 #! - the native account is restricted, it is not the issuing faucet, and its initial balance is
@@ -43,7 +46,7 @@ const ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE = "transfer e
 #!
 #! Invocation: call
 @account_procedure
-pub proc check_send_policy(note_idx: u16)
+pub proc check_send_policy(note_idx: u16) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
     # the check covers all output notes rather than only the one being sealed
     drop
     # => [pad(16)]

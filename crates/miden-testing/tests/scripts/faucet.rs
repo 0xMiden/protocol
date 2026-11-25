@@ -87,9 +87,16 @@ pub struct FaucetTestParams {
 /// Creates minting script code for fungible asset distribution
 pub fn create_mint_script_code(params: &FaucetTestParams, faucet_id: AccountId) -> String {
     format!(
+        "@transaction_script\npub proc main\n{}\nend",
+        create_mint_body_code(params, faucet_id)
+    )
+}
+
+/// Creates code that mints and seals one note for fungible asset distribution, leaving the stack
+/// at depth 16, so that a transaction script can run it more than once.
+pub fn create_mint_body_code(params: &FaucetTestParams, faucet_id: AccountId) -> String {
+    format!(
         "
-            @transaction_script
-            pub proc main
                 push.{recipient}
                 push.{note_type}
                 push.{tag}
@@ -109,7 +116,6 @@ pub fn create_mint_script_code(params: &FaucetTestParams, faucet_id: AccountId) 
 
                 # truncate the stack
                 dropw dropw dropw drop drop drop
-            end
             ",
         note_type = params.note_type as u8,
         recipient = params.recipient,

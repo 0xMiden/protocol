@@ -608,6 +608,23 @@ impl MockChainBuilder {
             .active_receive_policy(ReceivePolicy::allow_all())
             .build();
 
+        self.add_existing_network_faucet_with_policies(
+            owner_account_id,
+            faucet,
+            allowed_script_roots,
+            token_policy_manager,
+        )
+    }
+
+    /// Same as [`Self::add_existing_network_faucet_with_metadata`], but installs the provided
+    /// `token_policy_manager` instead of the default policies.
+    pub fn add_existing_network_faucet_with_policies(
+        &mut self,
+        owner_account_id: AccountId,
+        faucet: FungibleFaucet,
+        allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
+        token_policy_manager: TokenPolicyManager,
+    ) -> anyhow::Result<Account> {
         let allowed_script_roots: BTreeSet<NoteScriptRoot> = allowed_script_roots
             .into_iter()
             .chain([MintNote::script_root(), BurnNote::script_root()])
