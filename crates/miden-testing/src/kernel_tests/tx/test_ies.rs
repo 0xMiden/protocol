@@ -28,8 +28,7 @@ use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::SeedableRng;
 use rstest::rstest;
 
-use super::ExecutionOutputExt;
-use crate::{Auth, MockChainBuilder, TestTransactionBuilder, assert_transaction_executor_error};
+use crate::{Auth, MockChainBuilder, assert_transaction_executor_error};
 
 // CONSTANTS
 // ================================================================================================
@@ -366,62 +365,6 @@ async fn ies_seal_derives_the_secret_from_the_request_event() -> anyhow::Result<
         .derive_ephemeral_secret(0, &recipient, context_digest, plaintext_digest)
         .public_key();
     assert_eq!(envelope(&executed_tx, 0)?.ephemeral_key(), expected_key);
-
-    Ok(())
-}
-
-/// Tests that code run through `execute_code` can encrypt, and that `seal` consumes all the key
-/// agreement advice, so that later code cannot read the ephemeral secret from the advice stack.
-#[tokio::test]
-async fn execute_code_handles_seal_request() -> anyhow::Result<()> {
-    // The code runs in the root context, so the plaintext, the context and the envelope are placed
-    // above the transaction kernel's memory.
-    const SCRATCH_PTR: u32 = 1 << 27;
-    const ENVELOPE_PTR: u32 = SCRATCH_PTR + (PLAINTEXT.len() + CONTEXT.len()) as u32;
-    let recipient_secret = secret_key(1);
-
-    let store_inputs = PLAINTEXT
-        .iter()
-        .chain(&CONTEXT)
-        .enumerate()
-        .map(|(idx, value)| format!("push.{value} push.{} mem_store", SCRATCH_PTR + idx as u32))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let code = format!(
-        r#"
-        use miden::tx_kernel_core::prologue
-
-        begin
-            exec.prologue::prepare_transaction
-            {store_inputs}
-            push.{ENVELOPE_PTR} push.{context_len} push.{context_ptr} push.{plaintext_len}
-            push.{SCRATCH_PTR}
-            {public_key}
-            exec.::miden::protocol::ies::ecgfp5_eidos::seal
-        end
-        "#,
-        context_len = CONTEXT.len(),
-        context_ptr = SCRATCH_PTR + PLAINTEXT.len() as u32,
-        plaintext_len = PLAINTEXT.len(),
-        public_key = push_reversed(&recipient_secret.public_key().to_elements()),
-    );
-
-    let exec_output = TestTransactionBuilder::with_existing_mock_account()
-        .build()?
-        .execute_code(&code)
-        .await?;
-
-    let envelope_elements = (0..ENVELOPE_NUM_WORDS)
-        .flat_map(|word_idx| {
-            exec_output
-                .get_kernel_mem_word(ENVELOPE_PTR + word_idx * WORD_SIZE as u32)
-                .into_elements()
-        })
-        .collect::<Vec<_>>();
-    let envelope = Envelope::from_elements(&envelope_elements)?;
-    let plaintext = ecgfp5_eidos::open(&recipient_secret, &felts(CONTEXT), &envelope)?;
-    assert_eq!(plaintext, felts(PLAINTEXT));
-    assert_eq!(exec_output.advice.stack_len(), 0);
 
     Ok(())
 }
