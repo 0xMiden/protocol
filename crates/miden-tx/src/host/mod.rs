@@ -34,12 +34,13 @@ mod tx_progress;
 mod tx_event;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
-use miden_processor::event::{EventError, EventHandlerRegistry};
+use miden_processor::event::{EventError, EventHandlerRegistry, NoopEventHandler};
 use miden_processor::trace::RowIndex;
-use miden_processor::{ContextId, Felt, LoadedMastForest, MastForestStore, ProcessorState};
+use miden_processor::{Felt, LoadedMastForest, MastForestStore, ProcessorState};
 use miden_protocol::account::{
     AccountCode,
     AccountCodeUpgrade,
@@ -57,7 +58,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
+use miden_protocol::crypto::ecdh::ecgfp5::PublicKey;
 use miden_protocol::note::{NoteAttachment, NoteId, NoteRecipient, PartialNoteMetadata};
 use miden_protocol::transaction::{
     IesSealSeed,
@@ -128,10 +129,6 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// The seed from which the ephemeral secrets of the IES `seal` requests are derived.
     ies_seal_seed: Option<IesSealSeed>,
 
-    /// The context, the recipient and the ephemeral secret of the last IES `seal` request, which
-    /// the key agreement request of the core library's `seal` takes.
-    ies_seal_agreement: Option<(ContextId, PublicKey, SecretKey)>,
-
     /// The number of IES `seal` requests answered so far.
     num_ies_seal_requests: u32,
 }
@@ -163,6 +160,12 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
                     .register(event_id, handler)
                     .expect("There are no duplicates in the core library handlers");
             }
+
+            // The key agreement advice is already provided by `on_ies_seal_requested`.
+            registry
+                .register(ECGFP5_EIDOS_SEAL_EVENT_NAME, Arc::new(NoopEventHandler))
+                .expect("the core library handlers do not handle the IES seal event");
+
             registry
         };
         Ok(Self {
@@ -178,7 +181,6 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             block_commitments,
             core_lib_handlers,
             ies_seal_seed,
-            ies_seal_agreement: None,
             num_ies_seal_requests: 0,
         })
     }
@@ -361,19 +363,15 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         vec![AdviceMutation::extend_advice_stack_with([note_idx, is_found])]
     }
 
-    /// Handles the event if it is the key agreement request of the core library's IES `seal` or if
-    /// the core lib event handler registry contains a handler with the emitted event ID.
+    /// Handles the event if the core lib event handler registry contains a handler with the emitted
+    /// event ID.
     ///
     /// Returns `Some` if the event was handled, `None` otherwise.
     pub fn handle_core_lib_events(
-        &mut self,
+        &self,
         process: &ProcessorState,
     ) -> Result<Option<Vec<AdviceMutation>>, EventError> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
-        if event_id == ECGFP5_EIDOS_SEAL_EVENT_NAME.to_event_id() {
-            return Ok(Some(self.on_ies_seal_agreement_requested(process)?));
-        }
-
         if let Some(mutations) = self.core_lib_handlers.handle_event(event_id, process)? {
             Ok(Some(mutations))
         } else {
@@ -390,11 +388,6 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             return Some(name);
         }
 
-        if event_id == ECGFP5_EIDOS_SEAL_EVENT_NAME.to_event_id() {
-            static IES_SEAL_EVENT_NAME: EventName = ECGFP5_EIDOS_SEAL_EVENT_NAME;
-            return Some(&IES_SEAL_EVENT_NAME);
-        }
-
         TransactionEventId::try_from(event_id)
             .ok()
             .map(|event_id| event_id.event_name())
@@ -407,8 +400,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     }
 
     /// Derives the ephemeral secret for the IES `seal` request of
-    /// `miden::protocol::ies::ecgfp5_eidos::seal` in this transaction and records it for the key
-    /// agreement request of the core library's `seal` that follows.
+    /// `miden::protocol::ies::ecgfp5_eidos::seal` in this transaction and returns the key agreement
+    /// advice that the core library's `seal` consumes.
     ///
     /// The digests come from the VM, so the host does constant work per request. Code that emits
     /// the request event itself, with any digests, gets the secret of any request of the same
@@ -442,30 +435,6 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             request.plaintext_digest,
         );
         self.num_ies_seal_requests += 1;
-        self.ies_seal_agreement = Some((request.ctx, recipient, ephemeral_secret));
-
-        Ok(Vec::new())
-    }
-
-    /// Returns the key agreement advice for the key agreement request of the core library's IES
-    /// `seal`, with the ephemeral secret derived for the recorded request.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the key agreement request does not follow an IES `seal` request of
-    /// `miden::protocol::ies::ecgfp5_eidos::seal` in the same context and for the same recipient.
-    fn on_ies_seal_agreement_requested(
-        &mut self,
-        process: &ProcessorState,
-    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        // Expected stack state: [event, PUBLIC_KEY_COMMITMENT]
-        let (_, recipient, ephemeral_secret) = self
-            .ies_seal_agreement
-            .take()
-            .filter(|(ctx, recipient, _)| {
-                *ctx == process.ctx() && recipient.to_commitment() == process.get_stack_word(1)
-            })
-            .ok_or(TransactionKernelError::IesSealWithoutProtocolProcedure)?;
 
         let advice = recipient.advise(&ephemeral_secret);
         Ok(vec![

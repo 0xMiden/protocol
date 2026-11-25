@@ -2,9 +2,9 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
+use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
-use miden_processor::{ContextId, ProcessorState};
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature, SignatureKey};
 use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
@@ -739,8 +739,6 @@ pub(crate) enum RecipientData {
 
 /// An IES `seal` request of `miden::protocol::ies::ecgfp5_eidos::seal`.
 pub(crate) struct IesSealRequest {
-    /// The context in which the request was made.
-    pub(super) ctx: ContextId,
     /// The encoding of the recipient public key.
     pub(super) public_key: [Felt; 5],
     /// The digest of the plaintext.
@@ -754,7 +752,6 @@ impl IesSealRequest {
     fn extract(process: &ProcessorState) -> Result<Self, TransactionKernelError> {
         // Expected stack state: [event, PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5)]
         Ok(Self {
-            ctx: process.ctx(),
             public_key: core::array::from_fn(|idx| process.get_stack_item(9 + idx)),
             plaintext_digest: process.get_stack_word(1),
             context_digest: process.get_stack_word(5),
@@ -765,7 +762,7 @@ impl IesSealRequest {
 /// Leaves out the digests, which let anyone who sees them check guesses of a plaintext.
 impl fmt::Debug for IesSealRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("IesSealRequest").field("ctx", &self.ctx).finish_non_exhaustive()
+        f.debug_struct("IesSealRequest").finish_non_exhaustive()
     }
 }
 
