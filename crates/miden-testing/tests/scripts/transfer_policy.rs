@@ -9,6 +9,7 @@ extern crate alloc;
 
 use alloc::vec;
 
+use anyhow::Context;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::asset::{
@@ -34,7 +35,7 @@ use miden_standards::account::policies::{
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_PAUSABLE_IS_PAUSED;
+use miden_standards::errors::standards::{ERR_ACCOUNT_IS_BLOCKED, ERR_PAUSABLE_IS_PAUSED};
 use miden_standards::note::{MintNote, MintNoteStorage, P2idNote};
 use miden_testing::{
     AccountState,
@@ -43,6 +44,7 @@ use miden_testing::{
     MockChainBuilder,
     assert_transaction_executor_error,
 };
+use miden_tx::TransactionExecutorError;
 
 use super::assert_default_expiration_limit;
 
@@ -130,6 +132,145 @@ fn add_faucet_with_reserved_only_transfer(
         );
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Builds a fungible faucet with the given active send and receive policies.
+fn add_faucet_with_transfer_policies(
+    builder: &mut MockChainBuilder,
+    send_policy: SendPolicy,
+    receive_policy: ReceivePolicy,
+) -> anyhow::Result<Account> {
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("MRG")?)
+        .symbol("MRG".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+
+    let account_builder = AccountBuilder::new([48u8; 32])
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Authority::AuthControlled)
+        .with_components(
+            TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::allow_all())
+                .active_burn_policy(BurnPolicy::allow_all())
+                .active_send_policy(send_policy)
+                .active_receive_policy(receive_policy)
+                .build(),
+        );
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+// CUSTOM TRANSFER POLICY FIXTURE
+// ================================================================================================
+
+/// The amount the custom receive policy of [`CustomTransferPolicies`] expects.
+const TRANSFER_AMOUNT: u64 = 100;
+
+/// The index of the output note the custom send policy of [`CustomTransferPolicies`] expects.
+const SEND_NOTE_IDX: u16 = 1;
+
+const ERR_CUSTOM_POLICY_REJECTED: MasmError =
+    MasmError::from_static_str("custom transfer policy rejects the transfer");
+
+/// A send and a receive policy that assert their inputs and then accept or reject every transfer.
+struct CustomTransferPolicies {
+    send: SendPolicy,
+    receive: ReceivePolicy,
+}
+
+impl CustomTransferPolicies {
+    fn new(accepts: bool) -> anyhow::Result<Self> {
+        let component_name = "tests::custom_transfer_policy";
+        let accepts = u8::from(accepts);
+        let rejection_error = ERR_CUSTOM_POLICY_REJECTED;
+        let error = rejection_error.message();
+        let code = CodeBuilder::default().compile_component_code(
+            component_name,
+            format!(
+                r#"
+                #! Inputs:  [note_idx, pad(15)]
+                #! Outputs: [pad(16)]
+                @account_procedure
+                pub proc check_send_policy
+                    push.{SEND_NOTE_IDX} assert_eq.err="unexpected note index"
+                    push.{accepts} assert.err="{error}"
+                end
+
+                #! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
+                #! Outputs: [pad(16)]
+                @account_procedure
+                pub proc check_receive_policy
+                    dropw push.0.0.0.{TRANSFER_AMOUNT}
+                    assert_eqw.err="unexpected asset value"
+                    push.{accepts} assert.err="{error}"
+                end
+                "#
+            ),
+        )?;
+        let component =
+            AccountComponent::new(code, vec![], AccountComponentMetadata::mock(component_name))?;
+        let procedure_root = |name: &str| {
+            component
+                .get_procedure_root_by_path(format!("{component_name}::{name}").as_str())
+                .with_context(|| format!("procedure {name} should exist"))
+        };
+
+        Ok(Self {
+            send: SendPolicy::custom(procedure_root("check_send_policy")?, [component.clone()])?,
+            receive: ReceivePolicy::custom(
+                procedure_root("check_receive_policy")?,
+                [component.clone()],
+            )?,
+        })
+    }
+}
+
+/// Executes a transaction in which the `sender` consumes the P2ID `note` and moves its asset to a
+/// new output note, which invokes the send policy of the faucet that issued the asset.
+async fn execute_send(
+    mock_chain: &MockChain,
+    sender: AccountId,
+    note: &Note,
+    asset: FungibleAsset,
+) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
+    let asset = Asset::from(asset);
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(format!(
+        r#"
+        use miden::protocol::output_note
+        use mock::util
+
+        @transaction_script
+        pub proc main
+            # note 0 holds no assets, so the send policy is only invoked for note 1
+            exec.util::create_default_note exec.output_note::seal
+            # => []
+
+            exec.util::create_default_note
+            # => [note_idx]
+
+            push.{asset_value} push.{asset_id} dup.8 movdn.8
+            # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
+
+            exec.util::move_asset_to_note exec.output_note::seal
+            # => []
+        end
+        "#,
+        asset_value = asset.to_value_word(),
+        asset_id = asset.to_id_word(),
+    ))?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(asset.faucet_id())?;
+    Ok(mock_chain
+        .build_transaction(sender)
+        .authenticated_input_note(note.id())
+        .tx_script(tx_script)
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await)
 }
 
 // MINT NOTE FIXTURE
@@ -526,6 +667,75 @@ async fn send_policy_inspects_the_faucet_assets_of_the_note(
             3
         );
         assert_default_expiration_limit(&executed);
+    }
+
+    Ok(())
+}
+
+// MERGED POLICIES TESTS
+// ================================================================================================
+
+/// The policy that is merged in [`all_merged_policies_must_accept`].
+#[derive(Debug, Clone, Copy)]
+enum MergedPolicy {
+    Send,
+    Receive,
+}
+
+/// A merged policy accepts a transfer only if all merged policies accept it.
+///
+/// The transaction receives and then sends the asset, so it invokes both the send and the receive
+/// policy. The policy that is not merged accepts every transfer.
+#[rstest::rstest]
+#[case::all_accept(true, true, None)]
+#[case::first_rejects(false, true, Some(ERR_ACCOUNT_IS_BLOCKED))]
+#[case::second_rejects(true, false, Some(ERR_CUSTOM_POLICY_REJECTED))]
+#[case::both_reject_in_order(false, false, Some(ERR_ACCOUNT_IS_BLOCKED))]
+#[tokio::test]
+async fn all_merged_policies_must_accept(
+    #[values(MergedPolicy::Send, MergedPolicy::Receive)] merged_policy: MergedPolicy,
+    #[case] blocklist_accepts: bool,
+    #[case] custom_policy_accepts: bool,
+    #[case] expected_error: Option<MasmError>,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let blocked_accounts = (!blocklist_accepts).then_some(account.id());
+    let custom_policies = CustomTransferPolicies::new(custom_policy_accepts)?;
+
+    let mut send_policy = SendPolicy::allow_all();
+    let mut receive_policy = ReceivePolicy::allow_all();
+    match merged_policy {
+        MergedPolicy::Send => {
+            send_policy = SendPolicy::merge([
+                SendPolicy::with_basic_blocklist(blocked_accounts),
+                custom_policies.send,
+            ])?;
+        },
+        MergedPolicy::Receive => {
+            receive_policy = ReceivePolicy::merge([
+                ReceivePolicy::with_basic_blocklist(blocked_accounts),
+                custom_policies.receive,
+            ])?;
+        },
+    }
+    let faucet = add_faucet_with_transfer_policies(&mut builder, send_policy, receive_policy)?;
+
+    let asset = FungibleAsset::new(faucet.id(), TRANSFER_AMOUNT)?;
+    let note = builder.add_p2id_note(
+        faucet.id(),
+        account.id(),
+        &[Asset::from(asset)],
+        NoteType::Public,
+    )?;
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = execute_send(&mock_chain, account.id(), &note, asset).await?;
+
+    match expected_error {
+        Some(expected_error) => assert_transaction_executor_error!(result, expected_error),
+        None => assert_default_expiration_limit(&result?),
     }
 
     Ok(())

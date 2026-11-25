@@ -683,9 +683,9 @@ impl TokenPolicyManager {
 }
 
 /// Inserts a policy entry into the unified `policies` map. The new kind is appended to the
-/// entry's kind set. A companion component that another entry already carries with the same code
-/// and storage is not added again, which installs a component once when it exports the roots of
-/// several policies (e.g. the send and receive procedures of a transfer policy). A component with
+/// entry's kind set. A companion component that is already carried with the same code and storage
+/// is not added again, which installs a component once when it exports the roots of several
+/// policies (e.g. the send and receive procedures of a transfer policy). A component with
 /// the same code but different storage is kept, so the conflict fails the account build.
 fn insert_policy(
     policies: &mut BTreeMap<AccountProcedureRoot, PolicyConfig>,
@@ -698,19 +698,23 @@ fn insert_policy(
         return;
     }
 
-    let components = components
-        .into_iter()
-        .filter(|component| {
-            !policies.values().flat_map(|cfg| &cfg.components).any(|installed| {
-                installed.component_code() == component.component_code()
-                    && installed.storage_slots() == component.storage_slots()
-            })
-        })
-        .collect();
+    let mut new_components: Vec<AccountComponent> = Vec::new();
+    for component in components {
+        let is_installed =
+            policies.values().flat_map(|cfg| &cfg.components).chain(&new_components).any(
+                |installed| {
+                    installed.component_code() == component.component_code()
+                        && installed.storage_slots() == component.storage_slots()
+                },
+            );
+        if !is_installed {
+            new_components.push(component);
+        }
+    }
     policies.insert(
         root,
         PolicyConfig {
-            components,
+            components: new_components,
             kinds: BTreeSet::from([kind]),
         },
     );
@@ -749,6 +753,7 @@ mod tests {
     use super::*;
     use crate::account::auth::NoAuth;
     use crate::account::policies::{
+        BasicBlocklist,
         BlocklistStorage,
         BurnAllowAll,
         MintAllowAll,
@@ -1032,6 +1037,32 @@ mod tests {
                 });
             });
         }
+    }
+
+    /// Merged policies that ship the same component install it once, and only the merged policy is
+    /// allowed.
+    #[test]
+    fn merged_policies_can_share_a_component() -> anyhow::Result<()> {
+        let blocklist_policy = SendPolicy::empty_basic_blocklist();
+        let other_policy =
+            SendPolicy::custom(BasicBlocklist::receive_root(), [BasicBlocklist::default()])?;
+        let merged_policy = SendPolicy::merge([blocklist_policy, other_policy])?;
+        let merged_root = merged_policy.root();
+        let manager = TokenPolicyManager::builder()
+            .active_mint_policy(MintPolicy::allow_all())
+            .active_burn_policy(BurnPolicy::allow_all())
+            .active_send_policy(merged_policy)
+            .build();
+
+        assert_eq!(manager.active_send_policy(), Some(merged_root));
+        assert_eq!(manager.allowed_send_policies(), [merged_root]);
+
+        AccountBuilder::new([1; 32])
+            .with_component(NoAuth)
+            .with_components(manager)
+            .build_existing()?;
+
+        Ok(())
     }
 
     /// Components with different code are all installed, even when their names collide.
