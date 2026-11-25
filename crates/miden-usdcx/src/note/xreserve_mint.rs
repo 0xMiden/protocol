@@ -31,6 +31,7 @@ use miden_protocol::note::{
     NoteScriptRoot,
     NoteTag,
 };
+use miden_protocol::utils::FeltSliceExt;
 use miden_protocol::{Felt, WORD_SIZE, Word};
 use miden_standards::note::{
     MintNote,
@@ -182,12 +183,7 @@ impl From<&XUsdcDeposit> for NoteAttachment {
             elements.push(Felt::ZERO);
         }
 
-        let words: Vec<Word> = elements
-            .as_chunks::<{ Word::NUM_ELEMENTS }>()
-            .0
-            .iter()
-            .map(|chunk| Word::new(*chunk))
-            .collect();
+        let words = elements.to_words().expect("the elements should be padded to whole words");
         NoteAttachment::with_words(
             NoteAttachmentScheme::new(XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME)
                 .expect("the transport scheme is neither reserved nor past the protocol maximum"),
