@@ -1,11 +1,18 @@
 # miden::standards::faucets::policies::transfer::encrypted_assets
 #
 # Encrypted assets send policy: returns the encrypted asset attachment of each private output note
-# holding the issuing faucet's assets, built by `miden::standards::attachments::encrypted_assets`.
+# holding the issuing faucet's assets, built by `miden::standards::attachments::encrypted_assets`,
+# and rejects a private note that also holds other assets.
 
 use {NoteAttachmentCount, NoteAttachmentListCommitment} from miden::protocol::types
+use {ENCRYPTED_ASSETS_ATTACHMENT_SCHEME} from miden::standards::attachments::encrypted_assets
 use miden::protocol::output_note
 use miden::standards::attachments::encrypted_assets
+
+# ERRORS
+# ================================================================================================
+
+const ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS = "private note with an encrypted asset attachment cannot hold more than one asset"
 
 # POLICY PROCEDURES
 # ================================================================================================
@@ -15,9 +22,10 @@ use miden::standards::attachments::encrypted_assets
 #! Returns no attachment for a public note. For a private note, encrypts the note's details to the
 #! issuer key in the issuing faucet's storage (see `encrypted_assets::build_attachment`) and limits
 #! the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the
-#! reference block. A send policy that combines other checks with the attachment executes its
-#! checks and then `exec`s this procedure with its own inputs, i.e. with the stack exactly
-#! `[note_idx, pad(15)]`.
+#! reference block. A private note may hold only the issuing faucet's asset, since the attachment
+#! holds all of the note's assets and would show the other ones to the issuer. A send policy that
+#! combines other checks with the attachment executes its checks and then `exec`s this procedure
+#! with its own inputs, i.e. with the stack exactly `[note_idx, pad(15)]`.
 #!
 #! Inputs:  [note_idx, pad(15)]
 #! Outputs: [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
@@ -32,16 +40,30 @@ use miden::standards::attachments::encrypted_assets
 #! Panics if:
 #! - the note is private and its attachment cannot be built, e.g. because the advice map has no
 #!   preimage for its recipient or the issuing faucet has no issuer key.
+#! - the note is private and holds more than one asset.
 #!
 #! Invocation: call
 @account_procedure
 pub proc check_send_policy(note_idx: u16) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
-    exec.encrypted_assets::build_attachment
-    # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(15)]
+    dup exec.encrypted_assets::build_attachment
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, pad(15)]
+
+    # only a private note gets the attachment
+    dup eq.ENCRYPTED_ASSETS_ATTACHMENT_SCHEME
+    # => [has_attachment, attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, pad(15)]
+
+    if.true
+        dup.5 exec.output_note::get_assets_info dropw
+        # => [num_assets, attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, pad(15)]
+
+        u32lte.1 assert.err=ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, pad(15)]
+    end
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, pad(15)]
 
     exec.output_note::single_attachment_list
-    # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(15)]
+    # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, note_idx, pad(15)]
 
-    movupw.3 dropw
+    movup.5 drop movupw.3 dropw
     # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
 end

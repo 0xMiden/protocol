@@ -32,6 +32,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_IS_BLOCKED,
     ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO,
+    ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{EncryptedAssetsAttachment, EncryptedAssetsIssuerKey, P2idNote};
@@ -316,6 +317,57 @@ async fn issuer_decrypts_attachment_of_proven_private_note() -> anyhow::Result<(
     assert_eq!(plaintext.serial_num(), note.recipient().serial_num());
     assert_eq!(plaintext.assets(), note.assets());
     assert_eq!(plaintext.nullifier(output_note.metadata()), nullifier);
+
+    Ok(())
+}
+
+/// A wallet sends a note holding the faucet's asset and an asset of another faucet. The send
+/// policy rejects the note if it is private, since its attachment would show the other asset to
+/// the issuer, and seals it without an attachment if it is public.
+#[rstest::rstest]
+#[case::private_note(NoteType::Private)]
+#[case::public_note(NoteType::Public)]
+#[tokio::test]
+async fn send_policy_rejects_private_note_with_other_assets(
+    #[case] note_type: NoteType,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let faucet =
+        add_faucet(&mut builder, policy_manager(SendPolicy::with_encrypted_assets(issuer_key())))?;
+    let assets = [
+        Asset::from(FungibleAsset::new(faucet.id(), NOTE_AMOUNT)?),
+        Asset::from(FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?, 10)?),
+    ];
+    let wallet = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak },
+        assets,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let note: Note = P2idNote::builder()
+        .sender(wallet.id())
+        .target(AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?)
+        .assets(assets)
+        .note_type(note_type)
+        .serial_number(Word::from([1u32; 4]))
+        .build()?
+        .into();
+    let result = execute_send(&mock_chain, &wallet, faucet.id(), &note).await?;
+
+    match note_type {
+        NoteType::Private => {
+            assert_transaction_executor_error!(
+                result,
+                ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS
+            );
+        },
+        NoteType::Public => {
+            let executed = result?;
+            let output_note = executed.output_notes().get_note(SEALED_NOTE_IDX);
+            assert!(output_note.attachments().is_empty());
+            assert_eq!(output_note.id(), note.id());
+        },
+    }
 
     Ok(())
 }
