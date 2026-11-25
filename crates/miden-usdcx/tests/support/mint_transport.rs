@@ -331,10 +331,10 @@ pub fn tampered_mint_note(
         .map_err(|e| anyhow::anyhow!("storage asset: {e}"))?;
     let tag = storage.tag.unwrap_or_else(|| NoteTag::with_account_target(storage.recipient));
     let mint_storage = if storage.public {
-        MintNoteStorage::new_public(recipient_recipe, asset, tag)
+        MintNoteStorage::new_public_output(recipient_recipe, asset, tag)
             .map_err(|e| anyhow::anyhow!("public mint storage: {e}"))?
     } else {
-        MintNoteStorage::new_private(recipient_recipe.digest(), asset, tag)
+        MintNoteStorage::new_private_output(recipient_recipe.digest(), asset, tag)
     };
     let mut attachments: Vec<NoteAttachment> = Vec::new();
     if plan.transport {

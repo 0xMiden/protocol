@@ -3,3 +3,5 @@ pub mod allowlist
 pub mod basic_allowlist
 pub mod basic_blocklist
 pub mod blocklist
+pub mod supply_restriction
+pub mod supply_restriction_policy

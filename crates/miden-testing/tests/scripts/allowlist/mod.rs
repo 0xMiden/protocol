@@ -1,5 +1,5 @@
 //! Tests for the [`miden_standards::account::policies::BasicAllowlist`] transfer policy
-//! component (storage + `check_policy` predicate) and the
+//! component (storage + `check_send_policy` / `check_receive_policy` predicates) and the
 //! [`miden_standards::account::policies::AllowlistManager`] authority-gated admin
 //! component, dispatched directly by the protocol callback slots via
 //! [`miden_standards::account::policies::TokenPolicyManager`].
@@ -31,8 +31,9 @@ use miden_standards::account::policies::{
     AllowlistStorage,
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{ERR_ACCOUNT_IS_NOT_ALLOWED, ERR_SENDER_LACKS_ROLE};
@@ -57,10 +58,10 @@ fn dummy_owner() -> AccountId {
     AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32])
 }
 
-/// Builds a fungible faucet with [`TransferPolicy::with_basic_allowlist`] on both send and receive,
-/// plus the [`AllowlistManager`] component. With `Authority::OwnerControlled` the admin
-/// procedures are gated by the Ownable2Step owner, so the owner can invoke `allow_account` /
-/// `disallow_account` via owner-authored notes.
+/// Builds a fungible faucet with [`SendPolicy::with_basic_allowlist`] and
+/// [`ReceivePolicy::with_basic_allowlist`], plus the [`AllowlistManager`] component. With
+/// `Authority::OwnerControlled` the admin procedures are gated by the Ownable2Step owner, so the
+/// owner can invoke `allow_account` / `disallow_account` via owner-authored notes.
 fn add_faucet_with_owner_allowlist_transfer(
     builder: &mut MockChainBuilder,
     owner_id: AccountId,
@@ -93,8 +94,8 @@ fn add_faucet_with_owner_allowlist_transfer_initialized(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(TransferPolicy::with_basic_allowlist(allow_list.clone()))
-                .active_receive_policy(TransferPolicy::with_basic_allowlist(allow_list))
+                .active_send_policy(SendPolicy::with_basic_allowlist(allow_list.clone()))
+                .active_receive_policy(ReceivePolicy::with_basic_allowlist(allow_list))
                 .build(),
         )
         .with_component(Pausable::unpaused())
@@ -278,11 +279,12 @@ async fn allow_add_asset_to_note_fails_when_sender_not_allowed() -> anyhow::Resu
             push.{note_type}
             push.{tag}
             call.::miden::standards::note::note_creator::create_note
-            movdn.15 dropw dropw dropw drop drop drop
+            movdn.15 dropw dropw dropw drop drop drop dup
 
             push.{asset_value}
             push.{asset_id}
             exec.output_note::add_asset
+            exec.output_note::seal
         end
         "#,
         recipient = recipient,
@@ -436,12 +438,12 @@ async fn allow_does_not_affect_other_accounts() -> anyhow::Result<()> {
 }
 
 /// Verifies that a faucet whose `TokenPolicyManager` installs the asset-callback slots (here via
-/// [`TransferPolicy::with_basic_allowlist`]) can mint while its allowlist is empty.
+/// [`SendPolicy::with_basic_allowlist`]) can mint while its allowlist is empty.
 ///
-/// Minting crosses the send policy: the faucet adds the minted asset to an output note, which the
-/// kernel routes through `on_before_asset_added_to_note` with the faucet itself as the native
-/// account. Because the issuer is exempt from its own allowlist, no `allow_account` call for the
-/// faucet's own ID is needed to mint.
+/// Minting crosses the send policy: sealing the output note holding the minted asset runs
+/// `on_before_note_sealed` with the faucet itself as the native account. Because the issuer is
+/// exempt from its own allowlist, no `allow_account` call for the faucet's own ID is needed to
+/// mint.
 #[tokio::test]
 async fn mint_on_allowlist_basic_faucet() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
@@ -468,7 +470,7 @@ async fn mint_on_allowlist_basic_faucet() -> anyhow::Result<()> {
 ///
 /// The entry is written through the regular admin path, so this covers any writer - the standard
 /// config note, a custom note, or a direct manager call - because the exemption lives in the
-/// `check_policy` read path rather than in a guard on the write path.
+/// policy read path rather than in a guard on the write path.
 #[tokio::test]
 async fn mint_succeeds_after_faucet_disallows_itself() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
@@ -572,8 +574,8 @@ fn add_rbac_faucet_with_allowlist(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(TransferPolicy::with_basic_allowlist(allow_list.clone()))
-                .active_receive_policy(TransferPolicy::with_basic_allowlist(allow_list))
+                .active_send_policy(SendPolicy::with_basic_allowlist(allow_list.clone()))
+                .active_receive_policy(ReceivePolicy::with_basic_allowlist(allow_list))
                 .build(),
         )
         .with_component(Pausable::unpaused())

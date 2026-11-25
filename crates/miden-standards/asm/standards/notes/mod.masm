@@ -15,6 +15,7 @@ pub mod p2ide
 pub mod pause_config
 pub mod pswap
 pub mod rbac_config
+pub mod supply_restriction_config
 pub mod swap
 pub mod tx_fee
 pub mod upgrade

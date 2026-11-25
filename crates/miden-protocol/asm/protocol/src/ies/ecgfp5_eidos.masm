@@ -1,0 +1,95 @@
+use miden::core::crypto::ecdh::ecgfp5
+use miden::core::crypto::hashes::eidos
+use miden::core::crypto::ies::ecgfp5_eidos as core_ecgfp5_eidos
+
+# CONSTANTS
+# =================================================================================================
+
+# Event from which the host derives the ephemeral secret of the encryption and pushes the key
+# agreement advice that the core library's `seal` consumes. It is emitted with
+# [PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5), ...] on the stack.
+const IES_ECGFP5_EIDOS_SEAL_EVENT = event("miden::protocol::ies::ecgfp5_eidos::seal")
+
+# Eidos domain tag of EcGFp5 public-key commitments, shared with `ecgfp5::PublicKey::to_commitment`
+# in Rust.
+const ECGFP5_PUBLIC_KEY_DOMAIN = 0x00001001
+
+# Number of elements in an EcGFp5 public-key encoding.
+const ECGFP5_PUBLIC_KEY_LEN = 5
+
+# Local memory offsets of `seal`.
+const PUBLIC_KEY_LOC = 0
+const PUBLIC_KEY_TAIL_LOC = PUBLIC_KEY_LOC + 4
+
+# PROCEDURES
+# =================================================================================================
+
+#! Encrypts a plaintext to an EcGFp5 public key with the EcGFp5/Eidos integrated encryption scheme.
+#!
+#! Writes the envelope `[ephemeral_public_key(5), auth_tag(2), plaintext_len,
+#! ciphertext(2*plaintext_len)]` to dst_ptr, where ephemeral_public_key is the sender's ephemeral
+#! public key `R = rG` for the ephemeral secret `r`, and auth_tag is the AEAD authentication tag.
+#! The context is authenticated but not encrypted. The recipient decrypts the envelope with its
+#! secret key and the same context, e.g. with Rust's `miden_crypto::ies::ecgfp5_eidos::open`.
+#!
+#! The host derives the ephemeral secret of the encryption from the IES seal seed of the transaction
+#! arguments, the transaction, the index of the request in the transaction, the public key and the
+#! digests of the context and the plaintext, which this procedure computes. Use a fresh seed for
+#! every transaction, see `IesSealSeed` in Rust.
+#!
+#! Do not call `miden::core::crypto::ies::ecgfp5_eidos::seal` directly in a transaction: it accepts
+#! any valid key agreement advice, so other code in the transaction can choose the ephemeral secret
+#! and decrypt the envelope.
+#!
+#! Inputs:  [public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
+#! Outputs: []
+#!
+#! Where:
+#! - public_key is the recipient's EcGFp5 public key in increasing coefficient order.
+#! - src_ptr is the memory address of the plaintext.
+#! - plaintext_len is the number of plaintext elements.
+#! - context_ptr is the memory address of the context.
+#! - context_len is the number of context elements.
+#! - dst_ptr is the memory address to which the envelope is written.
+#!
+#! Panics if:
+#! - public_key is not a valid EcGFp5 public key.
+#! - the transaction arguments provide no IES seal seed.
+#! - the transaction already made MAX_IES_SEAL_REQUESTS_PER_TX (512) IES seal requests.
+#! - the pointers or lengths are invalid for `miden::core::crypto::ies::ecgfp5_eidos::seal`.
+#!
+#! Invocation: exec
+@locals(8)
+pub proc seal(
+    public_key: ecgfp5::PointEncoding,
+    source: ptr<felt>,
+    plaintext_len: u32,
+    context: ptr<felt>,
+    context_len: u32,
+    destination: ptr<felt>,
+)
+    # store the public key before hashing the inputs, which may lie in this procedure's locals
+    loc_storew_le.PUBLIC_KEY_LOC dup.4 loc_store.PUBLIC_KEY_TAIL_LOC
+    # => [public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
+
+    dup.8 dup.8 exec.eidos::hash_elements
+    # => [CONTEXT_DIGEST, public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
+
+    dup.10 dup.10 exec.eidos::hash_elements
+    # => [PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5), src_ptr, plaintext_len, context_ptr,
+    #     context_len, dst_ptr]
+
+    emit.IES_ECGFP5_EIDOS_SEAL_EVENT
+    dropw dropw dropw drop
+    # => [src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
+
+    push.ECGFP5_PUBLIC_KEY_LEN locaddr.PUBLIC_KEY_LOC push.ECGFP5_PUBLIC_KEY_DOMAIN
+    # => [public_key_domain, public_key_ptr, public_key_len, src_ptr, plaintext_len, context_ptr,
+    #     context_len, dst_ptr]
+
+    exec.eidos::hash_elements_in_domain
+    # => [PUBLIC_KEY_COMMITMENT, src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
+
+    exec.core_ecgfp5_eidos::seal
+    # => []
+end

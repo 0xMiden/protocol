@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use core::fmt;
 
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
@@ -119,7 +120,7 @@ pub(crate) enum TransactionEvent {
     /// The data necessary to request an asset witness from the data store.
     AccountVaultBeforeAssetAccess {
         /// The account ID for whose vault a witness is requested.
-        active_account_id: AccountId,
+        account_id: AccountId,
         /// The vault root identifying the asset vault from which a witness is requested.
         vault_root: Word,
         /// The asset for which a witness is requested.
@@ -189,6 +190,8 @@ pub(crate) enum TransactionEvent {
     Unauthorized {
         tx_summary: TransactionSummary,
     },
+
+    IesEcgfp5EidosSeal(IesSealRequest),
 
     LinkMapSet {
         advice_mutation: Vec<AdviceMutation>,
@@ -271,8 +274,15 @@ impl TransactionEvent {
                     }
                 })?;
                 let current_vault_root = process.get_vault_root(vault_root_ptr)?;
+                let account_id = process.get_active_account_id()?;
 
-                on_account_vault_asset_accessed(base_host, process, asset_id, current_vault_root)?
+                on_account_vault_asset_accessed(
+                    base_host,
+                    process,
+                    account_id,
+                    asset_id,
+                    current_vault_root,
+                )?
             },
             TransactionEventId::AccountVaultAfterRemoveAsset
             | TransactionEventId::AccountVaultAfterAddAsset => {
@@ -353,8 +363,11 @@ impl TransactionEvent {
                     }
                 })?;
                 let vault_root = process.get_vault_root(vault_root_ptr)?;
+                let account_id = process.get_vault_account_id(vault_root_ptr)?;
 
-                on_account_vault_asset_accessed(base_host, process, asset_id, vault_root)?
+                on_account_vault_asset_accessed(
+                    base_host, process, account_id, asset_id, vault_root,
+                )?
             },
 
             TransactionEventId::AccountStorageBeforeSetItem => None,
@@ -608,6 +621,10 @@ impl TransactionEvent {
                 Some(TransactionEvent::Unauthorized { tx_summary })
             },
 
+            TransactionEventId::IesEcgfp5EidosSeal => {
+                Some(TransactionEvent::IesEcgfp5EidosSeal(IesSealRequest::extract(process)?))
+            },
+
             TransactionEventId::LinkMapSet => Some(TransactionEvent::LinkMapSet {
                 advice_mutation: LinkMap::handle_set_event(process),
             }),
@@ -738,6 +755,38 @@ pub(crate) enum RecipientData {
     },
 }
 
+// IES SEAL REQUEST
+// ================================================================================================
+
+/// An IES `seal` request of `miden::protocol::ies::ecgfp5_eidos::seal`.
+pub(crate) struct IesSealRequest {
+    /// The encoding of the recipient public key.
+    pub(super) public_key: [Felt; 5],
+    /// The digest of the plaintext.
+    pub(super) plaintext_digest: Word,
+    /// The digest of the context.
+    pub(super) context_digest: Word,
+}
+
+impl IesSealRequest {
+    /// Extracts the request from the stack of the `miden::protocol::ies::ecgfp5_eidos::seal` event.
+    fn extract(process: &ProcessorState) -> Result<Self, TransactionKernelError> {
+        // Expected stack state: [event, PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5)]
+        Ok(Self {
+            public_key: core::array::from_fn(|idx| process.get_stack_item(9 + idx)),
+            plaintext_digest: process.get_stack_word(1),
+            context_digest: process.get_stack_word(5),
+        })
+    }
+}
+
+/// Leaves out the digests, which let anyone who sees them check guesses of a plaintext.
+impl fmt::Debug for IesSealRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IesSealRequest").finish_non_exhaustive()
+    }
+}
+
 /// Extracts a transaction log after the kernel has authenticated its emitter and content.
 fn extract_transaction_log(
     process: &ProcessorState,
@@ -773,16 +822,16 @@ fn extract_transaction_log(
 fn on_account_vault_asset_accessed<'store, STORE>(
     base_host: &TransactionBaseHost<'store, STORE>,
     process: &ProcessorState,
+    account_id: AccountId,
     asset_id: AssetId,
     vault_root: Word,
 ) -> Result<Option<TransactionEvent>, TransactionKernelError> {
     let leaf_index = Felt::try_from(asset_id.hash().to_leaf_index().position())
         .expect("expected key index to be a felt");
-    let active_account_id = process.get_active_account_id()?;
 
     // For the native account we need to explicitly request the initial vault root, while for
     // foreign accounts the current vault root is always the initial one.
-    let vault_root = if active_account_id == base_host.native_account_id() {
+    let vault_root = if account_id == base_host.native_account_id() {
         base_host.initial_account_header().vault_root()
     } else {
         vault_root
@@ -797,7 +846,7 @@ fn on_account_vault_asset_accessed<'store, STORE>(
         Ok(None)
     } else {
         Ok(Some(TransactionEvent::AccountVaultBeforeAssetAccess {
-            active_account_id,
+            account_id,
             vault_root,
             asset_id,
         }))

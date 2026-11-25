@@ -38,29 +38,39 @@ const MOCK_UTIL_PACKAGE_CODE: &str = "
         # => [note_idx]
     end
 
+    #! Creates a default note holding the asset and seals it.
+    #!
     #! Inputs:  [ASSET_ID, ASSET_VALUE]
     #! Outputs: []
     pub proc create_default_note_with_asset
         exec.create_default_note
         # => [note_idx, ASSET_ID, ASSET_VALUE]
 
-        movdn.8
-        # => [ASSET_ID, ASSET_VALUE, note_idx]
+        dup movdn.9 movdn.8
+        # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
         exec.output_note::add_asset
+        # => [note_idx]
+
+        exec.output_note::seal
         # => []
     end
 
+    #! Creates a default note, moves the asset from the account into it and seals it.
+    #!
     #! Inputs:  [ASSET_ID, ASSET_VALUE]
     #! Outputs: []
     pub proc create_default_note_with_moved_asset
         exec.create_default_note
         # => [note_idx, ASSET_ID, ASSET_VALUE]
 
-        movdn.8
-        # => [ASSET_ID, ASSET_VALUE, note_idx]
+        dup movdn.9 movdn.8
+        # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
         exec.move_asset_to_note
+        # => [note_idx]
+
+        exec.output_note::seal
         # => []
     end
 

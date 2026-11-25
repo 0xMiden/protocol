@@ -11,7 +11,13 @@ use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::code_tree::{CodePatch, PartialCodeTree};
-use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote, TransactionLogs};
+use miden_protocol::transaction::{
+    IesSealSeed,
+    InputNote,
+    InputNotes,
+    RawOutputNote,
+    TransactionLogs,
+};
 use miden_protocol::vm::{EventId, EventName};
 use miden_prover::SyncHost;
 
@@ -57,6 +63,7 @@ where
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
         code_tree: PartialCodeTree,
+        ies_seal_seed: Option<IesSealSeed>,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
@@ -66,6 +73,7 @@ where
             scripts_mast_store,
             acct_procedure_index_map,
             code_tree,
+            ies_seal_seed,
         )?;
 
         Ok(Self { base_host, code_patch: None })
@@ -268,6 +276,10 @@ where
                     "unexpected unauthorized event during proving with tx summary commitment {}",
                     tx_summary.to_commitment()
                 )))
+            },
+
+            TransactionEvent::IesEcgfp5EidosSeal(request) => {
+                self.base_host.on_ies_seal_requested(request)
             },
 
             TransactionEvent::LinkMapSet { advice_mutation } => Ok(advice_mutation),

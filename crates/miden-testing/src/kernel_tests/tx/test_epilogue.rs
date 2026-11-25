@@ -16,6 +16,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED,
     ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY,
     ERR_EPILOGUE_NONCE_CANNOT_BE_0,
+    ERR_EPILOGUE_OUTPUT_NOTE_NOT_SEALED,
     ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME,
     ERR_TX_INVALID_EXPIRATION_DELTA,
 };
@@ -92,12 +93,15 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
             push.{recipient}
             push.{note_type}
             push.{tag}
-            call.::mock::account::create_note
-            # => [note_idx]
+            call.::mock::account::create_note dup
+            # => [note_idx, note_idx]
 
             push.{ASSET_VALUE}
             push.{ASSET_ID}
             exec.output_note::add_asset
+            # => [note_idx]
+
+            exec.output_note::seal
             # => []
 
             exec.epilogue::finalize_transaction
@@ -218,12 +222,15 @@ async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
         push.{recipient}
         push.{note_type}
         push.{tag}
-        call.::mock::account::create_note
-        # => [note_idx]
+        call.::mock::account::create_note dup
+        # => [note_idx, note_idx]
 
         push.{ASSET_VALUE}
         push.{ASSET_ID}
         call.::miden::standards::wallets::basic::move_asset_to_note
+        # => [note_idx]
+
+        exec.output_note::seal
         # => []
         ",
             recipient = note.recipient().digest(),
@@ -596,6 +603,9 @@ async fn test_epilogue_empty_transaction_with_empty_output_note() -> anyhow::Res
             call.::mock::account::create_note
             # => [note_idx]
 
+            dup exec.output_note::seal
+            # => [note_idx]
+
             # make sure that output note was created: compare the output note hash with an empty
             # word
             exec.note::compute_output_notes_commitment
@@ -618,6 +628,48 @@ async fn test_epilogue_empty_transaction_with_empty_output_note() -> anyhow::Res
 
     // assert that even if the output note was created, the transaction is considered empty
     assert_execution_error!(result, ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY);
+
+    Ok(())
+}
+
+/// Tests that the epilogue rejects a transaction that leaves any of its output notes unsealed.
+#[rstest::rstest]
+#[case::first_note_unsealed("drop", "exec.output_note::seal")]
+#[case::last_note_unsealed("exec.output_note::seal", "drop")]
+#[tokio::test]
+async fn epilogue_fails_when_output_note_is_not_sealed(
+    #[case] finish_note0: &str,
+    #[case] finish_note1: &str,
+) -> anyhow::Result<()> {
+    let code = format!(
+        "
+        use miden::protocol::output_note
+        use mock::util
+
+        @transaction_script
+        pub proc main
+            exec.util::create_default_note
+            # => [note_idx]
+            {finish_note0}
+            # => []
+
+            exec.util::create_default_note
+            # => [note_idx]
+            {finish_note1}
+            # => []
+        end
+        "
+    );
+
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;
+
+    let result = TestTransactionBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_EPILOGUE_OUTPUT_NOTE_NOT_SEALED);
 
     Ok(())
 }

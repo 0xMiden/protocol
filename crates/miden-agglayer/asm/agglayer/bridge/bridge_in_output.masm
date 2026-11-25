@@ -79,7 +79,7 @@ pub proc build_mint_output_note(destination_id: AccountId, faucet_id: AccountId)
     # => []
 end
 
-#! Removes the fungible asset for the claim from the bridge's vault and creates a PUBLIC P2ID
+#! Removes the fungible asset for the claim from the bridge's vault and creates a sealed PUBLIC P2ID
 #! output note targeted at the destination account.
 #!
 #! Used on the bridge-in claim path for Miden-native faucets (ones whose mint authority the bridge
@@ -147,17 +147,20 @@ pub proc unlock_and_send(destination_id: AccountId, faucet_id: AccountId)
     exec.p2id::prepare_note
     # => [tag, note_type, RECIPIENT]
 
-    exec.output_note::create
-    # => [note_idx]
+    exec.output_note::create dup
+    # => [note_idx, note_idx]
 
     # Reload the asset from locals and attach it to the newly created P2ID note.
     padw loc_loadw_le.UNLOCK_ASSET_VALUE_LOC
-    # => [ASSET_VALUE, note_idx]
+    # => [ASSET_VALUE, note_idx, note_idx]
 
     padw loc_loadw_le.UNLOCK_ASSET_ID_LOC
-    # => [ASSET_ID, ASSET_VALUE, note_idx]
+    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     exec.output_note::add_asset
+    # => [note_idx]
+
+    exec.output_note::seal
     # => []
 end
 
@@ -271,7 +274,7 @@ proc build_mint_recipient() -> NoteRecipient
     # => [MINT_RECIPIENT]
 end
 
-#! Creates the MINT output note and sets the NetworkAccountTarget attachment on it.
+#! Creates the MINT output note, sets the NetworkAccountTarget attachment on it and seals it.
 #!
 #! Creates a public output note with no assets, and sets the `NetworkAccountTarget` attachment so
 #! the network routes the note to the target faucet. The attachment is for routing only; the
@@ -295,8 +298,8 @@ proc create_mint_note_with_attachment(recipient: NoteRecipient, faucet_id: Accou
     exec.output_note::create
     # => [note_idx, faucet_id_suffix, faucet_id_prefix]
 
-    movdn.2
-    # => [faucet_id_suffix, faucet_id_prefix, note_idx]
+    dup movdn.3 movdn.2
+    # => [faucet_id_suffix, faucet_id_prefix, note_idx, note_idx]
 
     # set the attachment on the MINT note so the network routes it to the target faucet.
     # the consume-side security bind is `fungible::mint_and_send` (it rejects an asset that
@@ -305,11 +308,14 @@ proc create_mint_note_with_attachment(recipient: NoteRecipient, faucet_id: Accou
     # and returns [attachment_scheme, ATTACHMENT]
     push.ALWAYS # exec_hint = ALWAYS
     movdn.2
-    # => [faucet_id_suffix, faucet_id_prefix, exec_hint, note_idx]
+    # => [faucet_id_suffix, faucet_id_prefix, exec_hint, note_idx, note_idx]
 
     exec.network_account_target::new
-    # => [attachment_scheme, ATTACHMENT, note_idx]
+    # => [attachment_scheme, ATTACHMENT, note_idx, note_idx]
 
     exec.output_note::add_word_attachment
+    # => [note_idx]
+
+    exec.output_note::seal
     # => []
 end
