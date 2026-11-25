@@ -70,12 +70,15 @@ pub proc check_receive_policy(asset: Asset)
     # => [pad(16)]
 end
 
-# HELPER PROCEDURES
+# PUBLIC HELPERS
 # ================================================================================================
 
 #! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
 #! after the reference block and asserts that the native account is not blocked on the issuing
 #! faucet.
+#!
+#! The send and receive policies run this check, and a send policy that combines it with other
+#! checks can `exec` it.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -84,13 +87,16 @@ end
 #! - the native account is blocked on the issuing faucet and is not the issuing faucet itself.
 #!
 #! Invocation: exec
-proc check_native_account
+pub proc check_native_account()
     exec.expiration::apply_default
     # => []
 
     exec.assert_native_account_not_blocked
     # => []
 end
+
+# HELPER PROCEDURES
+# ================================================================================================
 
 #! Asserts that the native account is not blocked on the issuing faucet, which is the active
 #! account while an asset callback runs. The issuing faucet itself is exempt.

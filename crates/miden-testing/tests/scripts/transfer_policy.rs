@@ -22,7 +22,7 @@ use miden_protocol::asset::{
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_COMMITMENT_WITHOUT_ATTACHMENTS;
-use miden_protocol::note::{Note, NoteAttachment, NoteAttachmentScheme, NoteTag, NoteType};
+use miden_protocol::note::{Note, NoteAttachment, NoteAttachmentScheme, NoteType};
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Pausable};
@@ -303,7 +303,6 @@ pub(crate) fn build_mint_note(
     rng_seed: u32,
 ) -> anyhow::Result<MintNoteFixture> {
     let asset = FungibleAsset::new(faucet_id, amount)?;
-    let tag = NoteTag::with_account_target(target);
 
     let output_note = Note::from(
         P2idNote::builder()
@@ -315,16 +314,37 @@ pub(crate) fn build_mint_note(
             .build()?,
     );
     let recipient_digest = output_note.recipient().digest();
-
-    let mut rng = EidosRandomCoin::new([Felt::from(rng_seed); 4].into());
-    let note: Note = MintNote::builder()
-        .sender(sender)
-        .mint_storage(MintNoteStorage::new_private_output(recipient_digest, asset, tag))
-        .generate_serial_number(&mut rng)
-        .build()?
-        .into();
+    let note = build_mint_note_for(sender, &output_note, rng_seed)?;
 
     Ok(MintNoteFixture { note, asset, recipient_digest })
+}
+
+/// Builds a MINT note, created by `sender`, instructing the faucet to mint `output_note`. For a
+/// public output note, the MINT note holds the output note's recipient; for a private one, only its
+/// recipient digest.
+pub(crate) fn build_mint_note_for(
+    sender: AccountId,
+    output_note: &Note,
+    rng_seed: u32,
+) -> anyhow::Result<Note> {
+    let asset = *output_note.assets().iter().next().context("output note should hold an asset")?;
+    let tag = output_note.metadata().tag();
+    let mint_storage = match output_note.metadata().note_type() {
+        NoteType::Public => {
+            MintNoteStorage::new_public_output(output_note.recipient().clone(), asset, tag)?
+        },
+        NoteType::Private => {
+            MintNoteStorage::new_private_output(output_note.recipient().digest(), asset, tag)
+        },
+    };
+
+    let mut rng = EidosRandomCoin::new([Felt::from(rng_seed); 4].into());
+    Ok(MintNote::builder()
+        .sender(sender)
+        .mint_storage(mint_storage)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into())
 }
 
 /// Asserts that `executed` created exactly one output note, addressed to the recipient the MINT
@@ -348,11 +368,12 @@ pub(crate) fn assert_minted_note(
 // NOTE SEALING FIXTURE
 // ================================================================================================
 
-/// The index of the note that [`execute_note_sealing_tx`] seals through the send policy.
+/// The index of the note that the send policy tests, such as [`execute_note_sealing_tx`], seal
+/// through the send policy.
 ///
 /// It is not 0, so that a send policy that returns the note index on top of its outputs returns a
 /// non-zero number of attachments.
-const SEALED_NOTE_IDX: usize = 1;
+pub(crate) const SEALED_NOTE_IDX: usize = 1;
 
 /// Builds a custom send policy that returns no attachments together with the provided attachment
 /// list commitment, which the kernel accepts only if it is the empty word.

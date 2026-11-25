@@ -4,8 +4,7 @@
 //! Integration coverage exercises the mint and burn dispatch branches (each switching `allow_all`
 //! to `owner_only`) plus the note-level guards. The send and receive branches run the identical
 //! script path (`load_policy_root_window` + a `set_*_policy` call) and differ only in variant and
-//! call target, which are covered by the `faucet_policy_config` unit storage tests; there is no
-//! built-in alternative `SendPolicy` to switch to without bespoke policy setup.
+//! call target, which are covered by the `faucet_policy_config` unit storage tests.
 
 extern crate alloc;
 
