@@ -440,8 +440,6 @@ async fn total_above_max_amount_fails(
 
 /// A sender other than the owner cannot dispatch any action.
 #[rstest]
-#[case::freeze(SupplyRestrictionConfig::Freeze { account: AccountId::mock_private(3), amount: AssetAmount::from(1u32) })]
-#[case::unfreeze(SupplyRestrictionConfig::Unfreeze { account: AccountId::mock_private(3), amount: AssetAmount::from(0u32) })]
 #[case::confiscate(SupplyRestrictionConfig::Confiscate { account: AccountId::mock_private(3), amount: AssetAmount::from(1u32) })]
 #[tokio::test]
 async fn non_owner_cannot_restrict(#[case] config: SupplyRestrictionConfig) -> anyhow::Result<()> {

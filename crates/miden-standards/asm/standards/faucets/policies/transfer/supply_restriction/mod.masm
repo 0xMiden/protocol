@@ -72,7 +72,6 @@ end
 #!
 #! Invocation: exec
 pub proc freeze(account_id: AccountId, amount: AssetAmount)
-    # reject malformed account IDs, e.g. from a typo in the config note
     dup.1 dup.1 exec.account_id::validate_structure
     # => [account_id_suffix, account_id_prefix, amount]
 
@@ -139,7 +138,6 @@ end
 #!
 #! Invocation: exec
 pub proc confiscate(account_id: AccountId, amount: AssetAmount)
-    # reject malformed account IDs, e.g. from a typo in the config note
     dup.1 dup.1 exec.account_id::validate_structure
     # => [account_id_suffix, account_id_prefix, amount]
 
