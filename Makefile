@@ -76,7 +76,7 @@ hooks-test: ## Runs the pytest suite for the python hooks under .claude/hooks/
 
 .PHONY: doc
 doc: ## Generates & checks documentation
-	$(WARNINGS) cargo doc --all-features --keep-going --release
+	$(WARNINGS) cargo doc --all-features --keep-going --release --no-deps
 
 
 .PHONY: serve-docs
