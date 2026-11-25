@@ -60,19 +60,50 @@ use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_
 /// The name of the component that registers the issuing faucet's note callback.
 const ISSUER_COMPONENT_NAME: &str = "miden::testing::encrypted_assets::issuer";
 
-/// An `on_before_note_sealed` callback that returns the note's encrypted asset attachment.
+/// An `on_before_note_sealed` callback that returns the note's encrypted asset attachment as an
+/// attachment list with one entry, or the empty list for a public note.
 const ISSUER_CALLBACK_CODE: &str = "
+    use miden::core::crypto::hashes::eidos
+    use miden::core::sys
     use miden::standards::attachments::encrypted_assets
 
     #! Inputs:  [note_idx, pad(15)]
-    #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+    #! Outputs: [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
+    @locals(8)
     @account_procedure
     pub proc on_before_note_sealed
         exec.encrypted_assets::build_attachment
         # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(15)]
 
-        movupw.3 dropw
-        # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+        # a public note gets attachment scheme 0 and the empty word, which already are the number
+        # of attachments and the commitment of the empty list
+        dup neq.0
+        # => [has_attachment, attachment_scheme, ATTACHMENT_COMMITMENT, pad(15)]
+
+        if.true
+            # write the list entry [attachment_scheme, 0, 0, 0, ATTACHMENT_COMMITMENT] to memory
+            push.0.0.0 movup.3 loc_storew_le.0 dropw
+            # => [ATTACHMENT_COMMITMENT, pad(15)]
+
+            loc_storew_le.4 dropw
+            # => [pad(15)]
+
+            locaddr.0 dup add.8 swap
+            # => [list_ptr, list_end_ptr, pad(15)]
+
+            dup.1 dup.1 exec.eidos::hash_words
+            # => [ATTACHMENT_LIST_COMMITMENT, list_ptr, list_end_ptr, pad(15)]
+
+            adv.insert_mem
+            # => [ATTACHMENT_LIST_COMMITMENT, list_ptr, list_end_ptr, pad(15)]
+
+            movup.4 drop movup.4 drop push.1
+            # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(15)]
+        end
+        # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(15)]
+
+        exec.sys::truncate_stack
+        # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
     end
 ";
 
