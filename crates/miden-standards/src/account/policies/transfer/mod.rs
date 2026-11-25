@@ -223,7 +223,11 @@ impl SendPolicy {
     /// a note whose creator knows only its recipient digest cannot hold the faucet's assets. A
     /// MINT note with a private output note holds only that digest: the faucet mints it only if
     /// the transaction supplies the preimage, so a network faucet cannot. The same holds for the
-    /// private payback note of a SWAP note that requests the faucet's asset.
+    /// private payback note of a SWAP note that requests the faucet's asset. The transaction
+    /// arguments must also carry an [`IesSealSeed`](miden_protocol::transaction::IesSealSeed).
+    ///
+    /// [`Self::merge`] drops the attachment, so a policy that combines other checks with this one
+    /// executes them and then `exec`s `encrypted_assets::check_send_policy`, as a custom policy.
     pub fn with_encrypted_assets(issuer_key: EncryptedAssetsIssuerKey) -> Self {
         Self {
             root: EncryptedAssetsSendPolicy::send_root(),

@@ -2,7 +2,8 @@
 //! [`EncryptedAssetsIssuerKey`] component that installs the issuer key on the faucet.
 
 use anyhow::Context;
-use assert_matches::assert_matches;
+use miden_processor::ExecutionError;
+use miden_processor::advice::AdviceError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
@@ -31,15 +32,9 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_IS_BLOCKED,
     ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO,
-    ERR_NOTE_RECIPIENT_PREIMAGE_MISSING,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::note::{
-    EncryptedAssetsAttachment,
-    EncryptedAssetsAttachmentError,
-    EncryptedAssetsIssuerKey,
-    P2idNote,
-};
+use miden_standards::note::{EncryptedAssetsAttachment, EncryptedAssetsIssuerKey, P2idNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::{
@@ -202,7 +197,7 @@ fn blocklist_with_encrypted_assets_policy(
         use miden::standards::faucets::policies::transfer::encrypted_assets
 
         #! Inputs:  [note_idx, pad(15)]
-        #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT, pad(11)]
+        #! Outputs: [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
         @account_procedure
         pub proc check_send_policy
             exec.basic_blocklist::check_native_account
@@ -240,7 +235,8 @@ fn assert_issuer_decrypts_note(
         note.header(),
         note.attachments(),
         issuer_secret_key,
-    )?;
+    )
+    .context("attachment should decrypt to the note's details")?;
     assert_eq!(plaintext.assets(), note.assets());
     assert_eq!(plaintext.nullifier(note.metadata()), note.nullifier());
 
@@ -315,7 +311,8 @@ async fn issuer_decrypts_attachment_of_proven_private_note() -> anyhow::Result<(
         output_note.header(),
         output_note.attachments(),
         &issuer_secret_key(),
-    )?;
+    )
+    .context("attachment should decrypt to the note's details")?;
     assert_eq!(plaintext.serial_num(), note.recipient().serial_num());
     assert_eq!(plaintext.assets(), note.assets());
     assert_eq!(plaintext.nullifier(output_note.metadata()), nullifier);
@@ -493,13 +490,13 @@ async fn authority_rotates_issuer_key() -> anyhow::Result<()> {
 
     assert_issuer_decrypts_note(&executed, &new_secret_key)?;
     let sent_note = executed.output_notes().get_note(SEALED_NOTE_IDX);
-    assert_matches!(
+    assert!(
         EncryptedAssetsAttachment::decrypt_and_verify_note(
             sent_note.header(),
             sent_note.attachments(),
             &issuer_secret_key()
-        ),
-        Err(EncryptedAssetsAttachmentError::NoMatchingAttachment(_))
+        )
+        .is_none()
     );
 
     Ok(())
@@ -638,7 +635,11 @@ async fn network_faucet_mints_only_public_output_notes(
             assert!(minted_note.attachments().is_empty());
         },
         NoteType::Private => {
-            assert_transaction_executor_error!(result, ERR_NOTE_RECIPIENT_PREIMAGE_MISSING);
+            assert_transaction_executor_error!(
+                result,
+                matches ExecutionError::AdviceError { err: AdviceError::MapKeyNotFound { key }, .. }
+                    if key == output_note.recipient().digest()
+            );
         },
     }
 
@@ -662,7 +663,7 @@ async fn swap_with_private_payback_cannot_be_filled() -> anyhow::Result<()> {
     )?;
     let offered_asset =
         Asset::from(FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?, 10)?);
-    let (swap_note, _) = builder.add_swap_note(
+    let (swap_note, payback_note) = builder.add_swap_note(
         ACCOUNT_ID_SENDER.try_into()?,
         offered_asset,
         requested_asset,
@@ -678,7 +679,11 @@ async fn swap_with_private_payback_cannot_be_filled() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_NOTE_RECIPIENT_PREIMAGE_MISSING);
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::AdviceError { err: AdviceError::MapKeyNotFound { key }, .. }
+            if key == payback_note.recipient().digest()
+    );
 
     Ok(())
 }

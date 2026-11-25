@@ -18,6 +18,11 @@ name        = "miden::standards::attachments::encrypted_assets"
 version     = "1.0.0"
 
 [[package.metadata.account-component.storage.slots]]
-description = "The issuer's EcGFp5 public key"
-name        = "miden::standards::attachments::encrypted_assets::issuer_key"
-type        = { key = "word", value = "word" }
+description = "The first four elements of the issuer's EcGFp5 public key"
+name        = "miden::standards::attachments::encrypted_assets::issuer_key_0"
+type        = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "The fifth element of the issuer's EcGFp5 public key, followed by three zeros"
+name        = "miden::standards::attachments::encrypted_assets::issuer_key_1"
+type        = "word"
