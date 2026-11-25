@@ -6,7 +6,6 @@ use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::SeedableRng;
 
 use crate::Word;
-use crate::account::AccountId;
 use crate::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
 use crate::utils::serde::{
     ByteReader,
@@ -22,19 +21,15 @@ use crate::utils::serde::{
 /// The secret seed from which the transaction host derives the ephemeral secrets of the IES `seal`
 /// requests of a transaction.
 ///
-/// Use a fresh seed for every transaction, e.g. from [`Self::with_rng`], and reuse a seed only to
-/// re-execute or prove that same transaction. Re-executing the transaction with the same arguments
-/// reproduces its envelopes, also at a later reference block, provided the execution makes the
-/// same seal requests in the same order: the request index counts the requests of the transaction.
+/// Use a fresh seed for every transaction, e.g. from [`Self::with_rng`], and reuse it only to
+/// re-execute or prove that same transaction, which reproduces its envelopes if the execution makes
+/// the same seal requests in the same order.
 ///
-/// Each secret is derived from the seed, the native account ID, the initial account commitment,
-/// the input notes commitment, the index of the request in the transaction, the recipient and the
-/// digests of the context and the plaintext (see [`Self::derive_ephemeral_secret`]). If a seed is
-/// reused anyway, a different plaintext, context, recipient, request index or transaction gives an
-/// unrelated secret, and the same values give the same envelope.
-///
-/// Code that runs in a re-execution with the same seed and repeats the exact inputs of another
-/// request at the same index derives that request's secret, so a retry must use a fresh seed.
+/// Each secret is derived from the seed, the index of the request in the transaction, the
+/// recipient and the digests of the context and the plaintext (see
+/// [`Self::derive_ephemeral_secret`]). With a reused seed, the same request index, recipient,
+/// context and plaintext give the same secret in any transaction, so never reuse a seed for a
+/// different transaction.
 ///
 /// Anyone who knows the seed can check guesses of the plaintexts sealed with it, so keep it as
 /// private as the plaintexts.
@@ -57,21 +52,15 @@ impl IesSealSeed {
         Self(seed)
     }
 
-    /// Returns the ephemeral secret for the IES `seal` request with index `request_idx` in the
-    /// transaction of the native account `account_id` that starts from the state with
-    /// `initial_account_commitment` and consumes the notes with `input_notes_commitment`. The
-    /// request encrypts the plaintext with `plaintext_digest` under the context with
+    /// Returns the ephemeral secret for the IES `seal` request with index `request_idx` in a
+    /// transaction, which encrypts the plaintext with `plaintext_digest` under the context with
     /// `context_digest` to `recipient`.
     ///
     /// The secret is drawn from a ChaCha20 generator seeded with the BLAKE3 hash of the
-    /// concatenation of a domain separator, the seed, the account ID prefix and suffix (8 bytes
-    /// each), the two transaction commitments (32 bytes each), the request index (4 bytes), the
-    /// recipient key commitment and the two digests (32 bytes each), all little-endian.
+    /// concatenation of a domain separator, the seed, the request index (4 bytes), the recipient
+    /// key commitment and the two digests (32 bytes each), all little-endian.
     pub fn derive_ephemeral_secret(
         &self,
-        account_id: AccountId,
-        initial_account_commitment: Word,
-        input_notes_commitment: Word,
         request_idx: u32,
         recipient: &PublicKey,
         context_digest: Word,
@@ -81,10 +70,6 @@ impl IesSealSeed {
             [
                 Self::DERIVATION_DOMAIN,
                 &self.0,
-                &account_id.prefix().as_u64().to_le_bytes(),
-                &account_id.suffix().as_canonical_u64().to_le_bytes(),
-                &initial_account_commitment.as_bytes(),
-                &input_notes_commitment.as_bytes(),
                 &request_idx.to_le_bytes(),
                 &recipient.to_commitment().as_bytes(),
                 &context_digest.as_bytes(),

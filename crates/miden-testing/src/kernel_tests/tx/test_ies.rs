@@ -10,7 +10,7 @@ use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceError;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountHeader};
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
 use miden_protocol::crypto::ies::ecgfp5_eidos::{self, Envelope};
@@ -136,33 +136,6 @@ async fn ies_seal_secret_depends_on_plaintext() -> anyhow::Result<()> {
     let plaintext = ecgfp5_eidos::open(&recipient_secret, &felts(CONTEXT), &other_envelope)?;
     assert_eq!(plaintext, other_plaintext);
     assert_ne!(other_envelope.ephemeral_key(), envelope(&executed_tx, 0)?.ephemeral_key());
-
-    Ok(())
-}
-
-/// Tests that the same request with the same seed in the next transaction of the same account
-/// derives another ephemeral secret.
-#[tokio::test]
-async fn ies_seal_secret_depends_on_transaction() -> anyhow::Result<()> {
-    let account = mock_account();
-    let mut mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
-    mock_chain.prove_next_block()?;
-    let tx_script = compile_tx_script(&sealing_code(&[secret_key(1).public_key()]), 1, None)?;
-
-    let mut ephemeral_keys = Vec::new();
-    for _ in 0..2 {
-        let executed_tx = mock_chain
-            .build_transaction(account.id())
-            .tx_script(tx_script.clone())
-            .build()?
-            .execute()
-            .await?;
-        ephemeral_keys.push(envelope(&executed_tx, 0)?.ephemeral_key());
-
-        mock_chain.add_pending_executed_transaction(&executed_tx)?;
-        mock_chain.prove_next_block()?;
-    }
-    assert_ne!(ephemeral_keys[0], ephemeral_keys[1]);
 
     Ok(())
 }
@@ -351,7 +324,7 @@ async fn ies_seal_requests_are_limited_per_transaction(
 }
 
 /// Tests that the host derives the ephemeral secret from the digests that the request event
-/// carries and from the transaction, by comparing the envelope with a derivation in Rust.
+/// carries, by comparing the envelope with a derivation in Rust.
 ///
 /// The transaction script emits the request event itself, with digests that do not match the
 /// plaintext and the context in memory, and then calls the core library's `seal`. So the
@@ -390,15 +363,7 @@ async fn ies_seal_derives_the_secret_from_the_request_event() -> anyhow::Result<
 
     // The mock transaction builder's default seed.
     let expected_key = IesSealSeed::new([0; 32])
-        .derive_ephemeral_secret(
-            executed_tx.account_id(),
-            AccountHeader::from(executed_tx.initial_account()).to_commitment(),
-            executed_tx.input_notes().commitment(),
-            0,
-            &recipient,
-            context_digest,
-            plaintext_digest,
-        )
+        .derive_ephemeral_secret(0, &recipient, context_digest, plaintext_digest)
         .public_key();
     assert_eq!(envelope(&executed_tx, 0)?.ephemeral_key(), expected_key);
 

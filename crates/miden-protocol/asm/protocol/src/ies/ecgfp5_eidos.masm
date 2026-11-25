@@ -33,9 +33,9 @@ const PUBLIC_KEY_TAIL_LOC = PUBLIC_KEY_LOC + 4
 #! secret key and the same context, e.g. with Rust's `miden_crypto::ies::ecgfp5_eidos::open`.
 #!
 #! The host derives the ephemeral secret of the encryption from the IES seal seed of the transaction
-#! arguments, the transaction, the index of the request in the transaction, the public key and the
-#! digests of the context and the plaintext, which this procedure computes. Use a fresh seed for
-#! every transaction, see `IesSealSeed` in Rust.
+#! arguments, the index of the request in the transaction, the public key and the digests of the
+#! context and the plaintext, which this procedure computes. Use a fresh seed for every
+#! transaction, see `IesSealSeed` in Rust.
 #!
 #! Do not call `miden::core::crypto::ies::ecgfp5_eidos::seal` directly in a transaction: it accepts
 #! any valid key agreement advice, so other code in the transaction can choose the ephemeral secret

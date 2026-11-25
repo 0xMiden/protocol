@@ -404,9 +404,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// advice that the core library's `seal` consumes.
     ///
     /// The digests come from the VM, so the host does constant work per request. Code that emits
-    /// the request event itself, with any digests, gets the secret of any request of the same
-    /// transaction and seed with the same recipient, digests and request index, also from another
-    /// execution, see [`IesSealSeed`].
+    /// the request event itself, with any digests, gets the secret of any request with the same
+    /// seed, request index, recipient and digests, also in another transaction, see
+    /// [`IesSealSeed`].
     ///
     /// # Errors
     ///
@@ -426,9 +426,6 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             .map_err(TransactionKernelError::IesPublicKeyInvalid)?;
 
         let ephemeral_secret = seed.derive_ephemeral_secret(
-            self.initial_account_header.id(),
-            self.initial_account_header.to_commitment(),
-            self.input_notes.commitment(),
             self.num_ies_seal_requests,
             &recipient,
             request.context_digest,
