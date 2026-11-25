@@ -6,14 +6,10 @@
 # Receiving assets is never restricted, and the issuing faucet is exempt so that minting does not
 # depend on its own restricted amounts.
 
-use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET} from miden::protocol::asset
-use {AccountId, AssetAmount, AssetId} from miden::protocol::types
-use miden::core::word
+use {AccountId} from miden::protocol::types
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::protocol::output_note
-use miden::protocol::tx
 use miden::standards::assets::fungible_asset
 use miden::standards::expiration
 use miden::standards::faucets::policies::transfer::supply_restriction
@@ -22,11 +18,6 @@ use miden::standards::faucets::policies::transfer::supply_restriction
 # ================================================================================================
 
 const ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE = "transfer exceeds the balance of the account that is neither frozen nor confiscated"
-
-# LOCAL ADDRESSES (get_note_amount)
-# ================================================================================================
-
-const NOTE_ASSETS_LOC = 0
 
 # POLICY PROCEDURES
 # ================================================================================================
@@ -112,11 +103,11 @@ proc assert_restricted_amount_not_sent(account_id: AccountId)
         dupw exec.fungible_asset::get_initial_native_account_balance movdn.5
         # => [ASSET_ID, restricted, initial_balance]
 
-        exec.get_sent_amount
+        exec.fungible_asset::get_sent_amount
         # => [sent, restricted, initial_balance]
 
         # the sum cannot wrap around in a valid transaction, because both amounts are at most
-        # FUNGIBLE_ASSET_MAX_AMOUNT (see get_sent_amount)
+        # FUNGIBLE_ASSET_MAX_AMOUNT (see fungible_asset::get_sent_amount)
         add
         # => [sent + restricted, initial_balance]
 
@@ -127,100 +118,4 @@ proc assert_restricted_amount_not_sent(account_id: AccountId)
         drop
         # => []
     end
-end
-
-#! Returns the amount of the fungible asset held by all output notes created so far.
-#!
-#! The amount can only exceed the maximum fungible asset amount, and thus wrap around the field
-#! modulus, in a transaction whose output notes exceed that maximum in total. The kernel rejects
-#! such a transaction when it checks that assets are preserved.
-#!
-#! Inputs:  [ASSET_ID]
-#! Outputs: [sent]
-#!
-#! Invocation: exec
-proc get_sent_amount(asset_id: AssetId) -> AssetAmount
-    push.0 movdn.4
-    # => [ASSET_ID, sent]
-
-    exec.tx::get_num_output_notes
-    # => [num_notes_left, ASSET_ID, sent]
-
-    dup neq.0
-    # => [should_loop, num_notes_left, ASSET_ID, sent]
-
-    while.true
-        sub.1
-        # => [note_idx, ASSET_ID, sent]
-
-        dup repeat.4 dup.5 end
-        # => [ASSET_ID, note_idx, note_idx, ASSET_ID, sent]
-
-        exec.get_note_amount
-        # => [note_amount, note_idx, ASSET_ID, sent]
-
-        movup.6 add movdn.5
-        # => [note_idx, ASSET_ID, sent]
-
-        # the note index is the number of notes left
-        dup neq.0
-        # => [should_loop, num_notes_left, ASSET_ID, sent]
-    end
-    # => [0, ASSET_ID, sent]
-
-    drop dropw
-    # => [sent]
-end
-
-#! Returns the amount of the fungible asset held by the output note with the provided index.
-#!
-#! Inputs:  [ASSET_ID, note_idx]
-#! Outputs: [note_amount]
-#!
-#! Invocation: exec
-@locals(128)
-proc get_note_amount(asset_id: AssetId, note_idx: u16) -> AssetAmount
-    # write the assets to local memory, which fits ASSET_SIZE * MAX_ASSETS_PER_NOTE elements
-    movup.4 locaddr.NOTE_ASSETS_LOC exec.output_note::get_assets
-    # => [num_assets, ASSET_ID]
-
-    # initialize the amount and compute the range of asset pointers
-    push.0 swap mul.ASSET_SIZE locaddr.NOTE_ASSETS_LOC
-    # => [asset_ptr, assets_size, note_amount, ASSET_ID]
-
-    dup movdn.2 add swap
-    # => [asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
-
-    dup.1 dup.1 neq
-    # => [should_loop, asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
-
-    while.true
-        padw dup.4 mem_loadw_le
-        # => [NOTE_ASSET_ID, asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
-
-        repeat.4 dup.10 end exec.word::eq
-        # => [is_same_asset, asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
-
-        if.true
-            padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
-            # => [NOTE_ASSET_VALUE, asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
-
-            exec.fungible_asset::value_into_amount_unchecked
-            # => [asset_amount, asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
-
-            movup.3 add movdn.2
-            # => [asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
-        end
-        # => [asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
-
-        add.ASSET_SIZE
-        # => [asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
-
-        dup.1 dup.1 neq
-        # => [should_loop, asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
-    end
-    # => [asset_ptr, assets_end_ptr, note_amount, ASSET_ID]
-
-    drop drop movdn.4 dropw
-    # => [note_amount]
 end
