@@ -20,12 +20,14 @@ mod allowlist;
 mod basic_allowlist;
 mod basic_blocklist;
 mod blocklist;
+mod supply_restriction;
 
 pub use allow_all::TransferAllowAll;
 pub use allowlist::{AllowlistManager, AllowlistStorage};
 pub use basic_allowlist::BasicAllowlist;
 pub use basic_blocklist::BasicBlocklist;
 pub use blocklist::{BlocklistManager, BlocklistStorage};
+pub use supply_restriction::SupplyRestrictionManager;
 
 // TRANSFER POLICY ERROR
 // ================================================================================================

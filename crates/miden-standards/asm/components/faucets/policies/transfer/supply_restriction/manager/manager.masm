@@ -1,0 +1,13 @@
+# Authority-gated supply restriction component.
+#
+# Installs the `restricted_amounts` storage map (defined by the `supply_restriction` primitive) and
+# re-exports `freeze`, `unfreeze` and `confiscate` from
+# `miden::standards::faucets::policies::transfer::supply_restriction::manager`, which wrap the
+# underlying `Invocation: exec` helpers with `authority::assert_authorized`.
+#
+# Pair with the [`Authority`] component (which provides the mode-aware auth dispatch) and the
+# fungible faucet component (whose token supply `confiscate` decreases).
+
+pub use {freeze} from miden::standards::faucets::policies::transfer::supply_restriction::manager
+pub use {unfreeze} from miden::standards::faucets::policies::transfer::supply_restriction::manager
+pub use {confiscate} from miden::standards::faucets::policies::transfer::supply_restriction::manager
