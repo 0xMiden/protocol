@@ -75,5 +75,8 @@ pub proc output_note_get_recipient_preimage(
     # => [RECIPIENT]
 
     exec.note::get_recipient_preimage
+    # => [SERIAL_NUM, NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT]
+
+    dropw
     # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT]
 end

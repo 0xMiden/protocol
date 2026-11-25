@@ -98,6 +98,16 @@ Example use cases for attachments are:
   consume the note. This is a standardized attachment scheme in `miden-standards` called `NetworkAccountTarget`.
 - Communicate the details of a _private_ note to the receiver so they can derive the note. For example, the payback note of a partially fillable swap note can be private. The receiver knows it is a P2ID note with a serial number derived from the SWAP note's serial number and storage containing the receiver account ID. The only missing input is the exact amount filled. Encoding that amount in a public attachment lets the receiver derive the full note without a side-channel.
 
+#### Encrypted asset attachments
+
+A faucet can attach the details of each private note that carries its asset, encrypted to the issuer's key, so that the issuer can track its asset. Its `on_before_note_sealed` callback calls `miden::standards::attachments::encrypted_assets::build_attachment`, which returns no attachment for a public note. For a private note with `n` assets, it encrypts the plaintext (`3 + 2n` words, assets in note order)
+
+```text
+[SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSET_ID_0, ASSET_VALUE_0, ..., ASSET_ID_{n-1}, ASSET_VALUE_{n-1}]
+```
+
+with `miden::protocol::ies::ecgfp5_eidos::seal` to the public key in the faucet's value slots `miden::standards::attachments::encrypted_assets::issuer_key_0` and `issuer_key_1`, under the context `[8]` (the attachment scheme). The attachment has scheme `8` and holds the envelope `[ephemeral_public_key(5), auth_tag(2), plaintext_len, ciphertext(2 * plaintext_len)]`, which is `8 + 4n` words. The note cannot be sealed unless the creator puts the note's `RECIPIENT` preimage into the advice map and the transaction arguments carry an `IesSealSeed`. Each such faucet adds its own attachment. The issuer decrypts all attachments with scheme `8` and then recomputes the note's ID to compare it to the onchain note ID (since anyone can encrypt to its key). The note's nullifier can also be computed from the same data for inflow tracking.
+
 ## Note Lifecycle
 
 <p style={{textAlign: 'center'}}>

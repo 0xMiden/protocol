@@ -1,3 +1,4 @@
+mod encrypted_assets;
 mod fee_policy_manager;
 mod network_account_target;
 mod note_tag;
