@@ -1,5 +1,7 @@
 use {
     Bool,
+    NoteAttachmentCount,
+    NoteAttachmentListCommitment,
     NoteMetadata,
     NoteRecipient,
     NoteScriptRoot,
@@ -7,7 +9,9 @@ use {
     NoteStorageCommitment,
     NoteType,
 } from miden::protocol_utils::types
+use {WORD_NUM_ELEMENTS} from miden::protocol_utils::constants
 use miden::core::crypto::hashes::eidos
+use miden::core::mem
 
 # ERRORS
 # =================================================================================================
@@ -18,6 +22,9 @@ const ERR_NOTE_METADATA_NON_ZERO_RESERVED_BIT = "note metadata has a non-zero re
 
 const ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH =
     "recipient preimage in the advice map does not hash to the note recipient"
+
+const ERR_NOTE_ATTACHMENT_LIST_LENGTH_MISMATCH =
+    "attachment list in the advice map does not match its number of attachments"
 
 # CONSTANTS
 # =================================================================================================
@@ -240,3 +247,56 @@ pub proc get_recipient_preimage(
     # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 end
 
+#! Writes the attachment list with the provided commitment from the advice map to memory, starting
+#! at the provided address, and verifies it against the commitment.
+#!
+#! The list holds num_attachments entries `[attachment_scheme, 0, 0, 0, ATTACHMENT_COMMITMENT]`. The
+#! caller must bound num_attachments so that the list fits into the memory at dest_ptr. The entries
+#! themselves are not validated.
+#!
+#! Inputs:
+#!   Operand stack: [num_attachments, ATTACHMENT_LIST_COMMITMENT, dest_ptr]
+#!   Advice map: {
+#!     ATTACHMENT_LIST_COMMITMENT: [[ATTACHMENT_LIST_ELEMENTS]],
+#!   }
+#! Outputs:
+#!   Operand stack: [list_end_ptr]
+#!
+#! Where:
+#! - num_attachments is the number of attachments in the list.
+#! - ATTACHMENT_LIST_COMMITMENT is the commitment to the attachment list.
+#! - dest_ptr is the word-aligned memory address to which the first list entry is written.
+#! - list_end_ptr is the memory address after the last written list entry.
+#! - ATTACHMENT_LIST_ELEMENTS are the elements of the list entries.
+#!
+#! Panics if:
+#! - the advice map has no entry for ATTACHMENT_LIST_COMMITMENT.
+#! - the number of list elements does not match num_attachments.
+#! - the hash of the list elements does not match ATTACHMENT_LIST_COMMITMENT.
+#!
+#! Invocation: exec
+pub proc pipe_attachment_list_to_memory(
+    num_attachments: NoteAttachmentCount,
+    attachment_list_commitment: NoteAttachmentListCommitment,
+    dest_ptr: ptr<word>
+) -> ptr<word>
+    # push the list elements from the advice map onto the advice stack
+    movdn.4 adv.push_mapvaln
+    # OS => [ATTACHMENT_LIST_COMMITMENT, num_attachments, dest_ptr]
+    # AS => [num_elements, [ATTACHMENT_LIST_ELEMENTS]]
+
+    # assert the list holds an entry per attachment
+    adv_push movup.5 mul.ATTACHMENT_LIST_ENTRY_SIZE dup movup.2
+    assert_eq.err=ERR_NOTE_ATTACHMENT_LIST_LENGTH_MISMATCH
+    # OS => [num_elements, ATTACHMENT_LIST_COMMITMENT, dest_ptr]
+    # AS => [[ATTACHMENT_LIST_ELEMENTS]]
+
+    u32div.WORD_NUM_ELEMENTS movup.5 swap
+    # OS => [num_words, dest_ptr, ATTACHMENT_LIST_COMMITMENT]
+    # AS => [[ATTACHMENT_LIST_ELEMENTS]]
+
+    # write the list elements to memory and assert that they hash to ATTACHMENT_LIST_COMMITMENT
+    exec.mem::pipe_double_words_preimage_to_memory
+    # OS => [list_end_ptr]
+    # AS => []
+end

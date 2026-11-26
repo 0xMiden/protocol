@@ -22,6 +22,8 @@ use {ATTACHMENT_LIST_ENTRY_SIZE, ATTACHMENT_RESERVED_SCHEME, MAX_ATTACHMENTS_PER
 use {OUTPUT_NOTE_ADD_ASSET_OFFSET, OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET, OUTPUT_NOTE_CREATE_OFFSET, OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET, OUTPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET, OUTPUT_NOTE_GET_METADATA_OFFSET, OUTPUT_NOTE_GET_RECIPIENT_OFFSET, OUTPUT_NOTE_IS_SEALED_OFFSET, OUTPUT_NOTE_SEAL_OFFSET}
     from miden::protocol::kernel_proc_offsets
 
+pub use {pipe_attachment_list_to_memory} from miden::protocol_utils::note
+
 # ERRORS
 # =================================================================================================
 

@@ -75,9 +75,6 @@ const ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED =
 const ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_COMMITMENT_WITHOUT_ATTACHMENTS =
     "note callback returned a non-empty attachment list commitment with 0 attachments"
 
-const ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_LENGTH_MISMATCH =
-    "attachment list returned by a note callback does not match its number of attachments"
-
 const ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_ENTRY_PADDING_NOT_ZERO =
     "attachment list returned by a note callback must pad each attachment scheme with zeros"
 
@@ -913,10 +910,8 @@ end
 #! Appends the attachments of the provided attachment list to the note specified by the index, in
 #! list order.
 #!
-#! The list holds two words per attachment, `[attachment_scheme, 0, 0, 0]` followed by the
-#! attachment's commitment, and ATTACHMENT_LIST_COMMITMENT is the sequential hash of its elements.
-#! The list elements are fetched from the advice map using ATTACHMENT_LIST_COMMITMENT as the key and
-#! the commitment is verified by hashing them. Each attachment is added via `add_attachment`.
+#! The list is read from the advice map via `note::pipe_attachment_list_to_memory`. Each attachment
+#! is added via `add_attachment`.
 #!
 #! Inputs:
 #!   Operand Stack: [num_attachments, ATTACHMENT_LIST_COMMITMENT, note_idx]
@@ -933,8 +928,7 @@ end
 #!
 #! Panics if:
 #! - num_attachments exceeds 4.
-#! - the number of list elements does not match num_attachments.
-#! - the computed hash of the list elements does not match ATTACHMENT_LIST_COMMITMENT.
+#! - the attachment list in the advice map is invalid (see `note::pipe_attachment_list_to_memory`).
 #! - the three elements after the attachment scheme of an entry are not all zero.
 #! - a listed attachment is invalid or exceeds the note's attachment limits (see `add_attachment`).
 @locals(32)
@@ -948,27 +942,13 @@ proc add_attachment_list(
     u32lte.MAX_ATTACHMENTS_PER_NOTE assert.err=ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS
     # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, note_idx]
 
-    # push the list elements from the advice map onto the advice stack
-    movdn.4 adv.push_mapvaln
-    # OS => [ATTACHMENT_LIST_COMMITMENT, num_attachments, note_idx]
-    # AS => [num_elements, [ATTACHMENT_LIST_ELEMENTS]]
-
-    # assert the list holds an entry per attachment
-    adv_push movup.5 mul.ATTACHMENT_LIST_ENTRY_SIZE dup movup.2
-    assert_eq.err=ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_LENGTH_MISMATCH
-    # OS => [num_elements, ATTACHMENT_LIST_COMMITMENT, note_idx]
-    # AS => [[ATTACHMENT_LIST_ELEMENTS]]
-
     # SAFETY: we have allocated 32 elements of local memory which is sufficient for the list of up
     # to 4 attachments
-    u32div.WORD_NUM_ELEMENTS locaddr.0 swap
-    # OS => [num_words, list_ptr, ATTACHMENT_LIST_COMMITMENT, note_idx]
-    # AS => [[ATTACHMENT_LIST_ELEMENTS]]
+    locaddr.0 movdn.5
+    # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, list_ptr, note_idx]
 
-    # validate the sequential hash over the list elements is ATTACHMENT_LIST_COMMITMENT
-    exec.mem::pipe_double_words_preimage_to_memory
-    # OS => [list_end_ptr, note_idx]
-    # AS => []
+    exec.note::pipe_attachment_list_to_memory
+    # => [list_end_ptr, note_idx]
 
     locaddr.0
     # => [entry_ptr, list_end_ptr, note_idx]

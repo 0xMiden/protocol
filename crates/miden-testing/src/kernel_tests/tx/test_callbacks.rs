@@ -41,11 +41,11 @@ use miden_protocol::errors::protocol::{
 };
 use miden_protocol::errors::tx_kernel::{
     ERR_KERNEL_STATE_MUTATION_IN_ASSET_CALLBACK,
+    ERR_NOTE_ATTACHMENT_LIST_LENGTH_MISMATCH,
     ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO,
     ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED,
     ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_COMMITMENT_WITHOUT_ATTACHMENTS,
     ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_ENTRY_PADDING_NOT_ZERO,
-    ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_LENGTH_MISMATCH,
     ERR_OUTPUT_NOTE_IS_SEALED,
     ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS,
     ERR_PROLOGUE_CALLBACK_SLOT_REQUIRES_ENABLED_ASSET_CALLBACK_FLAG,
@@ -159,7 +159,7 @@ const ERR_UNEXPECTED_EXPIRATION_DELTA: MasmError =
     MasmError::from_static_str("note callback observed an unexpected expiration delta");
 
 /// The error raised by the kernel if an attachment list does not hash to its commitment.
-const ERR_ATTACHMENT_LIST_COMMITMENT_MISMATCH: MasmError =
+pub(super) const ERR_ATTACHMENT_LIST_COMMITMENT_MISMATCH: MasmError =
     MasmError::from_static_str("pipe_double_words_preimage_to_memory: COMMITMENT does not match");
 
 // Initialize the block list component code only once.
@@ -1168,11 +1168,11 @@ async fn test_note_sealed_callback_attachments_are_validated(
 )]
 #[case::fewer_attachments_than_listed(
     "push.2 exec.::miden::protocol::output_note::attachment_list_from_memory drop push.1",
-    ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_LENGTH_MISMATCH
+    ERR_NOTE_ATTACHMENT_LIST_LENGTH_MISMATCH
 )]
 #[case::more_attachments_than_listed(
     "push.1 exec.::miden::protocol::output_note::attachment_list_from_memory drop push.2",
-    ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_LENGTH_MISMATCH
+    ERR_NOTE_ATTACHMENT_LIST_LENGTH_MISMATCH
 )]
 #[tokio::test]
 async fn test_note_sealed_callback_attachment_list_is_verified(

@@ -8,6 +8,7 @@ use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
     ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
+    ERR_NOTE_ATTACHMENT_LIST_LENGTH_MISMATCH,
     ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT,
     ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO,
     ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO,
@@ -69,7 +70,9 @@ use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 use rstest::rstest;
 
+use super::test_callbacks::ERR_ATTACHMENT_LIST_COMMITMENT_MISMATCH;
 use super::{TestSetup, setup_test};
+use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::{create_public_p2any_note, create_spawn_note};
 use crate::{
@@ -2253,6 +2256,91 @@ async fn test_private_output_sealed_by_note_script(
     } else {
         assert_transaction_executor_error!(result, ERR_OUTPUT_NOTE_IS_SEALED);
     }
+    Ok(())
+}
+
+/// Tests that `output_note::pipe_attachment_list_to_memory` writes the attachment list from the
+/// advice map to memory, and fails if the list does not match the number of attachments or the
+/// commitment.
+///
+/// The code writes a list of two attachments to memory, inserts it into the advice map with
+/// `output_note::attachment_list_from_memory`, and runs the case's MASM code on the returned number
+/// of attachments and list commitment before it pipes the list to another address.
+#[rstest]
+#[case::matching_list("", None)]
+#[case::fewer_attachments_than_listed(
+    "drop push.1",
+    Some(ERR_NOTE_ATTACHMENT_LIST_LENGTH_MISMATCH)
+)]
+#[case::more_attachments_than_listed("drop push.3", Some(ERR_NOTE_ATTACHMENT_LIST_LENGTH_MISMATCH))]
+#[case::list_not_matching_commitment(
+    // insert the list into the advice map under another commitment and return that one
+    "movdn.4 dropw dup.2 dup.2 push.9.9.9.9 adv.insert_mem dropw drop drop push.9.9.9.9 movup.4",
+    Some(ERR_ATTACHMENT_LIST_COMMITMENT_MISMATCH)
+)]
+#[tokio::test]
+async fn test_pipe_attachment_list_to_memory(
+    #[case] list_code: &str,
+    #[case] expected_error: Option<MasmError>,
+) -> anyhow::Result<()> {
+    const LIST_PTR: u32 = 4000;
+    const DEST_PTR: u32 = 8000;
+
+    let list_words = [
+        Word::from([20, 0, 0, 0u32]),
+        Word::from([5, 6, 7, 8u32]),
+        Word::from([21, 0, 0, 0u32]),
+        Word::from([9, 10, 11, 12u32]),
+    ];
+    let list_len = u32::try_from(list_words.len() * WORD_SIZE)?;
+    let write_list_code = list_words
+        .iter()
+        .zip((LIST_PTR..).step_by(WORD_SIZE))
+        .map(|(word, word_ptr)| format!("push.{word} mem_storew_le.{word_ptr} dropw"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let code = format!(
+        "
+        use miden::protocol::output_note
+
+        begin
+            {write_list_code}
+
+            push.{list_end_ptr}.{LIST_PTR} push.2
+            # => [num_attachments, list_ptr, list_end_ptr]
+
+            dup.1 swap exec.output_note::attachment_list_from_memory
+            # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, list_ptr, list_end_ptr]
+
+            {list_code}
+            # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, list_ptr, list_end_ptr]
+
+            movup.5 drop movup.5 drop push.{DEST_PTR} movdn.5
+            # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, dest_ptr]
+
+            exec.output_note::pipe_attachment_list_to_memory
+            # => [list_end_ptr]
+
+            exec.::miden::core::sys::truncate_stack
+        end
+        ",
+        list_end_ptr = LIST_PTR + list_len,
+    );
+
+    let exec_output = CodeExecutor::with_default_host().run(&code).await;
+
+    match expected_error {
+        None => {
+            let exec_output = exec_output?;
+            assert_eq!(exec_output.get_stack_element(0), Felt::from(DEST_PTR + list_len));
+            for (word, word_ptr) in list_words.iter().zip((DEST_PTR..).step_by(WORD_SIZE)) {
+                assert_eq!(&exec_output.get_kernel_mem_word(word_ptr), word);
+            }
+        },
+        Some(expected_error) => assert_execution_error!(exec_output, expected_error),
+    }
+
     Ok(())
 }
 
