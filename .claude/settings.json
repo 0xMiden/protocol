@@ -7,12 +7,7 @@
           {
             "type": "command",
             "if": "Bash(*git *)",
-            "command": ".claude/hooks/pre_commit_lint.py"
-          },
-          {
-            "type": "command",
-            "if": "Bash(*git *)",
-            "command": ".claude/hooks/pre_push_test.py"
+            "command": ".claude/hooks/pre_push_lint_test.py"
           },
           {
             "type": "command",
