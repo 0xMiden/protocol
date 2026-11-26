@@ -88,6 +88,8 @@ A note can have up to 4 attachments. Each attachment is a variable-size, _public
 
 The note commits to all of its attachments via a sequential hash over the individual attachment commitments (the attachments commitment). The attachment schemes are encoded in the note's metadata. When the note is consumed, the actual attachment content is provided via the advice provider.
 
+Sealing a note means invoking the [asset callbacks](asset#callbacks) of the faucets whose assets it holds. Each callback can return attachments, which the kernel appends to the note. The note is then sealed to prevent further changes to it. These attachments count toward the same limits, so the note's creator must leave room for them.
+
 Schemes are not required to be unique within a note, but adding multiple attachments with the same scheme is discouraged. It provides no additional benefit and only increases the note's public on-chain data and the fees its creator pays.
 
 Example use cases for attachments are:
@@ -95,6 +97,18 @@ Example use cases for attachments are:
 - For [network transactions](./transaction.md#network-transaction), encode the ID of the network account that should
   consume the note. This is a standardized attachment scheme in `miden-standards` called `NetworkAccountTarget`.
 - Communicate the details of a _private_ note to the receiver so they can derive the note. For example, the payback note of a partially fillable swap note can be private. The receiver knows it is a P2ID note with a serial number derived from the SWAP note's serial number and storage containing the receiver account ID. The only missing input is the exact amount filled. Encoding that amount in a public attachment lets the receiver derive the full note without a side-channel.
+
+#### Encrypted asset attachments
+
+A faucet can attach the details of each private note that carries its asset, encrypted to the issuer's key, so that the issuer can track its asset. Its `on_before_note_sealed` callback calls `miden::standards::attachments::encrypted_assets::new`, which returns no attachment for a public note, and returns the result as an attachment list through `miden::protocol::output_note::single_attachment_list`. For a private note with `n` assets, it encrypts the plaintext (`3 + 2n` words, assets in note order)
+
+```text
+[SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSET_ID_0, ASSET_VALUE_0, ..., ASSET_ID_{n-1}, ASSET_VALUE_{n-1}]
+```
+
+with `miden::protocol::ies::ecgfp5_eidos::seal` to the public key in the faucet's value slots `miden::standards::attachments::encrypted_assets::issuer_key_head` and `issuer_key_tail`, under the context `[8]` (the attachment scheme). The attachment has scheme `8` and holds the envelope `[ephemeral_public_key(5), auth_tag(2), plaintext_len, ciphertext(2 * plaintext_len)]`, which is `8 + 4n` words. The note cannot be sealed unless the creator puts the note's `RECIPIENT` preimage into the advice map and the transaction arguments carry an `IesSealSeed`. Each such faucet adds its own attachment. The issuer decrypts all attachments with scheme `8` and then recomputes the note's ID to compare it to the onchain note ID (since anyone can encrypt to its key). The note's nullifier can also be computed from the same data for inflow tracking.
+
+A faucet with a `TokenPolicyManager` builds the attachment with the send policy `SendPolicy::with_encrypted_assets(issuer_key)`, which installs the key with the `EncryptedAssetsIssuerKey` account component. The policy rejects a private note that holds more than one asset, since the attachment would show the assets of other faucets to the issuer. The faucet's authority rotates the key with that component's `set_issuer_key`; notes sealed before a rotation stay encrypted to the previous key, so the issuer keeps its previous secret keys and tries each of them. A send policy that combines other checks, such as a blocklist, runs them, then `exec`s `miden::standards::faucets::policies::transfer::encrypted_assets::check_send_policy` and ships the key component as well; `SendPolicy::merge` drops the attachments of the policies it merges, so it cannot combine this policy. Such a faucet's asset cannot be in a private note whose creator knows only its recipient digest: a network faucet cannot mint the private output note of a MINT note, and the filler of a SWAP note that requests the asset cannot create a private payback note of which it knows only the recipient digest.
 
 ## Note Lifecycle
 
@@ -302,16 +316,10 @@ The SWAP note script implements atomic asset swapping functionality.
 **Key characteristics:**
 
 - **Purpose:** Atomic asset exchange between two parties
-- **Storage:** Requires exactly 16 storage items, laid out as:
-  - Requested asset (8 felts)
-  - Payback recipient digest (4 felts; used for private payback, zero for public)
-  - Payback note type
-  - Payback tag
-  - Payback target account ID prefix (used for public payback, zero for private)
-  - Payback target account ID suffix (used for public payback, zero for private)
+- **Storage:** The requested asset and the payback note configuration: recipient, note type, tag and attachments. The layout is defined by `SwapNoteStorage`.
 - **Assets:** Must contain exactly 1 asset to be swapped
 - **Mechanism:**
-  1. Creates a payback P2ID note containing the requested asset for the original note issuer. For private payback, the precomputed recipient digest is loaded from storage and used directly. For public payback, the recipient is reconstructed on-chain from the payback target account ID and a serial derived as `swap_serial + 1`, which also registers the preimage in the advice map so the public note can be validated.
+  1. Creates a payback note that contains the requested asset. By default, it is a P2ID note for the original note issuer, but the creator can select any recipient. For a private payback, the script uses the precomputed recipient digest from storage. For a public payback, the script builds the recipient from the script root, serial number and storage embedded in the SWAP storage. This also registers the preimage in the advice map, so the consumer needs no additional advice. In both modes, the script adds the attachments from storage to the payback note. The payback note is sealed once it holds the requested asset and its attachments.
   2. Adds the note's asset to the consuming account's vault
 - **Requirements:** Account must expose both:
   - `miden::standards::wallets::basic::receive_asset` procedure

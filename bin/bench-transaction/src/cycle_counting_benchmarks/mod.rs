@@ -37,6 +37,7 @@ pub enum ExecutionBenchmark {
     ConsumePauseConfigNetwork,
     ConsumeOwnerConfigNetwork,
     ConsumeRbacConfigNetwork,
+    ConsumeSupplyRestrictionConfigNetwork,
     ConsumeAuthorityConfigNetwork,
     ConsumeNetworkAccountConfigNetwork,
     ConsumeUpgradeNetwork,
@@ -88,6 +89,7 @@ impl ExecutionBenchmark {
             ExecutionBenchmark::ConsumePauseConfigNetwork,
             ExecutionBenchmark::ConsumeOwnerConfigNetwork,
             ExecutionBenchmark::ConsumeRbacConfigNetwork,
+            ExecutionBenchmark::ConsumeSupplyRestrictionConfigNetwork,
             ExecutionBenchmark::ConsumeAuthorityConfigNetwork,
             ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork,
             ExecutionBenchmark::ConsumeUpgradeNetwork,
@@ -201,6 +203,9 @@ impl fmt::Display for ExecutionBenchmark {
             },
             ExecutionBenchmark::ConsumeRbacConfigNetwork => {
                 write!(f, "consume RBAC_CONFIG note (network account)")
+            },
+            ExecutionBenchmark::ConsumeSupplyRestrictionConfigNetwork => {
+                write!(f, "consume SUPPLY_RESTRICTION_CONFIG note (network account)")
             },
             ExecutionBenchmark::ConsumeAuthorityConfigNetwork => {
                 write!(f, "consume AUTHORITY_CONFIG note (network account)")

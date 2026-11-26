@@ -2,7 +2,6 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 
-use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -25,8 +24,9 @@ use miden_standards::account::policies::{
     BlocklistManager,
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -53,6 +53,8 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 use rand::RngExt;
+
+use super::policy_component;
 
 /// Builds an existing public non-fungible faucet with allow-all policies (so a tx-script mint is
 /// gated only by the test auth) and an owner-controlled authority.
@@ -93,8 +95,8 @@ fn build_nft_faucet_from_component(
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(mint_policy)
         .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
@@ -124,7 +126,10 @@ fn nft_mint_body(faucet_id: AccountId, commitment: Word, recipient: Word) -> Str
             # => [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT]
             call.::miden::standards::faucets::non_fungible::mint_and_send
             # => [note_idx, pad(15)]
-            dropw dropw dropw dropw
+
+            exec.::miden::protocol::output_note::seal
+            # => [pad(15)]
+            dropw dropw dropw drop drop drop
         ",
         note_type = NoteType::Private as u8,
         tag = 0u32,
@@ -174,11 +179,7 @@ fn custom_mint_policy(name: &str, body: &str) -> anyhow::Result<MintPolicy> {
         "#
     );
 
-    let code = CodeBuilder::default().compile_component_code(name, &masm_source)?;
-    let root = code
-        .get_procedure_root_by_path(format!("{name}::check_policy").as_str())
-        .expect("custom mint policy should export check_policy");
-    let component = AccountComponent::new(code, vec![], AccountComponentMetadata::mock(name))?;
+    let (root, component) = policy_component(name, "check_policy", vec![], masm_source)?;
 
     Ok(MintPolicy::custom(root, [component])?)
 }
@@ -483,7 +484,7 @@ async fn nft_mint_via_note_succeeds() -> anyhow::Result<()> {
     let recipient_digest = Word::from([5, 5, 5, 5u32]);
     let sender = AccountId::builder().account_type(AccountType::Private).build_with_seed([9; 32]);
 
-    let storage = MintNoteStorage::new_private(
+    let storage = MintNoteStorage::new_private_output(
         recipient_digest,
         NonFungibleAsset::from_parts(faucet.id(), commitment),
         NoteTag::default(),
@@ -542,7 +543,7 @@ async fn decoy_faucet_cannot_consume_nft_mint_note_of_another_faucet() -> anyhow
         .build_with_seed([13; 32]);
 
     // the asset names `target` as its faucet, which is what the note storage binds it to
-    let storage = MintNoteStorage::new_private(
+    let storage = MintNoteStorage::new_private_output(
         Word::from([5, 5, 5, 5u32]),
         NonFungibleAsset::from_parts(target.id(), commitment),
         NoteTag::default(),
@@ -596,7 +597,7 @@ async fn nft_mint_via_note_succeeds_for_a_private_faucet() -> anyhow::Result<()>
         .account_type(AccountType::Private)
         .build_with_seed([15; 32]);
 
-    let storage = MintNoteStorage::new_private(
+    let storage = MintNoteStorage::new_private_output(
         recipient_digest,
         NonFungibleAsset::from_parts(faucet.id(), commitment),
         NoteTag::default(),
@@ -646,7 +647,7 @@ async fn nft_mint_owner_only_policy_rejects_non_owner() -> anyhow::Result<()> {
         .account_type(AccountType::Private)
         .build_with_seed([11; 32]);
 
-    let storage = MintNoteStorage::new_private(
+    let storage = MintNoteStorage::new_private_output(
         recipient_digest,
         NonFungibleAsset::from_parts(faucet.id(), commitment),
         NoteTag::default(),
@@ -678,6 +679,7 @@ fn build_nft_faucet_with_blocklist(
     owner: AccountId,
     initial_blocked: impl IntoIterator<Item = AccountId>,
 ) -> anyhow::Result<Account> {
+    let initial_blocked: Vec<AccountId> = initial_blocked.into_iter().collect();
     let faucet = NonFungibleFaucet::builder()
         .name(TokenName::new("EC")?)
         .symbol(TokenSymbol::new("EC")?)
@@ -692,8 +694,8 @@ fn build_nft_faucet_with_blocklist(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(TransferPolicy::with_basic_blocklist(initial_blocked))
-                .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+                .active_send_policy(SendPolicy::with_basic_blocklist(initial_blocked.clone()))
+                .active_receive_policy(ReceivePolicy::with_basic_blocklist(initial_blocked))
                 .build(),
         )
         .with_component(Pausable::unpaused())

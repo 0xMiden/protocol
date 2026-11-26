@@ -7,6 +7,7 @@ use {
     BlockNumber,
     Bool,
     NoteAssetsCommitment,
+    NoteAttachmentScheme,
     NoteId,
     NoteMetadata,
     NoteRecipient,
@@ -74,6 +75,9 @@ const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ID_WHILE_NO_NOTE_BEING_PROCESSED =
 const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO =
     "ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called"
 
+const ERR_FOREIGN_ACCOUNT_NOT_ISSUER_OF_NATIVE_VAULT_ASSET =
+    "a foreign account can only read assets it issued from the native account's vault"
+
 # AUTHENTICATION
 # =================================================================================================
 
@@ -99,6 +103,34 @@ proc authenticate_account_origin()
     # assert that the caller is from the user context and conditionally track the call
     exec.account::authenticate_procedure
     # => []
+end
+
+#! Asserts that the active account can read the asset with the provided ID from the native
+#! account's vault, which is the case if it is the native account or the issuer of the asset.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [ASSET_ID]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to read.
+#!
+#! Panics if:
+#! - the active account is not the native account and it is not the issuer of the asset.
+#!
+#! Invocation: exec
+proc assert_can_read_native_vault_asset(asset_id: AssetId) -> AssetId
+    exec.asset::id_to_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_ID]
+
+    exec.memory::get_account_id
+    # => [active_account_id_suffix, active_account_id_prefix, faucet_id_suffix, faucet_id_prefix, ASSET_ID]
+
+    exec.account_id::eq
+    # => [is_issuer, ASSET_ID]
+
+    exec.memory::is_native_account or
+    assert.err=ERR_FOREIGN_ACCOUNT_NOT_ISSUER_OF_NATIVE_VAULT_ASSET
+    # => [ASSET_ID]
 end
 
 #! Asserts that the invocation of a kernel procedure originates from the authentication procedure of
@@ -826,27 +858,46 @@ pub proc account_remove_asset(asset: Asset, padding: [felt; 8]) -> (AssetValue, 
     # => [FINAL_ASSET_VALUE, pad(12)]
 end
 
-#! Returns the asset associated with the provided asset ID in the active account's vault.
+#! Returns the asset associated with the provided asset ID in the vault of the native or the active
+#! account.
 #!
-#! Inputs:  [ASSET_ID, pad(12)]
+#! Inputs:  [is_native, ASSET_ID, pad(11)]
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:
+#! - is_native is a boolean flag that indicates whether the asset was requested from the vault of
+#!   the native or the active account.
 #! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
 #!   present.
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
+#! - is_native is 1, the active account is not the native account and it is not the issuer of the
+#!   asset.
 #!
 #! Invocation: dynexec
-pub proc account_get_asset(asset_id: AssetId, padding: [felt; 12]) -> (AssetValue, [felt; 12])
+pub proc account_get_asset(
+    is_native: Bool,
+    asset_id: AssetId,
+    padding: [felt; 11]
+) -> (AssetValue, [felt; 12])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET_ID, pad(12)]
+    # => [is_native, ASSET_ID, pad(11)]
 
-    exec.asset::validate_id
-    # => [ASSET_ID, pad(12)]
+    movdn.4 exec.asset::validate_id
+    # => [ASSET_ID, is_native, pad(11)]
+
+    # check that the active account can read the asset if the native account's vault is requested
+    dup.4
+    if.true
+        exec.assert_can_read_native_vault_asset
+    end
+    # => [ASSET_ID, is_native, pad(11)]
+
+    movup.4
+    # => [is_native, ASSET_ID, pad(11)]
 
     exec.account::get_asset
     # => [ASSET_VALUE, pad(12)]
@@ -864,18 +915,19 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
-#! - the current active account is not the native account of the transaction.
+#! - the active account is not the native account and it is not the issuer of the asset.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_asset(asset_id: AssetId, padding: [felt; 12]) -> (AssetValue, [felt; 12])
-    # check that this procedure was executed against the native account
-    exec.memory::assert_native_account
-
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [ASSET_ID, pad(12)]
 
     exec.asset::validate_id
+    # => [ASSET_ID, pad(12)]
+
+    # check that the active account can read the asset from the native account's vault
+    exec.assert_can_read_native_vault_asset
     # => [ASSET_ID, pad(12)]
 
     exec.account::get_initial_asset
@@ -1664,8 +1716,11 @@ pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) 
     # => [pad(16)]
 end
 
-#! Prevents further changes to the specified output note's assets and attachments.
-#! Sealing is idempotent.
+#! Invokes the `on_before_note_sealed` callback of each distinct faucet with the asset callback flag
+#! enabled among the specified output note's assets, appends the attachments each callback returns
+#! to the note, and then prevents further changes to the note's assets and attachments.
+#!
+#! Sealing is idempotent: sealing an already sealed note invokes no callback.
 #!
 #! Inputs:  [note_idx, pad(15)]
 #! Outputs: [pad(16)]
@@ -1674,6 +1729,10 @@ end
 #! - an asset callback is executing.
 #! - the active account is not the native account.
 #! - the note index points to a non-existent output note.
+#! - a callback procedure root is not part of its faucet's account code.
+#! - an invoked callback panics.
+#! - a callback returns an invalid attachment list, or attachments that are invalid or exceed the
+#!   note's attachment limits.
 #!
 #! Invocation: dynexec
 pub proc output_note_seal(note_idx: u16, padding: [felt; 15]) -> [felt; 16]
@@ -1682,10 +1741,7 @@ pub proc output_note_seal(note_idx: u16, padding: [felt; 15]) -> [felt; 16]
     exec.output_note::assert_note_index_in_bounds
     # => [note_idx, pad(15)]
 
-    exec.memory::get_output_note_ptr
-    # => [note_ptr, pad(15)]
-
-    exec.memory::seal_output_note
+    exec.output_note::seal
     # => [pad(16)]
 end
 
@@ -1729,7 +1785,7 @@ end
 #! - the note already has 4 attachments.
 #!
 #! Invocation: dynexec
-pub proc output_note_add_attachment(attachment_scheme: u16, attachment: word, note_idx: u16, padding: [felt; 10]) -> [felt; 16]
+pub proc output_note_add_attachment(attachment_scheme: NoteAttachmentScheme, attachment: word, note_idx: u16, padding: [felt; 10]) -> [felt; 16]
     # assert that the provided note index is less than the total number of output notes
     dup.5 exec.output_note::assert_note_index_in_bounds drop
     # => [attachment_scheme, ATTACHMENT, note_idx, pad(10)]

@@ -24,19 +24,27 @@ const BASIC_BLOCKLIST_LIBRARY_PATH: &str =
     "miden::standards::components::faucets::policies::transfer::basic_blocklist";
 
 procedure_root!(
-    BASIC_BLOCKLIST_TRANSFER_POLICY_ROOT,
+    BASIC_BLOCKLIST_SEND_POLICY_ROOT,
     BASIC_BLOCKLIST_LIBRARY_PATH,
-    BasicBlocklist::PROC_NAME,
+    BasicBlocklist::SEND_PROC_NAME,
+    BasicBlocklist::code()
+);
+
+procedure_root!(
+    BASIC_BLOCKLIST_RECEIVE_POLICY_ROOT,
+    BASIC_BLOCKLIST_LIBRARY_PATH,
+    BasicBlocklist::RECEIVE_PROC_NAME,
     BasicBlocklist::code()
 );
 
 /// The basic blocklist transfer policy account component.
 ///
 /// Installs the per-faucet `blocked_accounts` storage map (defined by [`BlocklistStorage`])
-/// plus the `check_policy` predicate procedure. Pair with a
-/// [`crate::account::policies::TokenPolicyManager`] whose send / receive policy maps include
-/// [`BasicBlocklist::root`]. When active, transfers fail if the native account (asset
-/// recipient or note creator) is currently blocked on the issuing faucet.
+/// plus the `check_send_policy` and `check_receive_policy` predicate procedures. Pair with a
+/// [`crate::account::policies::TokenPolicyManager`] whose send and receive policy maps include
+/// [`BasicBlocklist::send_root`] and [`BasicBlocklist::receive_root`]. When active, transfers
+/// fail if the native account (asset recipient or note creator) is currently blocked on the
+/// issuing faucet.
 ///
 /// The issuing faucet is exempt from its own blocklist.
 ///
@@ -55,7 +63,8 @@ impl BasicBlocklist {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::faucets::policies::transfer::basic_blocklist";
 
-    pub(crate) const PROC_NAME: &str = "check_policy";
+    pub(crate) const SEND_PROC_NAME: &str = "check_send_policy";
+    pub(crate) const RECEIVE_PROC_NAME: &str = "check_receive_policy";
 
     /// Creates a basic blocklist with the given initial blocked accounts.
     pub fn with_blocked_accounts<I>(blocked_accounts: I) -> Self
@@ -75,9 +84,14 @@ impl BasicBlocklist {
         &BASIC_BLOCKLIST_TRANSFER_POLICY_PACKAGE.code
     }
 
-    /// Returns the MAST root of the basic blocklist transfer policy procedure.
-    pub fn root() -> AccountProcedureRoot {
-        *BASIC_BLOCKLIST_TRANSFER_POLICY_ROOT
+    /// Returns the procedure root of the send policy procedure.
+    pub fn send_root() -> AccountProcedureRoot {
+        *BASIC_BLOCKLIST_SEND_POLICY_ROOT
+    }
+
+    /// Returns the procedure root of the receive policy procedure.
+    pub fn receive_root() -> AccountProcedureRoot {
+        *BASIC_BLOCKLIST_RECEIVE_POLICY_ROOT
     }
 
     /// Returns the [`AccountComponentMetadata`] for this component.

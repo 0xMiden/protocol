@@ -24,8 +24,10 @@ use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicy, FeePolic
 use miden_standards::account::note_creator::NoteCreator;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_FEE_INSUFFICIENT_BALANCE,
     ERR_FEE_MANAGER_EXPECTED_FEE_ASSET_MISMATCH,
     ERR_FEE_MANAGER_INPUT_NOTE_FEE_NOT_COVERED,
+    ERR_FEE_MANAGER_NETWORK_NOTE_NOT_SEALED,
     ERR_FEE_MANAGER_SPONSORED_NOTE_NOT_FOUND,
     ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET,
     ERR_FEE_MANAGER_TARGET_FEE_ASSET_MISMATCH,
@@ -57,6 +59,7 @@ use crate::scripts::fee_manager::{
     custom_fee_policy,
     fee_faucet_id,
 };
+use crate::scripts::policy_component;
 
 /// The lowest reclaim height a FEE_SPONSORSHIP note can have: height 0 encodes a disabled reclaim,
 /// so block 1 is the earliest block from which the note can be reclaimed.
@@ -248,9 +251,13 @@ impl Test {
         /// execution. Defaults to 0.
         #[builder(default = 0)]
         num_failing_feature_notes: usize,
+        /// Verification base fee of the chain, which the network account pays its transaction fee
+        /// from. Defaults to 0, so the account pays no transaction fee.
+        #[builder(default = 0)]
+        verification_base_fee: u32,
     ) -> anyhow::Result<Self> {
         let mut rng = EidosRandomCoin::new(Word::empty());
-        let mut builder = MockChain::builder();
+        let mut builder = MockChain::builder().verification_base_fee(verification_base_fee);
         let sponsor = builder.add_existing_wallet(Auth::IncrNonce)?;
 
         let mut feature_notes: Vec<Note> = (0..num_feature_notes)
@@ -922,12 +929,7 @@ fn asset_commitment_fee_policy(
         fee_amount = FEE_AMOUNT,
     );
 
-    let code = CodeBuilder::default().compile_component_code(POLICY_NAME, &masm_source)?;
-    let root = code
-        .get_procedure_root_by_path(format!("{POLICY_NAME}::compute_note_fee").as_str())
-        .expect("asset commitment fee policy should export compute_note_fee");
-    let component =
-        AccountComponent::new(code, vec![], AccountComponentMetadata::mock(POLICY_NAME))?;
+    let (root, component) = policy_component(POLICY_NAME, "compute_note_fee", vec![], masm_source)?;
 
     Ok(FeePolicy::custom(root, [component])?)
 }
@@ -1022,7 +1024,8 @@ async fn feature_notes_priced_in_different_assets_are_rejected() -> anyhow::Resu
 // A network account's own auth procedure sponsors every network output note automatically (via
 // `pay_fee` -> `create_network_note_sponsorships`), so the sponsor only needs to create the note.
 
-/// Builds the transaction script that creates `num_notes` network notes targeted at `target_id`.
+/// Builds the transaction script that creates `num_notes` network notes targeted at `target_id`,
+/// sealing each one if `seal_notes` is set.
 ///
 /// The notes differ only in their serial numbers, so they get different note IDs. Each block of
 /// note creation code leaves the operand stack as it found it, which lets the blocks follow each
@@ -1030,7 +1033,9 @@ async fn feature_notes_priced_in_different_assets_are_rejected() -> anyhow::Resu
 fn create_network_notes_tx_script(
     target_id: AccountId,
     num_notes: u32,
+    seal_notes: bool,
 ) -> anyhow::Result<TransactionScript> {
+    let finish_note = if seal_notes { "exec.output_note::seal" } else { "drop" };
     // The created notes carry a standard note script so the host can assemble the public note.
     let script_root = P2idNote::script_root().as_word();
     let target_prefix = target_id.prefix().as_felt();
@@ -1058,17 +1063,20 @@ fn create_network_notes_tx_script(
             call.::miden::standards::note::note_creator::create_note
             # => [note_idx, pad(21)]
 
-            movdn.15 dropw dropw dropw drop drop drop
-            # => [note_idx, pad(6)]
+            movdn.15 dropw dropw dropw drop drop drop dup
+            # => [note_idx, note_idx, pad(6)]
 
             # attach the network account target so the auth procedure sponsors the note
             push.0 push.{target_prefix} push.{target_suffix}
-            # => [target_id_suffix, target_id_prefix, exec_hint_tag = 0, note_idx, pad(6)]
+            # => [target_id_suffix, target_id_prefix, exec_hint_tag = 0, note_idx, note_idx, pad(6)]
 
             exec.network_account_target::new
-            # => [attachment_scheme, NOTE_ATTACHMENT, note_idx, pad(6)]
+            # => [attachment_scheme, NOTE_ATTACHMENT, note_idx, note_idx, pad(6)]
 
             exec.output_note::add_word_attachment
+            # => [note_idx, pad(6)]
+
+            {finish_note}
             # => [pad(6)]
 "#,
                 serial_num = Word::from([21u32, 22, 23, 24 + note_idx]),
@@ -1122,7 +1130,8 @@ impl SponsorshipTest {
     /// Builds a [`SponsorshipTest`].
     ///
     /// The target charges [`FEE_AMOUNT`] for each network note, so the sponsor must fund each
-    /// sponsorship note with that amount. Its vault holds exactly the total it must fund.
+    /// sponsorship note with that amount. Its vault holds exactly the total it must fund, unless
+    /// `sponsor_fee_balance` says otherwise.
     ///
     /// The build order is fixed by three dependencies: the target ID goes into the transaction
     /// script, the script root and the feature note script root go into the sponsor's allowlists,
@@ -1140,11 +1149,17 @@ impl SponsorshipTest {
         /// Number of network notes the transaction script creates. Defaults to 1.
         #[builder(default = 1)]
         num_network_notes: u32,
+        /// Whether the transaction script seals the network notes it creates. Defaults to true.
+        #[builder(default = true)]
+        seal_network_notes: bool,
         /// Number of feature notes the sponsor consumes to collect fees. Each one is priced at
         /// [`FEE_AMOUNT`] and comes with a FEE_SPONSORSHIP note that covers it. Defaults to 0, in
         /// which case the sponsor collects nothing.
         #[builder(default)]
         num_collected_notes: u32,
+        /// Amount of the native fee asset the sponsor's vault holds. Defaults to the total it must
+        /// fund.
+        sponsor_fee_balance: Option<u64>,
     ) -> anyhow::Result<Self> {
         let target_fee_faucet = target_fee_faucet.unwrap_or(native_fee_faucet_id()?);
         let sponsor_fee_faucet = sponsor_fee_faucet.unwrap_or(native_fee_faucet_id()?);
@@ -1162,7 +1177,8 @@ impl SponsorshipTest {
             .with_components(AuthNetworkAccount::new(BTreeSet::new(), target_fee_policy_manager)?)
             .build_existing()?;
 
-        let tx_script = create_network_notes_tx_script(target.id(), num_network_notes)?;
+        let tx_script =
+            create_network_notes_tx_script(target.id(), num_network_notes, seal_network_notes)?;
 
         let mut rng = EidosRandomCoin::new(Word::empty());
         let mut builder = MockChain::builder();
@@ -1195,7 +1211,9 @@ impl SponsorshipTest {
                     .with_sponsorship_policy(sponsorship_policy),
             )
             .with_component(NoteCreator)
-            .with_assets([native_fee_asset(u64::from(num_network_notes) * FEE_AMOUNT)?])
+            .with_assets([native_fee_asset(
+                sponsor_fee_balance.unwrap_or(u64::from(num_network_notes) * FEE_AMOUNT),
+            )?])
             .build_existing()?;
         builder.add_account(sponsor.clone())?;
 
@@ -1340,6 +1358,22 @@ async fn create_sponsorships_reject_target_with_different_fee_asset() -> anyhow:
     Ok(())
 }
 
+/// A network note that is not sealed when the auth procedure sponsors it is rejected: its ID and
+/// fee are not final yet, so the sponsorship could name a note that never exists.
+#[tokio::test]
+async fn create_sponsorships_reject_unsealed_network_note() -> anyhow::Result<()> {
+    let test = SponsorshipTest::builder()
+        .seal_network_notes(false)
+        .sponsorship_policy(SponsorshipPolicy::Unlimited)
+        .build()?;
+
+    let result = test.transaction()?.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_NETWORK_NOTE_NOT_SEALED);
+
+    Ok(())
+}
+
 /// One transaction that collects two sponsorship input notes and creates two sponsorship output
 /// notes, so the collection loop and the creation loop both run more than once.
 ///
@@ -1364,6 +1398,22 @@ async fn sponsors_and_collects_multiple_notes() -> anyhow::Result<()> {
 
 // SPONSORSHIP POLICY
 // ================================================================================================
+
+/// A sponsor whose vault holds less of the native fee asset than the target's fee fails with the
+/// fee-specific error rather than the vault's generic withdrawal error.
+#[tokio::test]
+async fn create_sponsorships_fail_with_insufficient_fee_balance() -> anyhow::Result<()> {
+    let test = SponsorshipTest::builder()
+        .sponsorship_policy(SponsorshipPolicy::Unlimited)
+        .sponsor_fee_balance(FEE_AMOUNT - 1)
+        .build()?;
+
+    let result = test.transaction()?.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_INSUFFICIENT_BALANCE);
+
+    Ok(())
+}
 
 /// Under [`SponsorshipPolicy::AtMostCollectedFees`], a sponsorship that no collected fee backs is
 /// rejected.

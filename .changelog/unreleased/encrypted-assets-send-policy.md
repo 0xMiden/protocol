@@ -1,0 +1,1 @@
+Added the encrypted assets send policy `SendPolicy::with_encrypted_assets(issuer_key)`, with its `EncryptedAssetsSendPolicy` component, which returns the encrypted asset attachment of private notes, rejects private notes that hold more than one asset, and installs the issuer key as an `EncryptedAssetsIssuerKey` account component with an authority-gated `set_issuer_key`.

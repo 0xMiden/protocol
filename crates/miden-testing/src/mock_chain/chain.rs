@@ -31,8 +31,8 @@ use miden_protocol::transaction::{
     ProvenTransaction,
     TransactionInputs,
 };
-use miden_tx::LocalTransactionProver;
 use miden_tx::auth::BasicAuthenticator;
+use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 use miden_tx_batch::LocalBatchProver;
 
 use super::note::MockChainNote;
@@ -614,6 +614,45 @@ impl MockChain {
         input: impl Into<MockTransactionInput>,
     ) -> MockTransactionBuilder<'_> {
         MockTransactionBuilder::new(self, input)
+    }
+
+    /// Executes a transaction of the account with the given ID consuming `notes` as
+    /// unauthenticated input notes.
+    ///
+    /// The transaction is not added to the chain. The outer result holds errors from building
+    /// the transaction, the inner result holds the outcome of its execution, so a test can assert
+    /// on an expected execution error.
+    pub async fn consume_notes(
+        &self,
+        account_id: AccountId,
+        notes: impl IntoIterator<Item = Note>,
+    ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
+        Ok(self
+            .build_transaction(account_id)
+            .unauthenticated_input_notes(notes)
+            .build()?
+            .execute()
+            .await)
+    }
+
+    /// Executes a transaction of the account with the given ID consuming `notes` as
+    /// authenticated input notes, then adds it to the chain and proves the next block.
+    ///
+    /// The notes must already be committed to the chain.
+    pub async fn consume_notes_and_commit(
+        &mut self,
+        account_id: AccountId,
+        notes: impl IntoIterator<Item = Note>,
+    ) -> anyhow::Result<ExecutedTransaction> {
+        let executed = self
+            .build_transaction(account_id)
+            .authenticated_input_notes(notes)
+            .build()?
+            .execute()
+            .await?;
+        self.add_pending_executed_transaction(&executed)?;
+        self.prove_next_block()?;
+        Ok(executed)
     }
 
     /// Resolves the account referenced by `input` into a concrete [`Account`].

@@ -255,8 +255,14 @@ pub enum MintNoteStorage {
 }
 
 impl MintNoteStorage {
-    /// Builds private-mode storage (creates a private output note).
-    pub fn new_private(recipient_digest: Word, asset: impl Into<Asset>, tag: NoteTag) -> Self {
+    /// Builds storage that makes the MINT note create a private output note.
+    ///
+    /// The MINT note itself is always public; only the output note it creates is private.
+    pub fn new_private_output(
+        recipient_digest: Word,
+        asset: impl Into<Asset>,
+        tag: NoteTag,
+    ) -> Self {
         Self::Private {
             recipient_digest,
             asset: asset.into(),
@@ -264,8 +270,8 @@ impl MintNoteStorage {
         }
     }
 
-    /// Builds public-mode storage (creates a public output note).
-    pub fn new_public(
+    /// Builds storage that makes the MINT note create a public output note.
+    pub fn new_public_output(
         recipient: NoteRecipient,
         asset: impl Into<Asset>,
         tag: NoteTag,
@@ -364,7 +370,11 @@ mod tests {
         let mut rng = EidosRandomCoin::new(Word::empty());
         MintNote::builder()
             .sender(owner())
-            .mint_storage(MintNoteStorage::new_private(Word::empty(), asset, NoteTag::default()))
+            .mint_storage(MintNoteStorage::new_private_output(
+                Word::empty(),
+                asset,
+                NoteTag::default(),
+            ))
             .generate_serial_number(&mut rng)
             .build()
             .unwrap()

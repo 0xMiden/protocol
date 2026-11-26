@@ -4,27 +4,25 @@
 //! Integration coverage exercises the mint and burn dispatch branches (each switching `allow_all`
 //! to `owner_only`) plus the note-level guards. The send and receive branches run the identical
 //! script path (`load_policy_root_window` + a `set_*_policy` call) and differ only in variant and
-//! call target, which are covered by the `faucet_policy_config` unit storage tests; there is no
-//! built-in alternative `TransferPolicy` to switch to without bespoke policy setup.
+//! call target, which are covered by the `faucet_policy_config` unit storage tests.
 
 extern crate alloc;
 
 use alloc::vec::Vec;
 
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
-use miden_protocol::asset::AssetAmount;
+use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::errors::standards::{
     ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC,
@@ -43,6 +41,7 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
+use super::fungible_faucet_account;
 use crate::into_private_note;
 
 // HELPERS
@@ -55,25 +54,16 @@ fn create_faucet_with_policies(
     builder: &mut MockChainBuilder,
     owner: AccountId,
 ) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("SYM")?)
-        .symbol("SYM".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .allowed_mint_policy(MintPolicy::owner_only())
         .active_burn_policy(BurnPolicy::allow_all())
         .allowed_burn_policy(BurnPolicy::owner_only())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
-    let account_builder = AccountBuilder::new([43; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(43)?
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager);

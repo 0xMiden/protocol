@@ -1,1 +1,2 @@
+pub mod encrypted_assets
 pub mod network_account_target

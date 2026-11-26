@@ -612,7 +612,7 @@ mod tests {
 
         for slots in [
             AssetCallbacks::new()
-                .on_before_asset_added_to_note(Word::from([1u32, 2, 3, 4]))
+                .on_before_note_sealed(Word::from([1u32, 2, 3, 4]))
                 .into_storage_slots(),
             AssetCallbacks::new()
                 .on_before_asset_added_to_account(Word::from([1u32, 2, 3, 4]))

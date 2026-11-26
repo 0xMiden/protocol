@@ -35,7 +35,7 @@ pub use checker_utils::{
     SuccessfulNote,
 };
 pub use error::{FeeError, SponsorshipRejectionError};
-use fee::fee_error;
+use fee::{fee_error, is_insufficient_fee_balance};
 
 // NOTE CONSUMPTION CHECKER
 // ================================================================================================
@@ -96,6 +96,9 @@ where
     /// reported as [`NoteFailure::Fee`]: when a sponsorship carries an asset other than the one the
     /// account collects fees in, when the account has no fee for the feature note, or when the
     /// sponsorships do not cover the fee, which is reported with the fee they provide.
+    ///
+    /// A bundle whose addition leaves the account unable to pay the transaction's fees fails as a
+    /// whole, with its feature note reported as [`NoteFailure::InsufficientFee`].
     ///
     /// # Errors
     ///
@@ -207,6 +210,9 @@ where
                     // FEE_SPONSORSHIP notes bound to it, which a fee-collecting account reports as
                     // a fee it cannot collect
                     TransactionCheckerError::EpilogueExecution { error, .. } => {
+                        if is_insufficient_fee_balance(&error) {
+                            return Ok(NoteConsumptionStatus::InsufficientFee);
+                        }
                         Ok(match fee_error(&error, note.note(), &[]) {
                             Some(fee_error) => {
                                 NoteConsumptionStatus::NeverConsumable(Box::new(fee_error))
@@ -371,6 +377,13 @@ where
                         ),
                         // The epilogue failed, which points at no particular note: blame the
                         // feature note, the one the rest of the bundle is bound to.
+                        TransactionCheckerError::EpilogueExecution { error, .. }
+                            if is_insufficient_fee_balance(&error) =>
+                        {
+                            // The account could not pay the fees once this bundle was added,
+                            // which says nothing against the notes themselves.
+                            (0, NoteFailure::InsufficientFee { error })
+                        },
                         TransactionCheckerError::EpilogueExecution { error, .. } => {
                             let failure = match bundle.fee_error(&error) {
                                 // The account could not collect the bundle's fee, which this

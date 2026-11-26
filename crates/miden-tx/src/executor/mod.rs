@@ -361,6 +361,7 @@ where
             tx_inputs.block_header().block_num(),
             tx_inputs.collect_block_commitments(),
             self.source_manager.clone(),
+            tx_inputs.tx_args().ies_seal_seed().cloned(),
         )
         .map_err(|err| TransactionExecutorError::TransactionHostCreationFailed(Box::new(err)))?;
 

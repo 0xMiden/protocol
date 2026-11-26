@@ -3,8 +3,7 @@ use std::collections::BTreeSet;
 
 use miden_processor::ExecutionError;
 use miden_processor::operation::OperationError;
-use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{AssetAmount, AssetId, FungibleAsset};
 use miden_protocol::crypto::rand::EidosRandomCoin;
@@ -30,7 +29,7 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
-use super::assert_default_expiration_limit;
+use super::{assert_default_expiration_limit, policy_component};
 
 // HELPERS
 // ================================================================================================
@@ -135,7 +134,7 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
             timeframe: u32,
             priority: u32
         ) -> Asset
-            exec.note::get_recipient_preimage
+            exec.note::get_recipient_preimage dropw
             # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT,
             #     timeframe, priority, pad(2)]
 
@@ -173,16 +172,8 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
         "#
     );
 
-    let code =
-        CodeBuilder::default().compile_component_code(CUSTOM_FEE_POLICY_NAME, &masm_source)?;
-    let root = code
-        .get_procedure_root_by_path(format!("{CUSTOM_FEE_POLICY_NAME}::compute_note_fee").as_str())
-        .expect("custom fee policy should export compute_note_fee");
-    let component = AccountComponent::new(
-        code,
-        vec![],
-        AccountComponentMetadata::mock(CUSTOM_FEE_POLICY_NAME),
-    )?;
+    let (root, component) =
+        policy_component(CUSTOM_FEE_POLICY_NAME, "compute_note_fee", vec![], masm_source)?;
 
     Ok(FeePolicy::custom(root, [component])?)
 }
