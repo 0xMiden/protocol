@@ -2,7 +2,13 @@
 
 use miden_protocol::asset::AssetAmount;
 
-use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
+use crate::account::policies::{
+    BurnPolicy,
+    MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
+    TokenPolicyManager,
+};
 
 /// Builds a minimal policy manager with AllowAll on every kind, so `has_transfer_policy` is true
 /// and the faucet factories must enable asset callbacks.
@@ -10,8 +16,8 @@ pub(super) fn allow_all_policy_manager() -> TokenPolicyManager {
     TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build()
 }
 

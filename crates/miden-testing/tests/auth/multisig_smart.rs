@@ -919,7 +919,9 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
 // DELAYED-EXECUTION HELPERS
 // ================================================================================================
 
-use miden_protocol::transaction::ExecutedTransaction;
+use miden_protocol::note::{NoteAssets, NoteRecipient, NoteStorage, PartialNoteMetadata};
+use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_standards::errors::standards::{
     ERR_CANCEL_INSUFFICIENT_SIGNATURES,
     ERR_CANCEL_THRESHOLD_EXCEEDS_NUM_APPROVERS,
@@ -930,14 +932,61 @@ use miden_standards::errors::standards::{
     ERR_TX_PROPOSAL_CANCELLED,
     ERR_TX_STILL_TIMELOCKED,
 };
-use miden_testing::MockChain;
+use miden_testing::{MockChain, MockTransactionBuilder};
 use miden_tx::auth::BasicAuthenticator;
 
-/// Drives a delay-action procedure (`propose_transaction` or `cancel_transaction_proposal`), which
-/// verifies its own signatures over the *target* transaction commitment. The signers blind-sign
-/// that commitment directly. Because the kernel skips transaction-summary reconstruction when a
-/// signature is already present, the target summary need not be supplied — the commitment alone is
-/// enough — and there is no unauthorized dry-run round-trip as in [`execute_script_with_signers`].
+/// Compiles the transaction script of a delay action: a single call of `proc_name`
+/// (`propose_transaction` or `cancel_transaction_proposal`) with `target_commitment`.
+fn compile_delay_action_script(
+    proc_name: &str,
+    target_commitment: Word,
+) -> anyhow::Result<TransactionScript> {
+    compile_multisig_smart_tx_script(format!(
+        "
+        @transaction_script
+        pub proc main
+            push.{target_commitment}
+            call.::miden::standards::components::auth::multisig_smart::{proc_name}
+            dropw dropw dropw dropw dropw
+        end
+        "
+    ))
+}
+
+/// Adds the signatures a delay action verifies itself to `builder`: the given signers blind-sign
+/// the *target* transaction commitment (proposing) or its domain-separated cancel message
+/// (cancelling), so proposal signatures cannot be replayed to cancel. Because the kernel skips
+/// transaction-summary reconstruction when a signature is already present, the target summary need
+/// not be supplied — the commitment alone is enough — and there is no unauthorized dry-run
+/// round-trip as in [`execute_script_with_signers`].
+async fn add_delay_action_signatures<'chain>(
+    mut builder: MockTransactionBuilder<'chain>,
+    proc_name: &str,
+    target_commitment: Word,
+    signer_indices: &[usize],
+    public_keys: &[PublicKey],
+    authenticators: &[BasicAuthenticator],
+) -> anyhow::Result<MockTransactionBuilder<'chain>> {
+    let signing_message = if proc_name == "cancel_transaction_proposal" {
+        AuthMultisigSmart::cancel_signing_message(target_commitment)
+    } else {
+        target_commitment
+    };
+    let signing = SigningInputs::Blind(signing_message);
+
+    for signer_idx in signer_indices {
+        let sig = authenticators[*signer_idx]
+            .get_signature(public_keys[*signer_idx].to_commitment(), &signing)
+            .await?;
+        builder =
+            builder.add_signature(public_keys[*signer_idx].to_commitment(), signing_message, sig);
+    }
+
+    Ok(builder)
+}
+
+/// Drives a delay-action procedure (`propose_transaction` or `cancel_transaction_proposal`) against
+/// the chain's latest block, signed as described on [`add_delay_action_signatures`].
 #[allow(clippy::too_many_arguments)]
 async fn execute_delay_action(
     mock_chain: &MockChain,
@@ -949,40 +998,32 @@ async fn execute_delay_action(
     public_keys: &[PublicKey],
     authenticators: &[BasicAuthenticator],
 ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
-    let script = compile_multisig_smart_tx_script(format!(
-        "
-        @transaction_script
-        pub proc main
-            push.{target_commitment}
-            call.::miden::standards::components::auth::multisig_smart::{proc_name}
-            dropw dropw dropw dropw dropw
-        end
-        "
-    ))?;
-
-    // Cancelling signs a domain-separated message so proposal signatures cannot be replayed to
-    // cancel; proposing signs the target commitment itself.
-    let signing_message = if proc_name == "cancel_transaction_proposal" {
-        AuthMultisigSmart::cancel_signing_message(target_commitment)
-    } else {
-        target_commitment
-    };
-    let signing = SigningInputs::Blind(signing_message);
-
-    let mut builder = mock_chain
+    let builder = mock_chain
         .build_transaction(account_id)
-        .tx_script(script)
+        .tx_script(compile_delay_action_script(proc_name, target_commitment)?)
         .multisig_auth_args(action_auth_args);
-
-    for signer_idx in signer_indices {
-        let sig = authenticators[*signer_idx]
-            .get_signature(public_keys[*signer_idx].to_commitment(), &signing)
-            .await?;
-        builder =
-            builder.add_signature(public_keys[*signer_idx].to_commitment(), signing_message, sig);
-    }
+    let builder = add_delay_action_signatures(
+        builder,
+        proc_name,
+        target_commitment,
+        signer_indices,
+        public_keys,
+        authenticators,
+    )
+    .await?;
 
     Ok(builder.build()?.execute().await)
+}
+
+/// Builds an asset-less note addressed to `account_id` whose script is a single `nop`, so the
+/// multisig can consume it without calling any non-auth account procedure.
+fn assetless_noop_note(account_id: AccountId, serial_num: Word) -> anyhow::Result<Note> {
+    let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
+    Ok(Note::new(
+        NoteAssets::new(vec![])?,
+        PartialNoteMetadata::new(account_id, NoteType::Public),
+        NoteRecipient::new(serial_num, note_script, NoteStorage::default()),
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1320,6 +1361,53 @@ async fn test_multisig_smart_delay_action_cannot_be_bundled() -> anyhow::Result<
     let result = builder.build()?.execute().await;
 
     assert_transaction_executor_error!(result, ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE);
+
+    Ok(())
+}
+
+/// A delay action's signatures cover the proposed commitment, not the summary of the transaction
+/// that calls it, so an input note bundled with the action is unsigned. Without this check one
+/// approver's proposal signature would let anyone nullify an asset-less note addressed to the
+/// multisig. Both delay actions take the same dispatch branch, so `propose_transaction` stands in
+/// for `cancel_transaction_proposal` here.
+#[tokio::test]
+async fn test_multisig_smart_delay_action_rejects_input_notes() -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let multisig_account = create_multisig_smart_account(2, &public_keys, 100, vec![])?;
+    let account_id = multisig_account.id();
+
+    let note = assetless_noop_note(account_id, Word::from([1_u32, 2_u32, 3_u32, 4_u32]))?;
+    let mut chain_builder = MockChainBuilder::with_accounts([multisig_account]).unwrap();
+    chain_builder.add_output_note(RawOutputNote::Full(note.clone()));
+    let mock_chain = chain_builder.build()?;
+
+    // Sign the target commitment so `propose_transaction`'s own signature check passes; the auth
+    // procedure must still abort on the bundled note.
+    let target_commitment = Word::from([Felt::from(320u32); 4]);
+    let builder = mock_chain
+        .build_transaction(account_id)
+        .tx_script(compile_delay_action_script("propose_transaction", target_commitment)?)
+        .authenticated_input_note(note.id())
+        .multisig_auth_args(MultisigAuthArgs::new(
+            mock_chain.latest_block_header().block_num(),
+            salt(321),
+        ));
+    let result = add_delay_action_signatures(
+        builder,
+        "propose_transaction",
+        target_commitment,
+        &[0],
+        &public_keys,
+        &authenticators,
+    )
+    .await?
+    .build()?
+    .execute()
+    .await;
+
+    assert_transaction_executor_error!(result, ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES);
 
     Ok(())
 }

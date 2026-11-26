@@ -66,5 +66,5 @@ type        = "word"
 
 [[package.metadata.account-component.storage.slots]]
 description = "Root of the procedure the kernel invokes to enforce the active send policy"
-name        = "miden::protocol::faucet::callback::on_before_asset_added_to_note"
+name        = "miden::protocol::faucet::callback::on_before_note_sealed"
 type        = "word"

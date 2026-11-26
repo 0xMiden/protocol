@@ -14,7 +14,10 @@ use miden_protocol::transaction::memory::{
     ACTIVE_INPUT_NOTE_PTR,
     BLOCK_METADATA_PTR,
     BLOCK_NUMBER_IDX,
+    INIT_NATIVE_ACCT_VAULT_ROOT_PTR,
     INPUT_NOTE_ID_OFFSET,
+    NATIVE_ACCOUNT_DATA_PTR,
+    NATIVE_ACCT_VAULT_ROOT_PTR,
     NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR,
     NUM_OUTPUT_NOTES_PTR,
     TX_EXPIRATION_BLOCK_NUM_PTR,
@@ -32,6 +35,17 @@ pub(super) trait TransactionKernelProcess {
 
     /// Returns the [`AccountId`] of the active account.
     fn get_active_account_id(&self) -> Result<AccountId, TransactionKernelError>;
+
+    /// Returns the [`AccountId`] of the account that owns the vault whose root is stored at the
+    /// provided pointer.
+    ///
+    /// The native account's current and initial vault can be read while a foreign account is
+    /// active, so either of its vault root pointers identifies the native account. Any other
+    /// pointer is the vault root pointer of the active account.
+    fn get_vault_account_id(
+        &self,
+        vault_root_ptr: Felt,
+    ) -> Result<AccountId, TransactionKernelError>;
 
     /// Returns the account code commitment of the active account.
     fn get_active_account_code_commitment(&self) -> Result<Word, TransactionKernelError>;
@@ -99,24 +113,21 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
 
     fn get_active_account_id(&self) -> Result<AccountId, TransactionKernelError> {
         let active_account_ptr = self.get_active_account_ptr()?;
-        let active_account_metadata = self
-            .get_mem_word(self.ctx(), active_account_ptr)
-            .map_err(|_| {
-                TransactionKernelError::other("active account ptr should be word-aligned")
-            })?
-            .ok_or_else(|| {
-                TransactionKernelError::other("active account id should be initialized")
-            })?;
+        read_account_id(self, active_account_ptr)
+    }
 
-        AccountId::try_from_elements(
-            active_account_metadata[ACCT_ID_SUFFIX_IDX],
-            active_account_metadata[ACCT_ID_PREFIX_IDX],
-        )
-        .map_err(|_| {
-            TransactionKernelError::other(
-                "active account id ptr should point to a valid account ID",
-            )
-        })
+    fn get_vault_account_id(
+        &self,
+        vault_root_ptr: Felt,
+    ) -> Result<AccountId, TransactionKernelError> {
+        let vault_root_ptr = vault_root_ptr.as_canonical_u64();
+        if vault_root_ptr == u64::from(NATIVE_ACCT_VAULT_ROOT_PTR)
+            || vault_root_ptr == u64::from(INIT_NATIVE_ACCT_VAULT_ROOT_PTR)
+        {
+            read_account_id(self, NATIVE_ACCOUNT_DATA_PTR)
+        } else {
+            self.get_active_account_id()
+        }
     }
 
     fn get_active_account_code_commitment(&self) -> Result<Word, TransactionKernelError> {
@@ -391,4 +402,21 @@ fn read_double_word_from_adv_map(
 
     DoubleWord::try_from(data)
         .map_err(|_| TransactionKernelError::MalformedRecipientData(data.to_vec()))
+}
+
+/// Returns the [`AccountId`] of the account whose data is stored at the provided pointer.
+fn read_account_id(
+    process: &ProcessorState<'_>,
+    account_ptr: u32,
+) -> Result<AccountId, TransactionKernelError> {
+    let account_metadata = process
+        .get_mem_word(process.ctx(), account_ptr)
+        .map_err(|_| TransactionKernelError::other("account ptr should be word-aligned"))?
+        .ok_or_else(|| TransactionKernelError::other("account id should be initialized"))?;
+
+    AccountId::try_from_elements(
+        account_metadata[ACCT_ID_SUFFIX_IDX],
+        account_metadata[ACCT_ID_PREFIX_IDX],
+    )
+    .map_err(|_| TransactionKernelError::other("account ptr should point to a valid account ID"))
 }

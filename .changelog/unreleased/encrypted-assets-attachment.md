@@ -1,0 +1,1 @@
+Added the encrypted asset attachment: `miden::standards::attachments::encrypted_assets::new` encrypts a private note's details to the issuer key in a faucet's storage, and `EncryptedAssetsAttachment` decrypts it and recomputes the note's ID and nullifier.

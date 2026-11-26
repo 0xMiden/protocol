@@ -108,6 +108,11 @@ message BoundSignature {
   AuthSignature signature = 3;
 }
 
+message IesSealSeed {
+  // The 32 bytes of the seed.
+  bytes seed = 1;
+}
+
 message TransactionArgs {
   optional TransactionScript tx_script = 1;
   primitives.Word tx_script_args = 2;
@@ -117,6 +122,7 @@ message TransactionArgs {
   optional account.AccountCodeUpgrade account_code_upgrade = 6;
   repeated note.NoteRecipient output_note_recipients = 7;
   repeated BoundSignature signatures = 8;
+  optional IesSealSeed ies_seal_seed = 9;
 }
 
 message LogTopic {

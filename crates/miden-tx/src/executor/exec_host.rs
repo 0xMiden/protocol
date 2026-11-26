@@ -26,6 +26,7 @@ use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::NoteRecipient;
 use miden_protocol::transaction::{
     AccountInputs,
+    IesSealSeed,
     InputNote,
     InputNotes,
     RawOutputNote,
@@ -125,6 +126,7 @@ where
         code_tree_root: CodeTreeRoot,
         expected_output_note_recipients: Vec<NoteRecipient>,
         source_manager: Arc<dyn SourceManagerSync>,
+        ies_seal_seed: Option<IesSealSeed>,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
@@ -135,6 +137,7 @@ where
             acct_procedure_index_map,
             PartialCodeTree::new(code_tree_root),
             expected_output_note_recipients,
+            ies_seal_seed,
         )?;
 
         Ok(Self {
@@ -403,18 +406,14 @@ where
     /// witnesses for the initial vault root.
     async fn on_account_vault_asset_witness_requested(
         &mut self,
-        active_account_id: AccountId,
+        account_id: AccountId,
         vault_root: Word,
         asset_id: AssetId,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let asset_witnesses = self
             .base_host
             .store()
-            .get_vault_asset_witnesses(
-                active_account_id,
-                vault_root,
-                BTreeSet::from_iter([asset_id]),
-            )
+            .get_vault_asset_witnesses(account_id, vault_root, BTreeSet::from_iter([asset_id]))
             .await
             .map_err(|err| TransactionKernelError::GetVaultAssetWitness {
                 vault_root,
@@ -424,7 +423,7 @@ where
 
         self.lazy_loaded_data
             .asset_witnesses
-            .extend(asset_witnesses.iter().cloned().map(|witness| (active_account_id, witness)));
+            .extend(asset_witnesses.iter().cloned().map(|witness| (account_id, witness)));
 
         Ok(asset_witnesses.into_iter().flat_map(asset_witness_to_advice_mutation).collect())
     }
@@ -631,16 +630,12 @@ where
                 ),
 
                 TransactionEvent::AccountVaultBeforeAssetAccess {
-                    active_account_id,
+                    account_id,
                     vault_root,
                     asset_id,
                 } => {
-                    self.on_account_vault_asset_witness_requested(
-                        active_account_id,
-                        vault_root,
-                        asset_id,
-                    )
-                    .await
+                    self.on_account_vault_asset_witness_requested(account_id, vault_root, asset_id)
+                        .await
                 },
 
                 TransactionEvent::AccountStorageBeforeMapItemAccess {
@@ -728,6 +723,10 @@ where
                 // This always returns an error to abort the transaction.
                 TransactionEvent::Unauthorized { tx_summary } => {
                     Err(TransactionKernelError::Unauthorized(Box::new(tx_summary)))
+                },
+
+                TransactionEvent::IesEcgfp5EidosSeal(request) => {
+                    self.base_host.on_ies_seal_requested(request)
                 },
 
                 TransactionEvent::LinkMapSet { advice_mutation } => Ok(advice_mutation),

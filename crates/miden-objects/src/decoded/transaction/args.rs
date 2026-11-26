@@ -28,6 +28,17 @@ impl Verify for NoteArgument {
     }
 }
 
+pub use proto::transaction::DecodedIesSealSeed as IesSealSeed;
+
+/// Returns the seed; any 32 bytes are a valid seed.
+impl Verify for IesSealSeed {
+    type Verified = miden_protocol::transaction::IesSealSeed;
+    type Error = core::convert::Infallible;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        Ok(self.seed.into_inner())
+    }
+}
+
 pub use proto::transaction::DecodedTransactionArgs as TransactionArgs;
 
 impl Verify for TransactionArgs {
@@ -51,6 +62,7 @@ impl Verify for TransactionArgs {
             self.advice_inputs.verify()?,
             self.auth_args,
             self.account_code_upgrade.verify()?,
+            self.ies_seal_seed.verify()?,
         ))
     }
 }

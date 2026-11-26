@@ -114,6 +114,20 @@ impl AccountId {
     pub fn builder() -> AccountIdBuilder {
         AccountIdBuilder::new()
     }
+
+    /// Returns a private [`AccountId`] deterministically derived from `seed`.
+    pub fn mock_private(seed: u8) -> AccountId {
+        AccountIdBuilder::new()
+            .account_type(AccountType::Private)
+            .build_with_seed([seed; 32])
+    }
+
+    /// Returns a public [`AccountId`] deterministically derived from `seed`.
+    pub fn mock_public(seed: u8) -> AccountId {
+        AccountIdBuilder::new()
+            .account_type(AccountType::Public)
+            .build_with_seed([seed; 32])
+    }
 }
 
 /// A builder for creating [`AccountId`]s for testing purposes.

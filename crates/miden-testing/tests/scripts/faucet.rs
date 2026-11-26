@@ -41,15 +41,16 @@ use miden_standards::account::policies::{
     BurnPolicy,
     MinBurnAmount,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT,
     ERR_BURN_ASSET_MISMATCH,
     ERR_BURN_POLICY_ROOT_NOT_ALLOWED,
-    ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
+    ERR_FAUCET_SUPPLY_DECREASE_EXCEEDS_TOKEN_SUPPLY,
     ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
     ERR_FUNGIBLE_ASSET_ID_COMPOSITION_MUST_BE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT,
@@ -86,9 +87,16 @@ pub struct FaucetTestParams {
 /// Creates minting script code for fungible asset distribution
 pub fn create_mint_script_code(params: &FaucetTestParams, faucet_id: AccountId) -> String {
     format!(
+        "@transaction_script\npub proc main\n{}\nend",
+        create_mint_body_code(params, faucet_id)
+    )
+}
+
+/// Creates code that mints and seals one note for fungible asset distribution, leaving the stack
+/// at depth 16, so that a transaction script can run it more than once.
+pub fn create_mint_body_code(params: &FaucetTestParams, faucet_id: AccountId) -> String {
+    format!(
         "
-            @transaction_script
-            pub proc main
                 push.{recipient}
                 push.{note_type}
                 push.{tag}
@@ -103,9 +111,11 @@ pub fn create_mint_script_code(params: &FaucetTestParams, faucet_id: AccountId) 
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
+                exec.::miden::protocol::output_note::seal
+                # => [pad(15)]
+
                 # truncate the stack
-                dropw dropw dropw dropw
-            end
+                dropw dropw dropw drop drop drop
             ",
         note_type = params.note_type as u8,
         recipient = params.recipient,
@@ -285,8 +295,8 @@ fn build_network_faucet_with_burn_switching(
         .active_mint_policy(mint_policy)
         .active_burn_policy(BurnPolicy::allow_all())
         .allowed_burn_policy(BurnPolicy::owner_only())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
@@ -322,8 +332,8 @@ fn build_existing_faucet_with_reserved_only_transfer_policy(
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::allow_all())
-        .allowed_send_policy(TransferPolicy::allow_all())
-        .allowed_receive_policy(TransferPolicy::allow_all())
+        .allowed_send_policy(SendPolicy::allow_all())
+        .allowed_receive_policy(ReceivePolicy::allow_all())
         .build();
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
@@ -364,8 +374,8 @@ fn build_network_faucet_with_min_burn_amount(
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::owner_only())
         .active_burn_policy(BurnPolicy::min_burn_amount(min_burn_amount))
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
@@ -516,8 +526,11 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
+                exec.::miden::protocol::output_note::seal
+                # => [pad(15)]
+
                 # truncate the stack
-                dropw dropw dropw dropw
+                dropw dropw dropw drop drop drop
 
             end
             ",
@@ -706,7 +719,7 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
         .execute()
         .await;
 
-    assert_transaction_executor_error!(tx, ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY);
+    assert_transaction_executor_error!(tx, ERR_FAUCET_SUPPLY_DECREASE_EXCEEDS_TOKEN_SUPPLY);
     Ok(())
 }
 
@@ -859,8 +872,11 @@ async fn test_public_note_creation_with_script_from_code_to_register() -> anyhow
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
+                exec.::miden::protocol::output_note::seal
+                # => [pad(15)]
+
                 # Truncate the stack
-                dropw dropw dropw dropw
+                dropw dropw dropw drop drop drop
             end
             ",
         note_type = note_type as u8,
@@ -994,7 +1010,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
 
     let amount = Felt::new_unchecked(75);
-    // The faucet has callbacks configured via [`TransferPolicy::allow_all`], so the asset to mint
+    // The faucet has callbacks configured via [`SendPolicy::allow_all`], so the asset to mint
     // must match on the callback flag.
     let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap();
     let serial_num = Word::default();
@@ -1013,7 +1029,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let recipient = p2id_mint_output_note.recipient().digest();
 
     // Create the MINT note using the helper function
-    let mint_storage = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
+    let mint_storage = MintNoteStorage::new_private_output(recipient, mint_asset, output_note_tag);
 
     let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
@@ -1111,7 +1127,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     );
     let recipient = p2id_note.recipient().digest();
 
-    let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
+    let mint_inputs = MintNoteStorage::new_private_output(recipient, mint_asset, output_note_tag);
 
     let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
@@ -1230,8 +1246,8 @@ async fn test_network_faucet_policy_getters_works() -> anyhow::Result<()> {
     let getters_note_script = compile_note_script(&create_policy_getters_note_script(
         MintPolicy::allow_all().root(),
         BurnPolicy::allow_all().root(),
-        TransferPolicy::allow_all().root(),
-        TransferPolicy::allow_all().root(),
+        SendPolicy::allow_all().root(),
+        ReceivePolicy::allow_all().root(),
     ))?;
 
     let faucet = builder.add_existing_network_faucet(
@@ -1296,7 +1312,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     );
     let recipient = p2id_note.recipient().digest();
 
-    let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
+    let mint_inputs = MintNoteStorage::new_private_output(recipient, mint_asset, output_note_tag);
 
     // Create mint note from NON-OWNER
     let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
@@ -1426,7 +1442,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let recipient = p2id_note.recipient().digest();
 
     // Sanity Check: Prove that the initial owner can mint assets
-    let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
+    let mint_inputs = MintNoteStorage::new_private_output(recipient, mint_asset, output_note_tag);
 
     let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()
@@ -2315,8 +2331,8 @@ fn build_network_faucet_mutable_max_supply(
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::owner_only())
         .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
@@ -2410,7 +2426,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new_unchecked(75);
-    // The faucet has callbacks configured via [`TransferPolicy::allow_all`], so the asset to mint
+    // The faucet has callbacks configured via [`SendPolicy::allow_all`], so the asset to mint
     // must match on the callback flag.
     let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap();
     let serial_num = Word::from([1, 2, 3, 4u32]);
@@ -2432,12 +2448,12 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         NoteType::Private => {
             let output_note_tag = NoteTag::with_account_target(target_account.id());
             let recipient = p2id_mint_output_note.recipient().digest();
-            MintNoteStorage::new_private(recipient, mint_asset, output_note_tag)
+            MintNoteStorage::new_private_output(recipient, mint_asset, output_note_tag)
         },
         NoteType::Public => {
             let output_note_tag = NoteTag::with_account_target(target_account.id());
             let recipient = P2idNoteStorage::new(target_account.id()).into_recipient(serial_num);
-            MintNoteStorage::new_public(recipient, mint_asset, output_note_tag)?
+            MintNoteStorage::new_public_output(recipient, mint_asset, output_note_tag)?
         },
     };
 
@@ -2540,8 +2556,11 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
+                exec.::miden::protocol::output_note::seal
+                # => [pad(15)]
+
                 # clean up the stack before the second call
-                dropw dropw dropw dropw
+                dropw dropw dropw drop drop drop
 
                 # --- Second mint: mint {amount_2} tokens to recipient_2 ---
                 push.{recipient_2}
@@ -2558,8 +2577,11 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
+                exec.::miden::protocol::output_note::seal
+                # => [pad(15)]
+
                 # truncate the stack
-                dropw dropw dropw dropw
+                dropw dropw dropw drop drop drop
             end
             ",
         note_type = note_type as u8,
@@ -2603,12 +2625,12 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
     Ok(())
 }
 
-// NetworkFungibleFaucet + TransferPolicy::basic_blocklist (post-#2879 happy path)
+// NetworkFungibleFaucet + basic blocklist transfer policies (post-#2879 happy path)
 // ================================================================================================
 
-/// Builds a network faucet with [`TransferPolicy::basic_blocklist`] on both send and receive,
-/// so the manager populates the asset-callback slots and callbacks dispatch to the
-/// basic blocklist predicate.
+/// Builds a network faucet with [`SendPolicy::empty_basic_blocklist`] and
+/// [`ReceivePolicy::empty_basic_blocklist`], so the manager populates the asset-callback slots and
+/// callbacks dispatch to the basic blocklist predicates.
 fn build_network_faucet_with_blocklist_transfer(
     builder: &mut MockChainBuilder,
     token_symbol: &str,
@@ -2631,8 +2653,8 @@ fn build_network_faucet_with_blocklist_transfer(
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::owner_only())
         .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(TransferPolicy::empty_basic_blocklist())
-        .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+        .active_send_policy(SendPolicy::empty_basic_blocklist())
+        .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
         .build();
 
     let allowed_script_roots = BTreeSet::from([MintNote::script_root()]);
@@ -2675,7 +2697,7 @@ fn build_network_faucet_with_blocklist_transfer(
 }
 
 /// Verifies that the network-faucet mint pattern works when `TokenPolicyManager` installs
-/// asset-callback slots (here via [`TransferPolicy::basic_blocklist`]).
+/// asset-callback slots (here via [`SendPolicy::empty_basic_blocklist`]).
 ///
 /// Before the protocol fix in 0xMiden/protocol#2879 the kernel rejected this with
 /// `ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT` because the issuing faucet was also
@@ -2721,7 +2743,7 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
     );
     let recipient = p2id_mint_output_note.recipient().digest();
 
-    let mint_storage = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag);
+    let mint_storage = MintNoteStorage::new_private_output(recipient, mint_asset, output_note_tag);
 
     let mut rng = EidosRandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note: Note = MintNote::builder()

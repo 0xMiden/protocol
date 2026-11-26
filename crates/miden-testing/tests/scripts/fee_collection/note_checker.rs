@@ -784,3 +784,35 @@ async fn can_consume_reports_why_a_lone_feature_note_fee_cannot_be_collected(
 
     Ok(())
 }
+
+/// An account whose vault cannot pay the transaction fee is reported as such, rather than as a
+/// note failure: every bundle fails with [`NoteFailure::InsufficientFee`], and a single note is
+/// [`NoteConsumptionStatus::InsufficientFee`], so a client can keep the notes until the account
+/// holds the fee asset.
+#[tokio::test]
+async fn note_checker_reports_an_account_that_cannot_pay_the_transaction_fee() -> anyhow::Result<()>
+{
+    let Test {
+        mock_chain,
+        network_account,
+        feature_notes,
+        ..
+    } = Test::builder()
+        .feature_note_fee(AssetAmount::ZERO)
+        .num_feature_notes(2)
+        .verification_base_fee(500)
+        .build()?;
+
+    let info = check_notes(&mock_chain, network_account.id(), feature_notes.clone()).await?;
+
+    assert!(info.successful().is_empty(), "no note set can pay the transaction fee");
+    assert_eq!(info.failed().len(), feature_notes.len());
+    for failed in info.failed() {
+        assert_matches!(failed.failure(), NoteFailure::InsufficientFee { .. });
+    }
+
+    let status = can_consume(&mock_chain, network_account.id(), &feature_notes[0]).await?;
+    assert_matches!(status, NoteConsumptionStatus::InsufficientFee);
+
+    Ok(())
+}

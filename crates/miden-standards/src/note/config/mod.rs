@@ -60,3 +60,6 @@ pub use pause_config::{PauseConfig, PauseConfigNote};
 
 mod rbac_config;
 pub use rbac_config::{RbacConfig, RbacConfigNote};
+
+mod supply_restriction_config;
+pub use supply_restriction_config::{SupplyRestrictionConfig, SupplyRestrictionConfigNote};

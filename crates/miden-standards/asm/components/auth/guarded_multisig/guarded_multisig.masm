@@ -13,7 +13,6 @@ pub use {update_signers_and_threshold} from miden::standards::auth::multisig
 pub use {get_threshold_and_num_approvers} from miden::standards::auth::multisig
 pub use {set_procedure_threshold} from miden::standards::auth::multisig
 pub use {get_signer_at} from miden::standards::auth::multisig
-pub use {is_signer} from miden::standards::auth::multisig
 
 pub use {update_guardian_public_key} from miden::standards::auth::guardian
 
@@ -75,13 +74,18 @@ pub proc auth_tx_guarded_multisig(auth_args: word)
     add.1
     # => [num_of_signers, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
 
+    # this flow spends no cycles beyond the multisig flow the estimate covers
+    push.0
+    # => [num_extra_cycles, num_of_signers, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
+
     exec.multisig::estimate_max_fee
     # => [estimated_max_fee, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT, approval_expiration_delta]
 
-    movup.7 dup eq.0
-    # => [is_max_fee_unset, max_fee, estimated_max_fee, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
+    movup.7 swap dup.1 eq.0
+    # => [is_max_fee_unset, estimated_max_fee, max_fee, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
 
-    movup.2 swap cdrop
+    # max_fee = estimated_max_fee if is_max_fee_unset else max_fee
+    cdrop
     # => [max_fee, CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT, approval_expiration_delta]
 
     movdn.6

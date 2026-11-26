@@ -147,7 +147,7 @@ impl MastForestScript {
         Ok(Self::from_root(proc_export.digest).with_package_debug_info(package))
     }
 
-    /// Returns a new [MastForestScript] containing only a reference to the procedure with the
+    /// Returns a new [`MastForestScript`] containing only a reference to the procedure with the
     /// provided `root`.
     pub(crate) fn from_root(root: Word) -> Self {
         let (mast, entrypoint) = create_external_node_forest(root);

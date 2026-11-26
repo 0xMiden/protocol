@@ -149,6 +149,7 @@ fn builder_preserves_all_transaction_input_components() -> anyhow::Result<()> {
         AdviceInputs::default(),
         Word::new([Felt::from(2_u32); 4]),
         None,
+        None,
     );
     let foreign_account = account_inputs(&mock_account(foreign_account_id()?)?)?;
     let code_tree = mock_code_tree()?;
