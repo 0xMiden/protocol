@@ -1758,6 +1758,20 @@ pub enum ProposedBlockError {
 
     #[error("nullifier witness has a different root than the current nullifier tree root")]
     NullifierWitnessRootMismatch(NullifierTreeError),
+
+    #[error("failed to merge the code patches of the batches")]
+    CodePatchMerge(#[source] CodePatchError),
+
+    #[error(
+        "code tree root of the previous block header is {prev_block_code_tree_root} but the root of the partial tree computed from code witnesses is {stale_code_tree_root}, indicating that the witnesses are stale"
+    )]
+    StaleCodeTreeRoot {
+        prev_block_code_tree_root: CodeTreeRoot,
+        stale_code_tree_root: CodeTreeRoot,
+    },
+
+    #[error("failed to insert the created procedures into the code tree")]
+    CodeTreeUpdate(#[source] CodeTreeError),
 }
 
 // PROTOCOL CONFIG ERROR

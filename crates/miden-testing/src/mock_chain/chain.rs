@@ -7,7 +7,7 @@ use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, AccountUpdateDetails, PartialAccount};
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::block::account_tree::{AccountTree, AccountWitness};
-use miden_protocol::block::code_tree::CodeTree;
+use miden_protocol::block::code_tree::{CodeTree, PartialCodeTree};
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{
     BlockHeader,
@@ -19,6 +19,7 @@ use miden_protocol::block::{
     ProvenBlock,
     ValidatorConfig,
 };
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::note::{Note, NoteHeader, NoteId, NoteInclusionProof, Nullifier};
 use miden_protocol::protocol_config::ProtocolConfig;
@@ -890,6 +891,17 @@ impl MockChain {
         let account_witnesses =
             self.account_witnesses(batch_iterator.clone().flat_map(ProvenBatch::updated_accounts));
 
+        let created_procedures: BTreeSet<ProcedureRoot> = batch_iterator
+            .clone()
+            .flat_map(|batch| batch.code_patch().created_procedures())
+            .collect();
+        let mut partial_code_tree = PartialCodeTree::new(self.code_tree.root());
+        for procedure_root in created_procedures {
+            partial_code_tree
+                .track_procedure(self.code_tree.open(&procedure_root))
+                .context("failed to track created procedure in partial code tree")?;
+        }
+
         let nullifier_proofs =
             self.nullifier_witnesses(batch_iterator.flat_map(ProvenBatch::created_nullifiers));
 
@@ -899,6 +911,7 @@ impl MockChain {
             account_witnesses,
             nullifier_proofs,
             unauthenticated_note_proofs,
+            partial_code_tree,
         ))
     }
 
@@ -1060,6 +1073,16 @@ impl MockChain {
                 AccountUpdateDetails::Private => {},
             }
         }
+
+        for procedure_root in proven_block.body().code_patch().created_procedures() {
+            self.code_tree
+                .insert(procedure_root)
+                .context("failed to insert created procedure into code tree")?;
+        }
+        anyhow::ensure!(
+            self.code_tree.root() == proven_block.header().code_tree_root(),
+            "code tree root does not match the code tree root of the block header"
+        );
 
         let notes_tree = proven_block.body().compute_block_note_tree();
         for (block_note_index, created_note) in proven_block.body().output_notes() {

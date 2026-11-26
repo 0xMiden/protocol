@@ -7,6 +7,7 @@ use assert_matches::assert_matches;
 use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountId, AccountType, AccountUpdateDetails};
 use miden_protocol::asset::FungibleAsset;
+use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::block::{BlockInputs, ProposedBlock};
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
@@ -17,7 +18,8 @@ use miden_tx::LocalTransactionProver;
 use rand::RngExt;
 use rstest::rstest;
 
-use super::utils::MockChainBlockExt;
+use super::utils::{MockChainBlockExt, code_patch_sharing_mock_code, create_code_patch_batch};
+use crate::kernel_tests::batch::proposed_batch::generate_account;
 use crate::{AccountState, Auth, MockChain, MockTransactionInput};
 
 /// Tests that we can build empty blocks.
@@ -32,6 +34,7 @@ async fn proposed_block_succeeds_with_empty_batches() -> anyhow::Result<()> {
         BTreeMap::default(),
         BTreeMap::default(),
         BTreeMap::default(),
+        Default::default(),
     );
     let block = ProposedBlock::new(block_inputs, Vec::new()).context("failed to propose block")?;
 
@@ -107,6 +110,39 @@ async fn proposed_block_basic_success() -> anyhow::Result<()> {
     // ... but none of them create notes.
     assert!(proposed_block.output_note_batches()[0].is_empty());
     assert!(proposed_block.output_note_batches()[1].is_empty());
+
+    Ok(())
+}
+
+/// Tests that the block merges the code patches of its batches and inserts the created procedures
+/// into the code tree.
+#[test]
+fn proposed_block_merges_code_patches() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account0 = generate_account(&mut builder);
+    let account1 = generate_account(&mut builder);
+    let chain = builder.build()?;
+
+    let first_patch = CodePatch::mock();
+    let second_patch = code_patch_sharing_mock_code()?;
+    let batches = [
+        create_code_patch_batch(&chain, &account0, first_patch.clone())?,
+        create_code_patch_batch(&chain, &account1, second_patch.clone())?,
+    ];
+    let block_inputs = chain.get_block_inputs(&batches)?;
+
+    let proposed_block = ProposedBlock::new(block_inputs, batches.to_vec())?;
+
+    let expected_patch = CodePatch::merge([&first_patch, &second_patch])?;
+    assert_eq!(proposed_block.code_patch(), &expected_patch);
+
+    let mut expected_code_tree = chain.code_tree().clone();
+    for procedure_root in expected_patch.created_procedures() {
+        expected_code_tree.insert(procedure_root)?;
+    }
+    let (header, body) = proposed_block.into_header_and_body()?;
+    assert_eq!(header.code_tree_root(), expected_code_tree.root());
+    assert_eq!(body.code_patch(), &expected_patch);
 
     Ok(())
 }

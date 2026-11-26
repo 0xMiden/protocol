@@ -6,6 +6,7 @@ use assert_matches::assert_matches;
 use miden_processor::crypto::merkle::MerklePath;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::batch::ProvenBatch;
+use miden_protocol::block::code_tree::{CodePatch, CodeTreeRoot, PartialCodeTree};
 use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::errors::ProposedBlockError;
@@ -14,8 +15,11 @@ use miden_protocol::{MAX_BATCHES_PER_BLOCK, Word};
 use miden_tx::LocalTransactionProver;
 use rstest::rstest;
 
-use crate::kernel_tests::batch::proposed_batch::setup_circular_note_dependency_test;
-use crate::kernel_tests::block::utils::MockChainBlockExt;
+use crate::kernel_tests::batch::proposed_batch::{
+    generate_account,
+    setup_circular_note_dependency_test,
+};
+use crate::kernel_tests::block::utils::{MockChainBlockExt, create_code_patch_batch};
 use crate::utils::create_p2any_note;
 use crate::{Auth, MockChain};
 
@@ -76,6 +80,7 @@ async fn proposed_block_fails_on_too_many_batches() -> anyhow::Result<()> {
         BTreeMap::default(),
         BTreeMap::default(),
         BTreeMap::default(),
+        Default::default(),
     );
 
     let error = ProposedBlock::new(block_inputs, batches).unwrap_err();
@@ -107,6 +112,7 @@ async fn proposed_block_fails_on_duplicate_batches() -> anyhow::Result<()> {
         BTreeMap::default(),
         BTreeMap::default(),
         BTreeMap::default(),
+        Default::default(),
     );
 
     let error = ProposedBlock::new(block_inputs, batches).unwrap_err();
@@ -173,6 +179,7 @@ async fn proposed_block_fails_on_timestamp_not_increasing_monotonically() -> any
         BTreeMap::default(),
         BTreeMap::default(),
         BTreeMap::default(),
+        Default::default(),
     );
 
     let prev_block_timestamp = block_inputs.prev_block_header().timestamp();
@@ -212,6 +219,7 @@ async fn proposed_block_fails_on_partial_blockchain_and_prev_block_inconsistency
         BTreeMap::default(),
         BTreeMap::default(),
         BTreeMap::default(),
+        Default::default(),
     );
 
     let error = ProposedBlock::new(block_inputs.clone(), batches.clone()).unwrap_err();
@@ -237,6 +245,7 @@ async fn proposed_block_fails_on_partial_blockchain_and_prev_block_inconsistency
         BTreeMap::default(),
         BTreeMap::default(),
         BTreeMap::default(),
+        Default::default(),
     );
 
     let error = ProposedBlock::new(block_inputs.clone(), batches.clone()).unwrap_err();
@@ -276,6 +285,7 @@ async fn proposed_block_fails_on_missing_batch_reference_block() -> anyhow::Resu
         BTreeMap::default(),
         BTreeMap::default(),
         BTreeMap::default(),
+        Default::default(),
     );
 
     let error = ProposedBlock::new(block_inputs.clone(), batches.clone()).unwrap_err();
@@ -819,6 +829,51 @@ async fn proposed_block_fails_on_cross_batch_circular_note_dependency() -> anyho
 
     // A circular dependency is detected as consumption-before-creation.
     assert_matches!(error, ProposedBlockError::NoteConsumedBeforeCreated { .. });
+
+    Ok(())
+}
+
+/// Tests that the block fails if the partial code tree does not track a created procedure.
+#[test]
+fn proposed_block_fails_on_missing_code_witness() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = generate_account(&mut builder);
+    let chain = builder.build()?;
+
+    let batch = create_code_patch_batch(&chain, &account, CodePatch::mock())?;
+    let mut block_inputs = chain.get_block_inputs(slice::from_ref(&batch))?;
+    *block_inputs.partial_code_tree_mut() = PartialCodeTree::new(chain.code_tree().root());
+
+    let proposed_block = ProposedBlock::new(block_inputs, vec![batch])?;
+
+    assert_matches!(
+        proposed_block.into_header_and_body(),
+        Err(ProposedBlockError::CodeTreeUpdate(_))
+    );
+
+    Ok(())
+}
+
+/// Tests that the block fails if the partial code tree has a different root than the code tree of
+/// the previous block.
+#[test]
+fn proposed_block_fails_on_stale_code_tree_root() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = generate_account(&mut builder);
+    let chain = builder.build()?;
+
+    let batch = create_code_patch_batch(&chain, &account, CodePatch::mock())?;
+    let mut block_inputs = chain.get_block_inputs(slice::from_ref(&batch))?;
+    let stale_code_tree_root = CodeTreeRoot::from_raw(Word::from([1, 2, 3, 4u32]));
+    *block_inputs.partial_code_tree_mut() = PartialCodeTree::new(stale_code_tree_root);
+
+    let proposed_block = ProposedBlock::new(block_inputs, vec![batch])?;
+
+    assert_matches!(
+        proposed_block.into_header_and_body(),
+        Err(ProposedBlockError::StaleCodeTreeRoot { stale_code_tree_root: root, .. })
+            if root == stale_code_tree_root
+    );
 
     Ok(())
 }

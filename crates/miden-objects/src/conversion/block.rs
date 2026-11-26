@@ -82,6 +82,7 @@ impl From<&BlockBody> for proto::blockchain::BlockBody {
                 .collect(),
             transactions: body.transactions().iter().map(Into::into).collect(),
             public_logs: Some(body.public_logs().into()),
+            code_patch: Some(body.code_patch().into()),
         }
     }
 }

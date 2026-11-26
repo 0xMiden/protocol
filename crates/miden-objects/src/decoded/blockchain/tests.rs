@@ -4,7 +4,7 @@ use core::error::Error;
 
 use assert_matches::assert_matches;
 use miden_protocol::Word;
-use miden_protocol::block::code_tree::CodeTreeRoot;
+use miden_protocol::block::code_tree::{CodePatch, CodeTreeRoot};
 use miden_protocol::block::{BlockBody, BlockNumber};
 use miden_protocol::errors::{ProtocolConfigError, ValidatorConfigError};
 
@@ -142,6 +142,7 @@ fn empty_protobuf_block_body_decodes_to_an_empty_domain_body() {
     assert_eq!(
         proto::blockchain::BlockBody {
             public_logs: Some(Default::default()),
+            code_patch: Some((&CodePatch::default()).into()),
             ..Default::default()
         }
         .decode_fields()

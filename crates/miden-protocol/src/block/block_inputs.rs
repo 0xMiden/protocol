@@ -3,6 +3,7 @@ use alloc::collections::BTreeMap;
 use crate::account::AccountId;
 use crate::block::BlockHeader;
 use crate::block::account_tree::AccountWitness;
+use crate::block::code_tree::PartialCodeTree;
 use crate::block::nullifier_tree::NullifierWitness;
 use crate::note::{NoteId, NoteInclusionProof, Nullifier};
 use crate::transaction::PartialBlockchain;
@@ -30,6 +31,10 @@ pub struct BlockInputs {
     /// Note inclusion proofs for all unauthenticated notes in the block that are not erased (i.e.
     /// created and consumed within the block).
     unauthenticated_note_proofs: BTreeMap<NoteId, NoteInclusionProof>,
+
+    /// The code tree at the previous block with the witnesses of the procedures that the block
+    /// creates.
+    partial_code_tree: PartialCodeTree,
 }
 
 impl BlockInputs {
@@ -40,6 +45,7 @@ impl BlockInputs {
         account_witnesses: BTreeMap<AccountId, AccountWitness>,
         nullifier_witnesses: BTreeMap<Nullifier, NullifierWitness>,
         unauthenticated_note_proofs: BTreeMap<NoteId, NoteInclusionProof>,
+        partial_code_tree: PartialCodeTree,
     ) -> Self {
         Self {
             prev_block_header,
@@ -47,6 +53,7 @@ impl BlockInputs {
             account_witnesses,
             nullifier_witnesses,
             unauthenticated_note_proofs,
+            partial_code_tree,
         }
     }
 
@@ -75,6 +82,11 @@ impl BlockInputs {
         &self.unauthenticated_note_proofs
     }
 
+    /// Returns a reference to the [`PartialCodeTree`].
+    pub fn partial_code_tree(&self) -> &PartialCodeTree {
+        &self.partial_code_tree
+    }
+
     /// Consumes self and returns the underlying parts.
     #[allow(clippy::type_complexity)]
     pub fn into_parts(
@@ -85,6 +97,7 @@ impl BlockInputs {
         BTreeMap<AccountId, AccountWitness>,
         BTreeMap<Nullifier, NullifierWitness>,
         BTreeMap<NoteId, NoteInclusionProof>,
+        PartialCodeTree,
     ) {
         (
             self.prev_block_header,
@@ -92,6 +105,7 @@ impl BlockInputs {
             self.account_witnesses,
             self.nullifier_witnesses,
             self.unauthenticated_note_proofs,
+            self.partial_code_tree,
         )
     }
 
@@ -128,6 +142,14 @@ impl BlockInputs {
     #[cfg(any(feature = "testing", test))]
     pub fn account_witnesses_mut(&mut self) -> &mut BTreeMap<AccountId, AccountWitness> {
         &mut self.account_witnesses
+    }
+
+    /// Returns a mutable reference to the [`PartialCodeTree`].
+    ///
+    /// Allows mutating the inner partial code tree for testing purposes.
+    #[cfg(any(feature = "testing", test))]
+    pub fn partial_code_tree_mut(&mut self) -> &mut PartialCodeTree {
+        &mut self.partial_code_tree
     }
 }
 

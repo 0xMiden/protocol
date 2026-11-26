@@ -107,6 +107,41 @@ async fn note_scripts_are_put_into_code_patch() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A block inserts the created procedures of its transactions into the code tree, so that the
+/// created code is present for later transactions.
+#[tokio::test]
+async fn block_registers_created_procedures() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account =
+        builder.add_existing_wallet_with_assets(Auth::IncrNonce, [FungibleAsset::mock(20)])?;
+    let mut mock_chain = builder.build()?;
+
+    let custom_note = create_custom_note(account.id(), ACTIVE_ACCOUNT_SCRIPT, NoteType::Public, 1)?;
+    let script_root = ProcedureRoot::from(custom_note.script().root());
+    let script = SendNotesTransactionScript::new(
+        &account.code_interface(),
+        &[PartialNote::from(custom_note.clone())],
+    )?;
+    let executed_tx = mock_chain
+        .build_transaction(account.id())
+        .send_notes_script(&script)
+        .expected_output_notes(vec![RawOutputNote::Full(custom_note)])
+        .build()?
+        .execute()
+        .await?;
+    assert!(executed_tx.code_patch().created_procedures().contains(&script_root));
+    assert!(!mock_chain.code_tree().contains(&script_root));
+
+    mock_chain.add_pending_executed_transaction(&executed_tx)?;
+    let block = mock_chain.prove_next_block()?;
+
+    assert_eq!(block.body().code_patch(), executed_tx.code_patch());
+    assert!(mock_chain.code_tree().contains(&script_root));
+    assert_eq!(block.header().code_tree_root(), mock_chain.code_tree().root());
+
+    Ok(())
+}
+
 /// A present top-level root that an absent note script references is a dependency.
 #[tokio::test]
 async fn referenced_present_top_level_root_is_a_dependency() -> anyhow::Result<()> {

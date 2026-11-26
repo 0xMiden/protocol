@@ -67,6 +67,8 @@ message BlockBody {
   repeated primitives.Word created_nullifiers = 3;
   repeated BatchTransactions transactions = 4;
   transaction.PublicTransactionLogs public_logs = 5;
+  // The merged code patch of the batches.
+  transaction.CodePatch code_patch = 6;
 }
 
 message SignedBlock {
