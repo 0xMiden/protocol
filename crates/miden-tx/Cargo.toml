@@ -35,6 +35,7 @@ miden-protocol  = { workspace = true }
 miden-standards = { workspace = true }
 
 # Miden dependencies
+miden-core-lib  = { workspace = true }
 miden-processor = { workspace = true }
 miden-prover    = { workspace = true }
 

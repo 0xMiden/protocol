@@ -2,6 +2,9 @@ use {
     Asset,
     Bool,
     NoteAttachmentCommitment,
+    NoteAttachmentCount,
+    NoteAttachmentListCommitment,
+    NoteAttachmentScheme,
     NoteAttachmentsCommitment,
     NoteId,
     NoteMetadata,
@@ -12,14 +15,28 @@ use {
 use miden::protocol::note
 use miden::protocol::note_internal
 use miden::core::crypto::hashes::eidos
+use miden::core::word
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
+use {ATTACHMENT_LIST_ENTRY_SIZE, ATTACHMENT_RESERVED_SCHEME, MAX_ATTACHMENTS_PER_NOTE}
+    from miden::protocol::note
 use {OUTPUT_NOTE_ADD_ASSET_OFFSET, OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET, OUTPUT_NOTE_CREATE_OFFSET, OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET, OUTPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET, OUTPUT_NOTE_GET_METADATA_OFFSET, OUTPUT_NOTE_GET_RECIPIENT_OFFSET, OUTPUT_NOTE_IS_SEALED_OFFSET, OUTPUT_NOTE_SEAL_OFFSET}
     from miden::protocol::kernel_proc_offsets
+
+# ERRORS
+# =================================================================================================
+
+const ERR_ATTACHMENT_LIST_RESERVED_SCHEME_WITH_COMMITMENT =
+    "attachment scheme 0 represents no attachment and requires the empty word as attachment commitment"
+
+const ERR_ATTACHMENT_LIST_TOO_MANY_ATTACHMENTS =
+    "number of attachments in an attachment list cannot exceed 4"
 
 # PROCEDURES
 # =================================================================================================
 
 #! Creates a new note and returns the index of the note.
+#!
+#! The note must be sealed with `seal` before the transaction ends.
 #!
 #! Inputs:  [tag, note_type, RECIPIENT]
 #! Outputs: [note_idx]
@@ -31,6 +48,7 @@ use {OUTPUT_NOTE_ADD_ASSET_OFFSET, OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET, OUTPUT_NOT
 #! - note_idx is the index of the created note.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the invocation of this procedure does not originate from the account context.
 #! - the note_type is unknown.
 #! - the note tag is not a u32.
@@ -57,17 +75,28 @@ pub proc create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> 
     # => [note_idx]
 end
 
-#! Prevents further changes to an output note's assets and attachments.
+#! Invokes the `on_before_note_sealed` callback of each distinct faucet with the asset callback flag
+#! enabled among an output note's assets, and then prevents further changes to the note's assets
+#! and attachments.
 #!
-#! Call this after fully populating an output whose final NoteId must remain fixed.
-#! Sealing is idempotent.
+#! Call this once the note's assets and attachments are final. Every output note must be sealed
+#! before the transaction ends, otherwise the transaction epilogue panics. The callbacks are invoked
+#! once per faucet, in the order in which each faucet first occurs among the note's assets, and the
+#! attachments each callback returns are appended to the note, so the note's attachments and ID are
+#! final only once `seal` returns. Sealing is idempotent: sealing an already sealed note returns
+#! without invoking any callback.
 #!
 #! Inputs:  [note_index]
 #! Outputs: []
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the active account is not the native account.
 #! - the note index is greater or equal to the total number of output notes.
+#! - a faucet's `on_before_note_sealed` callback procedure root is not part of its account code.
+#! - a faucet's `on_before_note_sealed` callback panics.
+#! - a callback returns an invalid attachment list, or attachments that are invalid or exceed the
+#!   note's attachment limits.
 #!
 #! Invocation: exec
 pub proc seal(note_index: u16)
@@ -227,6 +256,7 @@ end
 #! - ASSET_VALUE is the value of the asset to add.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the output note is sealed.
 #! - the note index points to a non-existent output note.
 #! - the active account is not the native account.
@@ -270,6 +300,7 @@ end
 #!   commitment.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
 #! - the output note is sealed.
@@ -280,7 +311,7 @@ end
 #!
 #! Invocation: exec
 pub proc add_attachment(
-    attachment_scheme: u16,
+    attachment_scheme: NoteAttachmentScheme,
     attachment_commitment: NoteAttachmentCommitment,
     note_idx: u16
 )
@@ -313,6 +344,7 @@ end
 #! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
 #! - the output note is sealed.
@@ -322,7 +354,11 @@ end
 #!
 #! Invocation: exec
 @locals(4)
-pub proc add_word_attachment(attachment_scheme: u16, attachment: word, note_idx: u16)
+pub proc add_word_attachment(
+    attachment_scheme: NoteAttachmentScheme,
+    attachment: word,
+    note_idx: u16
+)
     # => [attachment_scheme, ATTACHMENT, note_idx]
 
     # Store ATTACHMENT to local memory for hashing and advice map insertion
@@ -373,6 +409,7 @@ end
 #! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
 #! - the output note is sealed.
@@ -383,7 +420,7 @@ end
 #!
 #! Invocation: exec
 pub proc add_attachment_from_memory(
-    attachment_scheme: u16,
+    attachment_scheme: NoteAttachmentScheme,
     num_words: u16,
     attachment_ptr: ptr<word>,
     note_idx: u16
@@ -415,6 +452,128 @@ pub proc add_attachment_from_memory(
 
     exec.add_attachment
     # => []
+end
+
+#! Returns the attachment list that holds the provided attachment, as an `on_before_note_sealed`
+#! callback returns it, and inserts the list into the advice map under its commitment.
+#!
+#! The list holds the single entry `[attachment_scheme, 0, 0, 0, ATTACHMENT_COMMITMENT]`. The
+#! reserved attachment scheme 0 with the empty word as commitment represents no attachment, for
+#! which the procedure returns 0 attachments and the empty word and inserts nothing. The procedure
+#! does not insert the attachment, whose elements must be in the advice map under
+#! ATTACHMENT_COMMITMENT.
+#!
+#! Inputs:
+#!   Operand stack: [attachment_scheme, ATTACHMENT_COMMITMENT]
+#! Outputs:
+#!   Operand stack: [num_attachments, ATTACHMENT_LIST_COMMITMENT]
+#!   Advice map: {
+#!     ATTACHMENT_LIST_COMMITMENT: [attachment_scheme, 0, 0, 0, ATTACHMENT_COMMITMENT],
+#!   }
+#!
+#! Where:
+#! - attachment_scheme is the scheme of the attachment, or 0 for no attachment.
+#! - ATTACHMENT_COMMITMENT is the commitment to the attachment, or the empty word for no
+#!   attachment.
+#! - num_attachments is the number of attachments in the list, 1 or 0 for no attachment.
+#! - ATTACHMENT_LIST_COMMITMENT is the commitment to the attachment list, or the empty word for no
+#!   attachment.
+#!
+#! Panics if:
+#! - attachment_scheme is 0 and ATTACHMENT_COMMITMENT is not the empty word.
+#!
+#! Invocation: exec
+pub proc single_attachment_list(
+    attachment_scheme: NoteAttachmentScheme,
+    attachment_commitment: NoteAttachmentCommitment
+) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
+    dup eq.ATTACHMENT_RESERVED_SCHEME
+    # => [is_reserved_scheme, attachment_scheme, ATTACHMENT_COMMITMENT]
+
+    if.true
+        # the reserved scheme represents no attachment, which has the empty word as commitment
+        movdn.4 exec.word::eqz
+        assert.err=ERR_ATTACHMENT_LIST_RESERVED_SCHEME_WITH_COMMITMENT
+        # => [attachment_scheme]
+
+        padw movup.4
+        # => [num_attachments, EMPTY_WORD]
+    else
+        # pad the attachment scheme to a word to form the list entry
+        push.0.0.0 movup.3
+        # => [attachment_scheme, 0, 0, 0, ATTACHMENT_COMMITMENT]
+
+        adv.insert_hdword exec.eidos::hash_double_word
+        # => [ATTACHMENT_LIST_COMMITMENT]
+
+        push.1
+        # => [num_attachments, ATTACHMENT_LIST_COMMITMENT]
+    end
+end
+
+#! Returns the attachment list held in memory at the provided address, as an
+#! `on_before_note_sealed` callback returns it, and inserts the list into the advice map under its
+#! commitment.
+#!
+#! The list holds num_attachments entries of two words each, the attachment scheme padded to a word
+#! with zeros followed by the attachment commitment:
+#! `[attachment_scheme, 0, 0, 0, ATTACHMENT_COMMITMENT]`. For 0 attachments, the procedure returns
+#! the empty word as the list commitment and inserts nothing. The procedure does not insert the listed attachments, whose
+#! elements must be in the advice map under their commitments.
+#!
+#! Inputs:
+#!   Operand stack: [num_attachments, attachment_list_ptr]
+#! Outputs:
+#!   Operand stack: [num_attachments, ATTACHMENT_LIST_COMMITMENT]
+#!   Advice map: {
+#!     ATTACHMENT_LIST_COMMITMENT: [[ATTACHMENT_LIST_ELEMENTS]],
+#!   }
+#!
+#! Where:
+#! - num_attachments is the number of attachments in the list.
+#! - attachment_list_ptr is the memory address of the first entry of the list.
+#! - ATTACHMENT_LIST_COMMITMENT is the commitment to the attachment list, or the empty word if
+#!   num_attachments is 0.
+#! - ATTACHMENT_LIST_ELEMENTS are the elements of the list entries.
+#!
+#! Panics if:
+#! - num_attachments exceeds 4.
+#! - attachment_list_ptr is not word-aligned.
+#!
+#! Invocation: exec
+pub proc attachment_list_from_memory(
+    num_attachments: NoteAttachmentCount,
+    attachment_list_ptr: ptr<word>
+) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
+    # bound num_attachments by the note's attachment limit
+    dup u32assert.err=ERR_ATTACHMENT_LIST_TOO_MANY_ATTACHMENTS
+    u32lte.MAX_ATTACHMENTS_PER_NOTE assert.err=ERR_ATTACHMENT_LIST_TOO_MANY_ATTACHMENTS
+    # => [num_attachments, attachment_list_ptr]
+
+    dup eq.0
+    # => [is_empty_list, num_attachments, attachment_list_ptr]
+
+    if.true
+        # the empty list is represented by the empty word
+        swap drop padw movup.4
+        # => [num_attachments, EMPTY_WORD]
+    else
+        dup movdn.2
+        # => [num_attachments, attachment_list_ptr, num_attachments]
+
+        mul.ATTACHMENT_LIST_ENTRY_SIZE dup.1 add swap
+        # => [attachment_list_ptr, list_end_ptr, num_attachments]
+
+        dup.1 dup.1 exec.eidos::hash_words
+        # => [ATTACHMENT_LIST_COMMITMENT, attachment_list_ptr, list_end_ptr, num_attachments]
+
+        # insert the list elements into the advice map keyed by the list commitment
+        adv.insert_mem
+        # => [ATTACHMENT_LIST_COMMITMENT, attachment_list_ptr, list_end_ptr, num_attachments]
+
+        movup.4 drop movup.4 drop movup.4
+        # => [num_attachments, ATTACHMENT_LIST_COMMITMENT]
+    end
 end
 
 #! Returns the recipient of the output note with the specified index.
@@ -544,7 +703,7 @@ end
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: exec
-pub proc find_attachment(attachment_scheme: u16, note_index: u16) -> (Bool, u8)
+pub proc find_attachment(attachment_scheme: NoteAttachmentScheme, note_index: u16) -> (Bool, u8)
     swap exec.get_metadata
     # => [METADATA, attachment_scheme]
 
@@ -575,7 +734,7 @@ end
 pub proc write_attachment_commitments_to_memory(
     dest_ptr: ptr<NoteAttachmentCommitment>,
     note_index: u16
-) -> u8
+) -> NoteAttachmentCount
     swap exec.get_attachments_commitment
     # => [ATTACHMENTS_COMMITMENT, dest_ptr]
 

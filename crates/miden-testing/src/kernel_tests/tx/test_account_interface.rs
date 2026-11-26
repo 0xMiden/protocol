@@ -28,6 +28,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::{InputNote, RawOutputNote};
 use miden_protocol::{Felt, Word};
+use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::{
     FeeSponsorshipNote,
     NoteConsumptionStatus,
@@ -242,23 +243,36 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Against a signature account, an executor without an authenticator cannot serve the signature
+/// the auth procedure requests. The check stops there and reports the notes that executed as
+/// successful; a note failing before that point is still eliminated.
 #[tokio::test]
-async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
+async fn check_note_consumability_stops_at_authentication() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-
-    // Use basic auth which will cause epilogue failure when paired up with unreachable auth.
     let account =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
-    let successful_note = builder.add_p2id_note(
+    let successful_note_1 = builder.add_p2id_note(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         account.id(),
         &[FungibleAsset::mock(10)],
         NoteType::Public,
     )?;
+    let successful_note_2 = builder.add_p2id_note(
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
+        account.id(),
+        &[FungibleAsset::mock(145)],
+        NoteType::Public,
+    )?;
+    let failing_note = NoteBuilder::new(
+        AccountId::try_from(ACCOUNT_ID_SENDER).unwrap(),
+        ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
+    )
+    .code("@note_script pub proc main push.1 drop push.0 div end")
+    .build()?;
 
     let mock_chain = builder.build()?;
-    let notes = vec![successful_note.clone()];
+    let notes = vec![successful_note_1.clone(), failing_note.clone(), successful_note_2.clone()];
     let mock_tx = mock_chain
         .build_transaction(account)
         .unauthenticated_input_notes(notes.clone())
@@ -268,7 +282,6 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
     let block_ref = mock_tx.tx_inputs().block_header().block_num();
     let tx_args = mock_tx.tx_args().clone();
 
-    // Use an auth that fails in order to force an epilogue failure when paired up with basic auth.
     let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
     let notes_checker = NoteConsumptionChecker::new(&executor);
 
@@ -277,10 +290,24 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
         .await?;
 
     let successful = consumption_info.successful();
-    let failed = consumption_info.failed();
+    assert_eq!(successful.len(), 2);
+    assert_eq!(
+        [successful[0].note().id(), successful[1].note().id()],
+        [successful_note_1.id(), successful_note_2.id()],
+    );
 
-    assert!(successful.is_empty());
+    let failed = consumption_info.failed();
     assert_eq!(failed.len(), 1);
+    assert_eq!(failed[0].note().id(), failing_note.id());
+    assert_matches!(
+        failed[0].execution_error().expect("a blamed note should carry its error"),
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::OperationError {
+                err: miden_processor::operation::OperationError::DivideByZero,
+                ..
+            }
+        )
+    );
     Ok(())
 }
 
@@ -388,6 +415,57 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
         [successful[0].note().id(), successful[1].note().id(), successful[2].note().id()],
         [successful_note_1.id(), successful_note_2.id(), successful_note_3.id()],
     );
+    Ok(())
+}
+
+/// A failing transaction script is the caller's problem, not any note's: both checks return it as
+/// an error instead of searching for a note set that passes.
+///
+/// The note has a custom script, so that `can_consume` executes it rather than answering from
+/// static analysis.
+#[tokio::test]
+async fn check_note_consumability_returns_a_transaction_script_failure() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let mock_chain = builder.build()?;
+    let note =
+        create_public_p2any_note(ACCOUNT_ID_SENDER.try_into().unwrap(), [FungibleAsset::mock(100)]);
+
+    let tx_script = CodeBuilder::with_mock_packages()
+        .compile_tx_script("@transaction_script pub proc main push.1 push.0 div end")?;
+    let mock_tx = mock_chain
+        .build_transaction(account)
+        .unauthenticated_input_notes(vec![note.clone()])
+        .tx_script(tx_script)
+        .build()?;
+
+    let account_id = mock_tx.account().id();
+    let block_ref = mock_tx.tx_inputs().block_header().block_num();
+    let tx_args = mock_tx.tx_args().clone();
+
+    let executor = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&mock_tx);
+    let notes_checker = NoteConsumptionChecker::new(&executor);
+
+    let result = notes_checker
+        .check_notes_consumability(account_id, block_ref, vec![note.clone()], tx_args.clone())
+        .await;
+    assert_matches!(
+        result,
+        Err(NoteCheckerError::TransactionScriptExecution(
+            TransactionExecutorError::TransactionProgramExecutionFailed(
+                ExecutionError::OperationError {
+                    err: miden_processor::operation::OperationError::DivideByZero,
+                    ..
+                }
+            )
+        ))
+    );
+
+    let result = notes_checker
+        .can_consume(account_id, block_ref, InputNote::unauthenticated(note), tx_args)
+        .await;
+    assert_matches!(result, Err(NoteCheckerError::TransactionScriptExecution(_)));
+
     Ok(())
 }
 

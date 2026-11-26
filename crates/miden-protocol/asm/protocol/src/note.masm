@@ -1,6 +1,7 @@
 use {
     AccountId,
     Bool,
+    NoteAttachmentScheme,
     NoteMetadata,
     NoteRecipient,
     NoteScriptRoot,
@@ -11,7 +12,7 @@ use {
 use miden::protocol::account_id
 use miden::core::crypto::hashes::eidos
 
-pub use {ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, MAX_NOTE_STORAGE_ITEMS, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC, metadata_into_note_type, get_recipient_preimage}
+pub use {ATTACHMENT_LIST_ENTRY_SIZE, ATTACHMENT_RESERVED_SCHEME, ATTACHMENT_SCHEME_NONE, MAX_ATTACHMENTS_PER_NOTE, MAX_ATTACHMENT_SCHEME, MAX_ATTACHMENT_TOTAL_WORDS, MAX_ATTACHMENT_WORDS, MAX_NOTE_STORAGE_ITEMS, NOTE_TYPE_PRIVATE, NOTE_TYPE_PUBLIC, metadata_into_note_type, get_recipient_preimage}
     from miden::protocol_utils::note
 
 # ERRORS
@@ -202,7 +203,9 @@ end
 #! - attachment_n_scheme is the scheme of the nth attachment (0 if absent).
 #!
 #! Invocation: exec
-pub proc metadata_into_attachment_schemes(metadata: NoteMetadata) -> (u16, u16, u16, u16)
+pub proc metadata_into_attachment_schemes(
+    metadata: NoteMetadata
+) -> (NoteAttachmentScheme, NoteAttachmentScheme, NoteAttachmentScheme, NoteAttachmentScheme)
     # => [sender_id_suffix_type_version, sender_id_prefix, tag, schemes]
 
     drop drop drop
@@ -261,7 +264,10 @@ end
 #! - attachment_idx is the index (0-3) of the first matching slot, or undefined if not found.
 #!
 #! Invocation: exec
-pub proc find_attachment_idx(attachment_scheme: u16, metadata: NoteMetadata) -> (Bool, u8)
+pub proc find_attachment_idx(
+    attachment_scheme: NoteAttachmentScheme,
+    metadata: NoteMetadata
+) -> (Bool, u8)
     movdn.4 exec.metadata_into_attachment_schemes
     # => [scheme_0, scheme_1, scheme_2, scheme_3, attachment_scheme]
 

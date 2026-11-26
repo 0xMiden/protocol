@@ -2,7 +2,7 @@
 #!
 #! Provides a standardized way to work with network account targets.
 
-use {AccountId, Bool} from miden::protocol::types
+use {AccountId, Bool, NoteAttachmentScheme} from miden::protocol::types
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
@@ -40,7 +40,7 @@ const ERR_NETWORK_ACCOUNT_TARGET_INCORRECT_NUMBER_OF_WORDS = "network account ta
 #! Outputs: [is_network_account_target]
 #!
 #! Invocation: exec
-pub proc is_network_account_target(attachment_scheme: u32) -> Bool
+pub proc is_network_account_target(attachment_scheme: NoteAttachmentScheme) -> Bool
     eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
     # => [is_network_account_target]
 end

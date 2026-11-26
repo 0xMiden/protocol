@@ -4,6 +4,8 @@ mod blocklist;
 mod code_inspection;
 mod constant_fee_manager;
 mod constant_fee_policy_config;
+mod credit_issuance;
+mod encrypted_assets_policy;
 mod expiration;
 mod faucet;
 mod faucet_factory;
@@ -22,13 +24,13 @@ mod pswap;
 pub(crate) mod rbac;
 mod schema_commitment;
 mod send_note;
+mod supply_restriction;
 mod swap;
 pub(crate) mod transfer_policy;
 mod tx_fee;
 
 use miden_protocol::transaction::ExecutedTransaction;
-
-const DEFAULT_EXPIRATION_BLOCK_DELTA: u32 = 20;
+use miden_testing::utils::DEFAULT_EXPIRATION_BLOCK_DELTA;
 
 /// Asserts that the transaction's expiration was limited to the default expiration block delta
 /// applied by standard procedures that read mutable account state.

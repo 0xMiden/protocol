@@ -348,7 +348,10 @@ proc get_output_note_script_root(note_ptr: ptr<felt>) -> ProcedureRoot
     exec.memory::get_output_note_recipient
     # => [RECIPIENT]
 
-    exec.note::get_recipient_preimage swapw dropw
+    exec.note::get_recipient_preimage
+    # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
+
+    dropw swapw dropw
     # => [SCRIPT_ROOT]
 end
 

@@ -5,6 +5,7 @@ use {
     Bool,
     NoteAssetsCommitment,
     NoteAttachmentCommitment,
+    NoteAttachmentScheme,
     NoteAttachmentsCommitment,
     NoteId,
     NoteMetadata,
@@ -167,6 +168,7 @@ end
 #!   the EMPTY_WORD if the entire asset was removed.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the invocation does not originate from the native account's account context.
 #! - the note index is greater or equal to the total number of input notes.
 #! - the asset ID to remove is the empty word or is not a well-formed asset ID.
@@ -209,6 +211,7 @@ end
 #! - num_assets is the number of assets removed by this procedure.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the invocation does not originate from the native account's account context.
 #! - the note index is greater or equal to the total number of input notes.
 #!
@@ -555,7 +558,7 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc find_attachment(attachment_scheme: u16, note_index: u16) -> (Bool, u8)
+pub proc find_attachment(attachment_scheme: NoteAttachmentScheme, note_index: u16) -> (Bool, u8)
     swap exec.get_metadata
     # => [METADATA, attachment_scheme]
 

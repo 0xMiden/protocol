@@ -1,14 +1,14 @@
 use {MAX_NUM_APPROVERS, SignatureThreshold} from miden::standards::auth::multisig
-use {AccountProcedureRoot, BlockNumber} from miden::protocol::types
+use {AccountProcedureRoot, AssetAmount, BlockNumber} from miden::protocol::types
 use miden::protocol::active_account
 use miden::protocol::native_account
 use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::standards::auth
+use miden::standards::auth::key_set
 use miden::standards::auth::multisig
 use {APPROVER_PUBLIC_KEYS_SLOT} from miden::standards::auth::multisig
 use {APPROVER_SCHEME_ID_SLOT} from miden::standards::auth::multisig
 use {THRESHOLD_CONFIG_SLOT} from miden::standards::auth::multisig
-use miden::standards::auth::signature
 use miden::standards::auth::tx_policy
 use {TX_PROPOSALS_SLOT} from miden::standards::auth::multisig_smart::delayed_execution
 
@@ -36,6 +36,16 @@ const PROCEDURE_POLICIES_SLOT = word("miden::standards::auth::multisig_smart::pr
 # execution path its policy does not allow, which closes that path through the ordinary threshold
 # maximum without any extra flag.
 pub const UNREACHABLE_THRESHOLD = MAX_NUM_APPROVERS + 1
+
+# FEE ESTIMATE
+# =================================================================================================
+
+# Estimated upper bound on the number of cycles the smart multisig authentication flow spends
+# beyond the multisig flow `signature::estimate_multisig_authentication_cycles` covers: evaluating
+# the called procedures' policies, selecting the execution path, consuming a proposal and enforcing
+# the spending limits, which price the output notes through oracle FPI calls and write the tracker.
+# Overestimation is cheap: the fee grows with ilog2 of the cycle count.
+pub const MULTISIG_SMART_AUTH_CYCLES = 16384
 
 # NOTE RESTRICTIONS
 # =================================================================================================
@@ -89,7 +99,6 @@ const DEFAULT_THRESHOLD_LOC = 0
 # =================================================================================================
 
 const NEW_NUM_OF_APPROVERS_LOC = 0
-const INIT_NUM_OF_APPROVERS_LOC = 1
 
 # LOCAL ADDRESSES (auth_tx)
 # =================================================================================================
@@ -244,7 +253,11 @@ end
 #! ratios, and `assert_proc_policies_lte_num_approvers` only enforces the reachability bound
 #! (`threshold <= num_approvers`). Growing the signer set silently lowers the effective signing ratio
 #! of every policy; operators must re-evaluate and, where appropriate, raise the affected policies in
-#! the same transaction that grows the signer set.
+#! the same transaction that grows the signer set. The bound is checked for the procedures of the
+#! current code only: a policy keyed by a root the code no longer contains is neither validated nor
+#! clearable (`set_procedure_policy` rejects such roots), so shrinking the signer set can leave it
+#! unreachable, and it applies again if a later upgrade restores the root. Lower such policies
+#! before shrinking the signer set, or re-check them after an upgrade that restores old roots.
 #!
 #! Inputs:
 #!   Operand stack: [MULTISIG_CONFIG_COMMITMENT, pad(12)]
@@ -259,17 +272,15 @@ end
 #!
 #! Locals:
 #! 0: new_num_of_approvers
-#! 1: init_num_of_approvers
 #!
 #! Invocation: call
-@locals(2)
+@locals(1)
 @account_procedure
 pub proc update_signers_and_threshold(multisig_config_commitment: word)
     # The signer configuration is read from the advice provider without an inline hash check. Every
-    # value written below via set_item / set_map_item is folded into ACCOUNT_DELTA_COMMITMENT, which
-    # is part of the TX_SUMMARY_COMMITMENT the current signers sign, so a substituted configuration
-    # produces a different delta commitment and thus a summary the current signers never signed. The
-    # same applies to the per-signer loads in the loop below.
+    # value written below via set_item and by key_set::replace_from_advice is folded into
+    # ACCOUNT_DELTA_COMMITMENT, which is part of the TX_SUMMARY_COMMITMENT the current signers sign,
+    # so a substituted configuration produces an unauthorized summary.
     adv.push_mapval
     # => [MULTISIG_CONFIG_COMMITMENT, pad(12)]
 
@@ -309,69 +320,22 @@ pub proc update_signers_and_threshold(multisig_config_commitment: word)
     exec.native_account::set_item
     # => [OLD_THRESHOLD_CONFIG, pad(12)]
 
-    # Save the old num_of_approvers for the post-loop scheme/pubkey cleanup, then drop the rest
-    # of OLD_THRESHOLD_CONFIG.
-    drop loc_store.INIT_NUM_OF_APPROVERS_LOC drop drop
-    # => [pad(12)]
+    # the replaced config carries the initial number of approvers
+    drop movdn.2 drop drop
+    # => [init_num_of_approvers, pad(12)]
 
-    loc_load.NEW_NUM_OF_APPROVERS_LOC
-    # => [num_approvers, pad(12)]
+    loc_load.NEW_NUM_OF_APPROVERS_LOC swap
+    # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
 
-    dup neq.0
-    while.true
-        sub.1
-        # => [i-1, pad(12)]
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2] push.APPROVER_SCHEME_ID_SLOT[0..2]
+    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, init_num_of_approvers, new_num_of_approvers, pad(12)]
 
-        dup exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, i-1, pad(12)]
-
-        padw adv_loadw
-        # => [PUB_KEY, APPROVER_MAP_KEY, i-1, pad(12)]
-
-        swapw
-        # => [APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
-
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, pad(12)]
-
-        adv_loadw
-        # => [SCHEME_ID_WORD, i-1, pad(12)]
-
-        exec.auth::signature::assert_supported_scheme_word
-        # => [SCHEME_ID_WORD, i-1, pad(12)]
-
-        dup.4 exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
-
-        push.APPROVER_SCHEME_ID_SLOT[0..2]
-        # => [scheme_id_slot_id_suffix, scheme_id_slot_id_prefix, APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, pad(12)]
-
-        dropw
-        # => [i-1, pad(12)]
-
-        dup neq.0
-        # => [is_non_zero, i-1, pad(12)]
-    end
-    # => [pad(13)]
-
-    drop
+    exec.key_set::replace_from_advice
     # => [pad(12)]
 
     # assert all approver public keys are unique.
     loc_load.NEW_NUM_OF_APPROVERS_LOC
     exec.multisig::assert_unique_approver_public_keys
-    # => [pad(12)]
-
-    loc_load.NEW_NUM_OF_APPROVERS_LOC loc_load.INIT_NUM_OF_APPROVERS_LOC
-    # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
-
-    exec.multisig::cleanup_pubkey_and_scheme_id_mapping
     # => [pad(12)]
 end
 
@@ -430,21 +394,22 @@ end
 #! Authenticate a transaction using multisig smart-policy rules.
 #!
 #! The transaction summary this procedure builds has the layout documented on
-#! `miden::standards::auth::multisig::auth_tx`, with a zero max fee since this component does not
-#! pay the transaction fee yet.
+#! `miden::standards::auth::multisig::auth_tx`.
 #!
 #! Inputs:
-#!   Operand stack: [bound_block_num, approval_expiration_block_num, SALT]
+#!   Operand stack: [bound_block_num, approval_expiration_block_num, max_fee, SALT]
 #! Outputs:
 #!   Operand stack: [TX_SUMMARY_COMMITMENT]
 #!
 #! Where:
-#! - bound_block_num, approval_expiration_block_num and SALT are as described in
+#! - bound_block_num, approval_expiration_block_num, max_fee and SALT are as described in
 #!   `miden::standards::auth::multisig::auth_tx`.
 #!
 #! A propose/cancel transaction (delayed-execution timelock action) verifies its own signatures
-#! inside the called procedure, so this procedure only asserts that nothing else was bundled with
-#! it. Every other transaction is treated as an execution: the called procedures' policies yield one
+#! inside the called procedure, over the proposed commitment rather than this transaction's summary,
+#! so this procedure only asserts that nothing else was bundled with it: no other non-auth
+#! procedure and no input notes. Every other transaction is treated as an execution: the
+#! called procedures' policies yield one
 #! threshold per execution path, the signatures are verified, and the path is selected from their
 #! count. Signatures reaching the immediate threshold execute at once; otherwise signatures reaching
 #! the delayed threshold execute through the timelock, which requires an unlocked proposal for this
@@ -468,20 +433,18 @@ end
 pub proc auth_tx(
     bound_block_num: BlockNumber,
     approval_expiration_block_num: BlockNumber,
+    max_fee: AssetAmount,
     salt: word
 )
     exec.native_account::incr_nonce drop
-    # => [bound_block_num, approval_expiration_block_num, SALT]
+    # => [bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
     # The summary below consumes the approval deadline; keep it for the delayed-execution branch,
     # which requires one.
     dup.1 loc_store.AUTH_TX_APPROVAL_EXPIRATION_LOC
-    # => [bound_block_num, approval_expiration_block_num, SALT]
+    # => [bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
     # ------ Computing transaction summary ------
-
-    push.0 movdn.2
-    # => [bound_block_num, approval_expiration_block_num, 0, SALT]
 
     # the commitment to the tx summary is the message that is signed; the preimage is inserted into
     # the advice map for extraction by the host. Binding a caller-chosen block (rather than the tx
@@ -501,6 +464,13 @@ pub proc auth_tx(
         # A delay action must be the only non-auth procedure called, otherwise it could be bundled
         # with a state-mutating procedure to bypass the timelock.
         exec.tx_policy::assert_only_one_non_auth_procedure_called
+        # => [TX_SUMMARY_COMMITMENT]
+
+        # The action's signatures cover the proposed commitment, not this transaction's summary, so
+        # an input note bundled with it would be nullified without any approver consenting to it.
+        # Output notes need no check: creating one takes the account context, i.e. a second account
+        # procedure, which the check above already rejects.
+        exec.tx_policy::assert_no_input_notes
         # => [TX_SUMMARY_COMMITMENT]
     else
         # ------ Execution path ------
@@ -900,7 +870,10 @@ proc compute_policy_thresholds(default_threshold: u32) -> (SignatureThreshold, S
     # => [immediate_threshold, delayed_threshold]
 end
 
-#! Asserts that all configured smart per-procedure policies are valid for num_approvers.
+#! Asserts that the smart policies of the account's current procedures are valid for num_approvers.
+#!
+#! The policy map cannot be enumerated, so policies keyed by roots the current code does not
+#! contain are not visited; see the note on `update_signers_and_threshold`.
 #!
 #! Inputs:  [num_approvers]
 #! Outputs: []
