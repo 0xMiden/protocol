@@ -22,14 +22,7 @@
 
 use anyhow::Context;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountId,
-    AccountType,
-    StorageMapKey,
-};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
 use miden_protocol::asset::{
     Asset,
     AssetAmount,
@@ -64,12 +57,14 @@ use miden_standards::account::faucets::{
 };
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
+    BasicBlocklist,
     BlocklistManager,
     BurnPolicy,
     MintPolicy,
     ReceivePolicy,
     SendPolicy,
     SupplyRestrictionManager,
+    SupplyRestrictionPolicy,
     SupplyRestrictionStorage,
     TokenPolicyManager,
 };
@@ -105,6 +100,8 @@ use miden_testing::{
 };
 use miden_tx::TransactionExecutorError;
 use rand::RngExt;
+
+use super::policy_component;
 
 // CONSTANTS
 // ================================================================================================
@@ -553,23 +550,14 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
 
     let mut builder = MockChain::builder();
     let issuer_id = AccountId::mock_private(1);
+    let issuer_secret_key = SecretKey::with_rng(&mut rand::rng());
 
-    let token_policy_manager = TokenPolicyManager::builder()
-        .active_mint_policy(MintPolicy::owner_only())
-        .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(SendPolicy::merge([
-            SendPolicy::empty_basic_blocklist(),
-            SendPolicy::empty_supply_restriction(),
-        ])?)
-        .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
-        .build();
     // the holder already holds all stablecoins in circulation
     let stablecoin_faucet = add_stablecoin_faucet(
         &mut builder,
         issuer_id,
         holder_amount,
-        token_policy_manager,
-        [BlocklistManager.into(), SupplyRestrictionManager.into()],
+        EncryptedAssetsIssuerKey::new(issuer_secret_key.public_key()),
     )?;
     let stablecoin_faucet_id = stablecoin_faucet.id();
     let holder_asset = FungibleAsset::new(stablecoin_faucet_id, holder_amount.as_u64())?;
@@ -697,6 +685,15 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
         send_stablecoins(&mock_chain, &holder, stablecoin_faucet_id, SPENDABLE_AMOUNT).await??;
     commit(&mut mock_chain, &send_tx)?;
 
+    // the issuer decrypts the private note in which the holder sent the spendable amount
+    let (_, sent_details) = issuer_decrypts_new_note(&mock_chain, &issuer_secret_key)?;
+    assert_eq!(
+        sent_details.assets(),
+        &NoteAssets::new(vec![
+            FungibleAsset::new(stablecoin_faucet_id, SPENDABLE_AMOUNT.into())?.into()
+        ])?
+    );
+
     let holder_account = mock_chain.committed_account(holder.id())?;
     assert_eq!(holder_account.vault().get_balance(stablecoin_asset_id)?, confiscated);
 
@@ -721,18 +718,14 @@ async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
     let issuer_secret_key = SecretKey::with_rng(&mut rand::rng());
 
     let mut builder = MockChain::builder();
-    // the faucet encrypts the details of its private notes to the issuer's public key
-    let token_policy_manager = TokenPolicyManager::builder()
-        .active_mint_policy(MintPolicy::owner_only())
-        .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(SendPolicy::with_encrypted_assets(EncryptedAssetsIssuerKey::new(
-            issuer_secret_key.public_key(),
-        )))
-        .build();
     // the creditor holds the principal and the borrower holds the interest, which are all
     // stablecoins in circulation
-    let stablecoin_faucet =
-        add_stablecoin_faucet(&mut builder, issuer_id, repayment_amount, token_policy_manager, [])?;
+    let stablecoin_faucet = add_stablecoin_faucet(
+        &mut builder,
+        issuer_id,
+        repayment_amount,
+        EncryptedAssetsIssuerKey::new(issuer_secret_key.public_key()),
+    )?;
     let stablecoin_faucet_id = stablecoin_faucet.id();
     let stablecoin_asset_id = AssetId::new_fungible(stablecoin_faucet_id);
     let principal_asset = FungibleAsset::new(stablecoin_faucet_id, principal.as_u64())?;
@@ -881,15 +874,20 @@ fn create_nft_faucet(init_seed: [u8; 32], owner: AccountId) -> anyhow::Result<Ac
 /// Adds an existing public stablecoin faucet controlled by `issuer_id`, with `token_supply` in
 /// circulation, to the chain.
 ///
-/// The faucet applies the policies of `token_policy_manager` and installs the provided
-/// `components`, e.g. the procedures that manage these policies. Only the issuer can mint.
+/// Only the issuer can mint, block accounts and restrict their amounts. The faucet applies
+/// [`stablecoin_send_policy`] with `issuer_key`, and rejects assets received by blocked accounts.
 fn add_stablecoin_faucet(
     builder: &mut MockChainBuilder,
     issuer_id: AccountId,
     token_supply: AssetAmount,
-    token_policy_manager: TokenPolicyManager,
-    components: impl IntoIterator<Item = AccountComponent>,
+    issuer_key: EncryptedAssetsIssuerKey,
 ) -> anyhow::Result<Account> {
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::owner_only())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(stablecoin_send_policy(issuer_key)?)
+        .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
+        .build();
     let stablecoin = FungibleFaucet::builder()
         .name(TokenName::new("STABLE")?)
         .symbol(TokenSymbol::new("STBL")?)
@@ -906,9 +904,53 @@ fn add_stablecoin_faucet(
             .with_component(stablecoin)
             .with_components(AccessControl::Ownable2Step { owner: issuer_id })
             .with_components(token_policy_manager)
-            .with_components(components),
+            .with_component(BlocklistManager)
+            .with_component(SupplyRestrictionManager),
         AccountState::Exists,
     )
+}
+
+/// Returns the send policy of the stablecoin, which rejects notes created by blocked accounts and
+/// notes that spend frozen or confiscated amounts, and attaches the details of private notes,
+/// encrypted to `issuer_key`.
+///
+/// The policy composes the checks of the basic blocklist and supply restriction policies with the
+/// encrypted assets policy. The encrypted assets policy runs last, so the attachment list it
+/// returns is the output of the composed policy.
+fn stablecoin_send_policy(issuer_key: EncryptedAssetsIssuerKey) -> anyhow::Result<SendPolicy> {
+    let (root, component) = policy_component(
+        "tests::stablecoin_send_policy",
+        "check_send_policy",
+        Vec::new(),
+        "
+        use miden::standards::faucets::policies::transfer::basic_blocklist
+        use miden::standards::faucets::policies::transfer::encrypted_assets
+        use miden::standards::faucets::policies::transfer::supply_restriction_policy
+
+        #! Inputs:  [note_idx, pad(15)]
+        #! Outputs: [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
+        @account_procedure
+        pub proc check_send_policy
+            exec.basic_blocklist::check_native_account
+            exec.supply_restriction_policy::check_native_account
+            # => [note_idx, pad(15)]
+
+            exec.encrypted_assets::check_send_policy
+            # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
+        end
+        ",
+    )?;
+
+    // the other components hold the storage of the composed policies
+    Ok(SendPolicy::custom(
+        root,
+        [
+            component,
+            BasicBlocklist::default().into(),
+            SupplyRestrictionPolicy::new(SupplyRestrictionStorage::new()).into(),
+            issuer_key.into(),
+        ],
+    )?)
 }
 
 /// Returns the latest committed token supply of the stablecoin faucet.
@@ -935,7 +977,10 @@ fn confiscated_amount(
     Ok(AssetAmount::try_from(restricted_amounts[1])?)
 }
 
-/// Executes a transaction in which `holder` sends `amount` stablecoins in a P2ID note.
+/// Executes a transaction in which `holder` sends `amount` stablecoins in a private P2ID note.
+///
+/// The stablecoin faucet's send policy encrypts the details of the note, so the transaction
+/// provides them by expecting the note.
 async fn send_stablecoins(
     mock_chain: &MockChain,
     holder: &Account,
@@ -946,15 +991,19 @@ async fn send_stablecoins(
         .sender(holder.id())
         .target(AccountId::mock_private(2))
         .assets(vec![FungibleAsset::new(stablecoin_faucet_id, amount.into())?])
+        .note_type(NoteType::Private)
         .serial_number(rand::rng().random())
         .build()?
         .into();
-    let script =
-        SendNotesTransactionScript::new(&holder.code_interface(), &[PartialNote::from(note)])?;
+    let script = SendNotesTransactionScript::new(
+        &holder.code_interface(),
+        &[PartialNote::from(note.clone())],
+    )?;
 
     Ok(mock_chain
         .build_transaction(holder.id())
         .send_notes_script(&script)
+        .expected_output_note(RawOutputNote::Full(note))
         .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(stablecoin_faucet_id)?])
         .build()?
         .execute()
