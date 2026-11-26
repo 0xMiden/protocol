@@ -82,6 +82,16 @@ miden_crypto::eidos_domain_registry! {
                 schema: "param0 = 8 Felts; param1 = param2 = 0; \
                     created procedures commitment, dependencies commitment",
             }
+            pub IES_SEAL_EPHEMERAL_SECRET_DOMAIN: IesSealEphemeralSecretDomain {
+                local_id: 6,
+                version: DomainVersion::numbered(1),
+                encoding: FeltSequence,
+                description: "IES seal ephemeral secret derivation.",
+                schema: "param0 = 22 Felts; param1 = param2 = 0; \
+                    seed as eight u32 limbs of four little-endian bytes each, request index, \
+                    recipient public key (5), context digest, plaintext digest; \
+                    zero-pad the final block",
+            }
         }
     }
 }

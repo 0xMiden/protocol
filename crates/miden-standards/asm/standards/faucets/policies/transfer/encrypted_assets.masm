@@ -20,7 +20,7 @@ const ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS = "private note with an encr
 #! Send policy that returns the encrypted asset attachment of the output note.
 #!
 #! Returns no attachment for a public note. For a private note, encrypts the note's details to the
-#! issuer key in the issuing faucet's storage (see `encrypted_assets::build_attachment`) and limits
+#! issuer key in the issuing faucet's storage (see `encrypted_assets::new`) and limits
 #! the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the
 #! reference block. A private note may hold only one asset, since the attachment holds all of the
 #! note's assets and would show the assets of other faucets to the issuer. A send policy that
@@ -45,7 +45,7 @@ const ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS = "private note with an encr
 #! Invocation: call
 @account_procedure
 pub proc check_send_policy(note_idx: u16) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
-    dup exec.encrypted_assets::build_attachment
+    dup exec.encrypted_assets::new
     # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, pad(15)]
 
     # only a private note gets the attachment
