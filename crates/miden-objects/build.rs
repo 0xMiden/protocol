@@ -48,6 +48,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut prost = prost_build::Config::new();
     prost.out_dir(out_dir);
+    // The seed is secret, so its `Debug` implementation omits it.
+    prost.skip_debug([".transaction.IesSealSeed"]);
     for message in ["primitives.Felt", "primitives.Word", "primitives.ExecutionProof"] {
         prost.message_attribute(
             message,
@@ -137,6 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".transaction.AccountInputs",
             ".transaction.AuthSignature",
             ".transaction.BoundSignature",
+            ".transaction.IesSealSeed",
             ".transaction.TransactionArgs",
             ".transaction.NoteArgument",
             ".transaction.TransactionScript",
@@ -228,6 +231,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ".transaction.AuthSignature.signature.falcon512_eidos",
         quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
             miden_protocol::crypto::dsa::falcon512_eidos::Signature
+        >)])
+        .to_string(),
+    );
+    prost.field_attribute(
+        ".transaction.IesSealSeed.seed",
+        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+            miden_protocol::transaction::IesSealSeed
         >)])
         .to_string(),
     );

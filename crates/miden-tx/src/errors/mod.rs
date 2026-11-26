@@ -10,6 +10,7 @@ use miden_protocol::account::{AccountId, StorageMapKey, StorageSlotName};
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::asset::AssetId;
 use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::ecdh::ecgfp5::InvalidPublicKey;
 use miden_protocol::crypto::merkle::smt::SmtProofError;
 use miden_protocol::errors::{
     AccountDeltaError,
@@ -23,7 +24,7 @@ use miden_protocol::errors::{
 };
 use miden_protocol::note::{NoteId, PartialNoteMetadata};
 use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, MAX_IES_SEAL_REQUESTS_PER_TX, Word};
 use miden_prover::ProverError;
 use thiserror::Error;
 
@@ -300,6 +301,12 @@ pub enum TransactionKernelError {
         max = Signature::MAX_NUM_ENCODED_SIGNATURE_FELTS
     )]
     InvalidEncodedSignatureLength { signature_key: Word, actual: usize },
+    #[error("IES seal request has an invalid EcGFp5 public key")]
+    IesPublicKeyInvalid(#[source] InvalidPublicKey),
+    #[error("transaction arguments provide no IES seal seed for an IES seal request")]
+    IesSealSeedMissing,
+    #[error("transaction makes more than {max} IES seal requests", max = MAX_IES_SEAL_REQUESTS_PER_TX)]
+    TooManyIesSealRequests,
     #[error("recipient data `{0:?}` in the advice provider is not well formed")]
     MalformedRecipientData(Vec<Felt>),
     #[error("cannot add asset to note with index {0}, note does not exist in the advice provider")]

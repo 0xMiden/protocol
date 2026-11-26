@@ -3001,6 +3001,7 @@ version = "1.0.0-rc.1"
 dependencies = [
  "bon",
  "miden-agglayer",
+ "miden-core-lib",
  "miden-processor",
  "miden-protocol",
  "miden-prover",

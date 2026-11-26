@@ -24,18 +24,25 @@ const BASIC_ALLOWLIST_LIBRARY_PATH: &str =
     "miden::standards::components::faucets::policies::transfer::basic_allowlist";
 
 procedure_root!(
-    BASIC_ALLOWLIST_TRANSFER_POLICY_ROOT,
+    BASIC_ALLOWLIST_SEND_POLICY_ROOT,
     BASIC_ALLOWLIST_LIBRARY_PATH,
-    BasicAllowlist::PROC_NAME,
+    BasicAllowlist::SEND_PROC_NAME,
+    BasicAllowlist::code()
+);
+
+procedure_root!(
+    BASIC_ALLOWLIST_RECEIVE_POLICY_ROOT,
+    BASIC_ALLOWLIST_LIBRARY_PATH,
+    BasicAllowlist::RECEIVE_PROC_NAME,
     BasicAllowlist::code()
 );
 
 /// The basic allowlist transfer policy account component.
 ///
-/// Pair with a [`crate::account::policies::TokenPolicyManager`] whose send and receive
-/// policy  maps include [`BasicAllowlist::root`]. When active, transfers fail if the
-/// native account (asset recipient or note creator) is not currently allowed on the
-/// issuing faucet.
+/// Pair with a [`crate::account::policies::TokenPolicyManager`] whose send and receive policy
+/// maps include [`BasicAllowlist::send_root`] and [`BasicAllowlist::receive_root`]. When active,
+/// transfers fail if the native account (asset recipient or note creator) is not currently
+/// allowed on the issuing faucet.
 ///
 /// The issuing faucet is exempt from its own allowlist.
 ///
@@ -50,7 +57,8 @@ impl BasicAllowlist {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::faucets::policies::transfer::basic_allowlist";
 
-    pub(crate) const PROC_NAME: &str = "check_policy";
+    pub(crate) const SEND_PROC_NAME: &str = "check_send_policy";
+    pub(crate) const RECEIVE_PROC_NAME: &str = "check_receive_policy";
 
     /// Creates a basic allowlist with the given initial allowed accounts.
     pub fn with_allowed_accounts<I>(allowed_accounts: I) -> Self
@@ -70,9 +78,14 @@ impl BasicAllowlist {
         &BASIC_ALLOWLIST_TRANSFER_POLICY_PACKAGE.code
     }
 
-    /// Returns the MAST root of the basic allowlist transfer policy procedure.
-    pub fn root() -> AccountProcedureRoot {
-        *BASIC_ALLOWLIST_TRANSFER_POLICY_ROOT
+    /// Returns the procedure root of the send policy procedure.
+    pub fn send_root() -> AccountProcedureRoot {
+        *BASIC_ALLOWLIST_SEND_POLICY_ROOT
+    }
+
+    /// Returns the procedure root of the receive policy procedure.
+    pub fn receive_root() -> AccountProcedureRoot {
+        *BASIC_ALLOWLIST_RECEIVE_POLICY_ROOT
     }
 
     /// Returns the [`AccountComponentMetadata`] for this component.

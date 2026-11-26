@@ -517,7 +517,8 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 48;
 // Offsets are measured in field elements, where n = num_assets and 0 <= i < n.
 //
 // The sealed flag starts at zero. Once set to one, asset and attachment mutations are rejected; it is
-// excluded from note commitments and serialization.
+// excluded from note commitments and serialization. The epilogue requires it to be one for every
+// output note.
 //
 // The DIRTY_FLAG is the binary flag which specifies whether the assets commitment stored in this
 // note is outdated. It holds 1 if some changes were made to the note assets since the last

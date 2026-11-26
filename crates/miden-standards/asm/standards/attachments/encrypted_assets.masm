@@ -1,0 +1,324 @@
+#! miden::standards::attachments::encrypted_assets
+#!
+#! Builds the encrypted asset attachment of a private note, which lets the issuer of an asset track
+#! the notes that carry it.
+#!
+#! The attachment encrypts the note's details, from which the issuer recomputes the note's ID and
+#! nullifier, to the issuer's public key with `miden::protocol::ies::ecgfp5_eidos::seal`. The
+#! plaintext of a note with n assets is `3 + 2n` words, with the assets in note order:
+#!
+#! [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSET_ID_0, ASSET_VALUE_0, ...,
+#!  ASSET_ID_{n-1}, ASSET_VALUE_{n-1}]
+#!
+#! The attachment content is the envelope
+#! `[ephemeral_public_key(5), auth_tag(2), plaintext_len, ciphertext(2 * plaintext_len)]`, that is
+#! `8 + 4n` words, sealed under the IES context `[ENCRYPTED_ASSETS_ATTACHMENT_SCHEME]`.
+
+use {ASSET_SIZE} from miden::protocol::asset
+use {MAX_ASSETS_PER_NOTE, WORD_NUM_ELEMENTS} from miden::protocol::constants
+use {NOTE_TYPE_PUBLIC} from miden::protocol::note
+use {NoteAttachmentCommitment, NoteAttachmentScheme} from miden::protocol::types
+use miden::core::crypto::ecdh::ecgfp5
+use miden::core::crypto::hashes::eidos
+use miden::core::word
+use miden::protocol::active_account
+use miden::protocol::ies::ecgfp5_eidos
+use miden::protocol::native_account
+use miden::protocol::note
+use miden::protocol::output_note
+use miden::standards::access::authority
+use miden::standards::expiration
+
+# CONSTANTS
+# =================================================================================================
+
+#! The attachment scheme of encrypted asset attachments.
+pub const ENCRYPTED_ASSETS_ATTACHMENT_SCHEME = 8
+
+# Issuer key
+
+#! The value slot that holds the first four elements of the issuer's EcGFp5 public key,
+#! [public_key_0, public_key_1, public_key_2, public_key_3].
+pub const ISSUER_KEY_0_SLOT = word("miden::standards::attachments::encrypted_assets::issuer_key_0")
+
+#! The value slot that holds the fifth element of the issuer's EcGFp5 public key,
+#! [public_key_4, 0, 0, 0].
+pub const ISSUER_KEY_1_SLOT = word("miden::standards::attachments::encrypted_assets::issuer_key_1")
+
+# Layouts
+
+# The number of elements of SERIAL_NUM, SCRIPT_ROOT and STORAGE_COMMITMENT at the start of the
+# plaintext.
+const PLAINTEXT_HEADER_LEN = 3 * WORD_NUM_ELEMENTS
+
+# The number of elements of the plaintext of a note with the maximum number of assets.
+const MAX_PLAINTEXT_LEN = PLAINTEXT_HEADER_LEN + MAX_ASSETS_PER_NOTE * ASSET_SIZE
+
+# The number of elements of [ephemeral_public_key(5), auth_tag(2), plaintext_len] at the start of
+# the envelope.
+const ENVELOPE_HEADER_LEN = 8
+
+# The number of elements of the IES context.
+const IES_CONTEXT_LEN = 1
+
+# encrypt_note_details locals: the plaintext of up to MAX_ASSETS_PER_NOTE assets, the context and
+# the envelope of that plaintext, which spans ENVELOPE_HEADER_LEN + 2 * MAX_PLAINTEXT_LEN elements.
+# They end at ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC + ENVELOPE_HEADER_LEN + 2 * MAX_PLAINTEXT_LEN = 432,
+# which `@locals` takes as a literal.
+const ENCRYPT_NOTE_DETAILS_PLAINTEXT_LOC = 0
+const ENCRYPT_NOTE_DETAILS_SERIAL_NUM_LOC = ENCRYPT_NOTE_DETAILS_PLAINTEXT_LOC
+const ENCRYPT_NOTE_DETAILS_SCRIPT_ROOT_LOC = ENCRYPT_NOTE_DETAILS_SERIAL_NUM_LOC + WORD_NUM_ELEMENTS
+const ENCRYPT_NOTE_DETAILS_STORAGE_COMMITMENT_LOC = ENCRYPT_NOTE_DETAILS_SCRIPT_ROOT_LOC + WORD_NUM_ELEMENTS
+const ENCRYPT_NOTE_DETAILS_ASSETS_LOC = ENCRYPT_NOTE_DETAILS_PLAINTEXT_LOC + PLAINTEXT_HEADER_LEN
+const ENCRYPT_NOTE_DETAILS_IES_CONTEXT_LOC = ENCRYPT_NOTE_DETAILS_PLAINTEXT_LOC + MAX_PLAINTEXT_LEN
+const ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC = ENCRYPT_NOTE_DETAILS_IES_CONTEXT_LOC + WORD_NUM_ELEMENTS
+
+# ERRORS
+# =================================================================================================
+
+const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING = "active account has no issuer public key for encrypted asset attachments"
+
+const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO = "issuer public key for encrypted asset attachments cannot be zero"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Builds the encrypted asset attachment of the output note with the provided index.
+#!
+#! A public note gets no attachment and the procedure returns attachment scheme 0 and the empty
+#! word. For a private note, the procedure encrypts the note's details to the issuer public key
+#! stored in the active account's issuer key slots, inserts the attachment into the advice map
+#! under its commitment and returns its scheme and commitment. Since it reads the issuer key, it
+#! also applies the default expiration delta. Faucets call it from their `on_before_note_sealed`
+#! callback.
+#!
+#! The note's recipient preimage must be in the advice map, and the transaction arguments must
+#! provide an IES seal seed.
+#!
+#! Inputs:
+#!   Operand stack: [note_idx]
+#!   Advice map: {
+#!     RECIPIENT: [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT],
+#!     SERIAL_SCRIPT_COMMITMENT: [SERIAL_COMMITMENT, SCRIPT_ROOT],
+#!     SERIAL_COMMITMENT: [SERIAL_NUM, EMPTY_WORD],
+#!   }
+#! Outputs:
+#!   Operand stack: [attachment_scheme, ATTACHMENT_COMMITMENT]
+#!   Advice map: {
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]],
+#!   }
+#!
+#! Where:
+#! - note_idx is the index of the output note.
+#! - attachment_scheme is ENCRYPTED_ASSETS_ATTACHMENT_SCHEME for a private note, and for a public
+#!   note 0, the attachment scheme the kernel reserves to signal that no attachment is returned.
+#! - ATTACHMENT_COMMITMENT is the commitment to the attachment for a private note and the empty
+#!   word for a public note.
+#!
+#! Panics if:
+#! - the note index does not point to an output note.
+#! - the note is private and:
+#!   - the advice map has no preimage for its recipient, or the preimage does not hash to it.
+#!   - the active account has no issuer key slots or no issuer public key in them.
+#!   - the issuer public key is not a valid EcGFp5 public key.
+#!   - the transaction arguments provide no IES seal seed.
+#!
+#! Invocation: exec
+pub proc build_attachment(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmentCommitment)
+    dup exec.output_note::get_metadata
+    # => [METADATA, note_idx]
+
+    exec.note::metadata_into_note_type
+    # => [note_type, note_idx]
+
+    eq.NOTE_TYPE_PUBLIC
+    # => [is_public, note_idx]
+
+    if.true
+        # push the outputs before dropping note_idx for stack neutrality
+        padw movup.4 drop push.0
+        # => [attachment_reserved_scheme, EMPTY_WORD]
+    else
+        exec.encrypt_note_details
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT]
+    end
+end
+
+#! Returns the issuer's EcGFp5 public key from the active account's issuer key slots.
+#!
+#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
+#! after the reference block, since the issuer key is mutable state that can be read through FPI.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [public_key(5), pad(11)]
+#!
+#! Where:
+#! - public_key is the issuer's EcGFp5 public key in increasing coefficient order.
+#!
+#! Panics if:
+#! - the active account has no `ISSUER_KEY_0_SLOT` or `ISSUER_KEY_1_SLOT`, or no issuer public key
+#!   in them.
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_issuer_key() -> ecgfp5::PointEncoding
+    exec.expiration::apply_default
+    # => [pad(16)]
+
+    exec.get_issuer_public_key
+    # => [public_key(5), pad(16)]
+
+    repeat.5 movup.5 drop end
+    # => [public_key(5), pad(11)]
+end
+
+#! Replaces the issuer's EcGFp5 public key in the native account's issuer key slots, gated by
+#! the account-wide `Authority` component.
+#!
+#! Attachments built before the rotation stay encrypted to the previous key. The key is checked to
+#! be a valid EcGFp5 public key only when `build_attachment` encrypts to it.
+#!
+#! Inputs:  [public_key(5), pad(11)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - public_key is the new EcGFp5 public key in increasing coefficient order.
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority` component.
+#! - public_key is zero, which marks an unset key.
+#!
+#! Invocation: call
+@account_procedure
+pub proc set_issuer_key(public_key: ecgfp5::PointEncoding)
+    exec.authority::assert_authorized
+    # => [public_key(5), pad(11)]
+
+    dupw exec.word::eqz dup.5 eq.0 and
+    # => [is_zero, public_key(5), pad(11)]
+
+    assertz.err=ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO
+    # => [public_key(5), pad(11)]
+
+    push.ISSUER_KEY_0_SLOT[0..2] exec.native_account::set_item dropw
+    # => [public_key_4, pad(15)]
+
+    push.0.0.0 movup.3
+    # => [public_key_4, 0, 0, 0, pad(15)]
+
+    push.ISSUER_KEY_1_SLOT[0..2] exec.native_account::set_item dropw
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Encrypts the details of the output note with the provided index to the issuer's public key and
+#! inserts the attachment into the advice map under its commitment.
+#!
+#! Inputs:  [note_idx]
+#! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT]
+#!
+#! Where:
+#! - note_idx is the index of the output note.
+#! - attachment_scheme is ENCRYPTED_ASSETS_ATTACHMENT_SCHEME.
+#! - ATTACHMENT_COMMITMENT is the commitment to the attachment.
+#!
+#! Panics if:
+#! - the advice map has no preimage for the note's recipient, or it does not hash to the recipient.
+#! - the active account has no issuer public key, or the key is not a valid EcGFp5 public key.
+#! - the transaction arguments provide no IES seal seed.
+#!
+#! Invocation: exec
+@locals(432)
+proc encrypt_note_details(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmentCommitment)
+    # the issuer key is mutable faucet state, which the faucet's callback reads through FPI
+    exec.expiration::apply_default
+    # => [note_idx]
+
+    # write the recipient preimage to the start of the plaintext
+    dup exec.output_note::get_recipient
+    # => [RECIPIENT, note_idx]
+
+    exec.note::get_recipient_preimage
+    # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, note_idx]
+
+    loc_storew_le.ENCRYPT_NOTE_DETAILS_SERIAL_NUM_LOC dropw
+    loc_storew_le.ENCRYPT_NOTE_DETAILS_SCRIPT_ROOT_LOC dropw
+    loc_storew_le.ENCRYPT_NOTE_DETAILS_STORAGE_COMMITMENT_LOC dropw
+    # => [note_idx]
+
+    # write the note's assets after it
+    locaddr.ENCRYPT_NOTE_DETAILS_ASSETS_LOC exec.output_note::get_assets
+    # => [num_assets]
+
+    mul.ASSET_SIZE add.PLAINTEXT_HEADER_LEN
+    # => [plaintext_len]
+
+    # write the IES context [ENCRYPTED_ASSETS_ATTACHMENT_SCHEME]
+    push.ENCRYPTED_ASSETS_ATTACHMENT_SCHEME loc_store.ENCRYPT_NOTE_DETAILS_IES_CONTEXT_LOC
+    # => [plaintext_len]
+
+    # encrypt the plaintext to the issuer's public key
+    dup locaddr.ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC
+    push.IES_CONTEXT_LEN locaddr.ENCRYPT_NOTE_DETAILS_IES_CONTEXT_LOC
+    # => [context_ptr, context_len, dst_ptr, plaintext_len, plaintext_len]
+
+    movup.3 locaddr.ENCRYPT_NOTE_DETAILS_PLAINTEXT_LOC
+    # => [src_ptr, plaintext_len, context_ptr, context_len, dst_ptr, plaintext_len]
+
+    exec.get_issuer_public_key
+    # => [public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr, plaintext_len]
+
+    exec.ecgfp5_eidos::seal
+    # => [plaintext_len]
+
+    # the attachment is the envelope
+    # [ephemeral_public_key(5), auth_tag(2), plaintext_len, ciphertext(2 * plaintext_len)]
+    mul.2 add.ENVELOPE_HEADER_LEN locaddr.ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC add
+    locaddr.ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC
+    # => [attachment_ptr, attachment_end_ptr]
+
+    dup.1 dup.1 exec.eidos::hash_words
+    # => [ATTACHMENT_COMMITMENT, attachment_ptr, attachment_end_ptr]
+
+    adv.insert_mem
+    # => [ATTACHMENT_COMMITMENT, attachment_ptr, attachment_end_ptr]
+
+    movup.4 drop movup.4 drop
+    # => [ATTACHMENT_COMMITMENT]
+
+    push.ENCRYPTED_ASSETS_ATTACHMENT_SCHEME
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT]
+end
+
+#! Returns the issuer's EcGFp5 public key from the active account's issuer key slots.
+#!
+#! Inputs:  []
+#! Outputs: [public_key(5)]
+#!
+#! Where:
+#! - public_key is the issuer's EcGFp5 public key in increasing coefficient order.
+#!
+#! Panics if:
+#! - the active account has no `ISSUER_KEY_0_SLOT` or `ISSUER_KEY_1_SLOT`.
+#! - the slots hold no public key, i.e. the five key elements are zero.
+#!
+#! Invocation: exec
+proc get_issuer_public_key() -> ecgfp5::PointEncoding
+    push.ISSUER_KEY_1_SLOT[0..2] exec.active_account::get_item
+    # => [public_key_4, 0, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [public_key_4]
+
+    push.ISSUER_KEY_0_SLOT[0..2] exec.active_account::get_item
+    # => [public_key(5)]
+
+    # an unset key reads as all zeros, which is not a valid public key
+    dupw exec.word::eqz dup.5 eq.0 and
+    # => [is_unset, public_key(5)]
+
+    assertz.err=ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING
+    # => [public_key(5)]
+end
