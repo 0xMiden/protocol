@@ -35,6 +35,10 @@ use miden_protocol::asset::{
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
+use miden_protocol::errors::protocol::{
+    ERR_ATTACHMENT_LIST_RESERVED_SCHEME_WITH_COMMITMENT,
+    ERR_ATTACHMENT_LIST_TOO_MANY_ATTACHMENTS,
+};
 use miden_protocol::errors::tx_kernel::{
     ERR_KERNEL_STATE_MUTATION_IN_ASSET_CALLBACK,
     ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO,
@@ -157,9 +161,6 @@ const ERR_UNEXPECTED_EXPIRATION_DELTA: MasmError =
 /// The error raised by the kernel if an attachment list does not hash to its commitment.
 const ERR_ATTACHMENT_LIST_COMMITMENT_MISMATCH: MasmError =
     MasmError::from_static_str("pipe_double_words_preimage_to_memory: COMMITMENT does not match");
-
-/// An advice map entry put into the advice map by a test callback: the key and its words.
-type AdviceMapEntry = (Word, Vec<Word>);
 
 // Initialize the block list component code only once.
 static BLOCK_LIST_COMPONENT_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
@@ -1107,13 +1108,18 @@ async fn test_note_sealed_callback_attachments_are_appended_to_note(
 }
 
 /// Tests that the attachments returned by an `on_before_note_sealed` callback are validated like
-/// any other attachment and count toward the note's limit of attachments, and that a callback
-/// cannot return more attachments than a note can hold.
+/// any other attachment and count toward the note's limit of attachments, and that
+/// `output_note::attachment_list_from_memory` does not build a list of more attachments than a
+/// note can hold.
 #[rstest::rstest]
 #[case::too_many_attachments(3, &[20, 21], ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS)]
-#[case::too_many_listed_attachments(0, &[20, 21, 22, 23, 24], ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS)]
+#[case::too_many_listed_attachments(
+    0,
+    &[20, 21, 22, 23, 24],
+    ERR_ATTACHMENT_LIST_TOO_MANY_ATTACHMENTS
+)]
 #[case::invalid_scheme(0, &[20, u16::MAX], ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED)]
-#[case::zero_scheme(0, &[0], ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO)]
+#[case::zero_scheme(0, &[20, 0], ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO)]
 #[tokio::test]
 async fn test_note_sealed_callback_attachments_are_validated(
     #[case] num_creator_attachments: u16,
@@ -1144,52 +1150,37 @@ async fn test_note_sealed_callback_attachments_are_validated(
 /// Tests that sealing fails if the number of attachments or the attachment list commitment returned
 /// by an `on_before_note_sealed` callback does not match the attachment list in the advice map.
 ///
-/// The callback puts a list of `num_listed_attachments` attachments into the advice map under
-/// `attachment_list_commitment`, or under the list's commitment if it is `None`, and returns
-/// `num_attachments` and that commitment.
+/// The callback writes the list of two attachments to memory and returns the number of attachments
+/// and the list commitment that the case's MASM code computes from the list's address.
 #[rstest::rstest]
 #[case::commitment_without_attachments(
-    0,
-    1,
-    Some(Word::from([9, 9, 9, 9u32])),
+    "drop push.9.9.9.9 push.0",
     ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_COMMITMENT_WITHOUT_ATTACHMENTS
 )]
 #[case::list_not_matching_commitment(
-    1,
-    1,
-    Some(Word::from([9, 9, 9, 9u32])),
+    // put the first list entry into the advice map under another commitment and return that one
+    "dup add.8 swap push.9.9.9.9 adv.insert_mem dropw drop drop push.9.9.9.9 push.1",
     ERR_ATTACHMENT_LIST_COMMITMENT_MISMATCH
 )]
+#[case::too_many_attachments(
+    "push.2 exec.::miden::protocol::output_note::attachment_list_from_memory drop push.5",
+    ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS
+)]
 #[case::fewer_attachments_than_listed(
-    1,
-    2,
-    None,
+    "push.2 exec.::miden::protocol::output_note::attachment_list_from_memory drop push.1",
     ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_LENGTH_MISMATCH
 )]
 #[case::more_attachments_than_listed(
-    2,
-    1,
-    None,
+    "push.1 exec.::miden::protocol::output_note::attachment_list_from_memory drop push.2",
     ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_LENGTH_MISMATCH
 )]
 #[tokio::test]
 async fn test_note_sealed_callback_attachment_list_is_verified(
-    #[case] num_attachments: u64,
-    #[case] num_listed_attachments: usize,
-    #[case] attachment_list_commitment: Option<Word>,
+    #[case] list_code: &str,
     #[case] expected_error: MasmError,
 ) -> anyhow::Result<()> {
-    let listed_attachments =
-        [(20, Word::from([5, 6, 7, 8u32])), (21, Word::from([9, 10, 11, 12u32]))];
-    let (list_commitment, list, mut advice_map_entries) =
-        attachment_list(&listed_attachments[..num_listed_attachments]);
-    let attachment_list_commitment = attachment_list_commitment.unwrap_or(list_commitment);
-    advice_map_entries.push((attachment_list_commitment, list));
-    let note_callback_masm = note_sealed_callback_masm_returning(
-        num_attachments,
-        attachment_list_commitment,
-        &advice_map_entries,
-    );
+    let attachments = [(20, Word::from([5, 6, 7, 8u32])), (21, Word::from([9, 10, 11, 12u32]))];
+    let note_callback_masm = note_sealed_callback_masm_with_list_code(&attachments, list_code);
 
     let (_, result) =
         execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], Vec::new()).await?;
@@ -1210,15 +1201,15 @@ async fn test_note_sealed_callback_attachment_list_is_verified(
 async fn test_note_sealed_callback_attachment_list_entry_padding_must_be_zero(
     #[case] padding_idx: usize,
 ) -> anyhow::Result<()> {
-    let (_, mut list, mut advice_map_entries) =
-        attachment_list(&[(20, Word::from([5, 6, 7, 8u32]))]);
-    let mut scheme_word = [20, 0, 0, 0u32];
-    scheme_word[padding_idx] = 1;
-    list[0] = Word::from(scheme_word);
-    let list_commitment = Hasher::hash_elements(Word::words_as_elements(&list));
-    advice_map_entries.push((list_commitment, list));
+    let list_code = format!(
+        "# set the padding element of the entry to 1
+        push.1 dup.1 add.{padding_idx} mem_store
+        # => [list_ptr, pad(16)]
+
+        push.1 exec.::miden::protocol::output_note::attachment_list_from_memory"
+    );
     let note_callback_masm =
-        note_sealed_callback_masm_returning(1, list_commitment, &advice_map_entries);
+        note_sealed_callback_masm_with_list_code(&[(20, Word::from([5, 6, 7, 8u32]))], &list_code);
 
     let (_, result) =
         execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], Vec::new()).await?;
@@ -1227,6 +1218,36 @@ async fn test_note_sealed_callback_attachment_list_entry_padding_must_be_zero(
         result,
         ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_ENTRY_PADDING_NOT_ZERO
     );
+
+    Ok(())
+}
+
+/// Tests that `output_note::single_attachment_list` turns the reserved attachment scheme 0 with the
+/// empty word as commitment into no attachment, and rejects scheme 0 with another commitment.
+#[rstest::rstest]
+#[case::empty_commitment(Word::empty(), None)]
+#[case::non_empty_commitment(
+    Word::from([5, 6, 7, 8u32]),
+    Some(ERR_ATTACHMENT_LIST_RESERVED_SCHEME_WITH_COMMITMENT)
+)]
+#[tokio::test]
+async fn test_single_attachment_list_with_reserved_scheme(
+    #[case] attachment_commitment: Word,
+    #[case] expected_error: Option<MasmError>,
+) -> anyhow::Result<()> {
+    let list_code = format!(
+        "drop push.{attachment_commitment} push.0
+        exec.::miden::protocol::output_note::single_attachment_list"
+    );
+    let note_callback_masm = note_sealed_callback_masm_with_list_code(&[], &list_code);
+
+    let (_, result) =
+        execute_note_sealing_tx(&[([42; 32], &note_callback_masm)], Vec::new()).await?;
+
+    match expected_error {
+        None => assert!(result?.output_notes().get_note(0).attachments().is_empty()),
+        Some(expected_error) => assert_transaction_executor_error!(result, expected_error),
+    }
 
     Ok(())
 }
@@ -1472,53 +1493,59 @@ fn add_faucet_with_callbacks(
 }
 
 /// Returns the MASM source of an `on_before_note_sealed` callback that returns the provided
-/// single-word attachments, given as pairs of scheme and word, or no attachment if `attachments`
-/// is empty.
+/// single-word attachments, given as pairs of scheme and word.
 ///
-/// The callback puts the attachment list and the elements of each attachment into the advice map.
+/// The callback builds the attachment list with `output_note::single_attachment_list` if there is
+/// one attachment, and with `output_note::attachment_list_from_memory` otherwise.
 fn note_sealed_callback_masm(attachments: &[(u16, Word)]) -> String {
-    if attachments.is_empty() {
-        return note_sealed_callback_masm_returning(0, Word::empty(), &[]);
-    }
+    let list_code = match attachments {
+        [(attachment_scheme, attachment_word)] => format!(
+            "drop push.{attachment_commitment} push.{attachment_scheme}
+            exec.::miden::protocol::output_note::single_attachment_list",
+            attachment_commitment = Hasher::hash_elements(attachment_word.as_elements()),
+        ),
+        _ => format!(
+            "push.{num_attachments}
+            exec.::miden::protocol::output_note::attachment_list_from_memory",
+            num_attachments = attachments.len(),
+        ),
+    };
 
-    let (list_commitment, list, mut advice_map_entries) = attachment_list(attachments);
-    advice_map_entries.push((list_commitment, list));
-    note_sealed_callback_masm_returning(
-        attachments.len() as u64,
-        list_commitment,
-        &advice_map_entries,
-    )
+    note_sealed_callback_masm_with_list_code(attachments, &list_code)
 }
 
-/// Returns the MASM source of an `on_before_note_sealed` callback that puts the provided entries
-/// into the advice map and returns `[num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]`.
-fn note_sealed_callback_masm_returning(
-    num_attachments: u64,
-    attachment_list_commitment: Word,
-    advice_map_entries: &[AdviceMapEntry],
+/// Returns the MASM source of an `on_before_note_sealed` callback that puts the elements of the
+/// provided single-word attachments, given as pairs of scheme and word, into the advice map, writes
+/// the entries of their attachment list to memory and returns what `list_code` computes.
+///
+/// `list_code` runs on `[list_ptr, pad(16)]` and must leave
+/// `[num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(16)]`.
+fn note_sealed_callback_masm_with_list_code(
+    attachments: &[(u16, Word)],
+    list_code: &str,
 ) -> String {
-    let num_locals =
-        advice_map_entries.iter().map(|(_, words)| words.len()).max().unwrap_or(1) * WORD_SIZE;
-    let insert_entries_code = advice_map_entries
-        .iter()
-        .map(|(key, words)| {
-            let store_words_code = words
-                .iter()
-                .enumerate()
-                .map(|(word_idx, word)| {
-                    format!("push.{word} loc_storew_le.{} dropw", word_idx * WORD_SIZE)
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
+    const LIST_ENTRY_SIZE: usize = 2 * WORD_SIZE;
 
+    // the list starts at local 0 and is followed by the attachment word
+    let attachment_loc = attachments.len() * LIST_ENTRY_SIZE;
+    let write_attachments_code = attachments
+        .iter()
+        .enumerate()
+        .map(|(attachment_idx, (attachment_scheme, attachment_word))| {
+            let entry_loc = attachment_idx * LIST_ENTRY_SIZE;
             format!(
-                "{store_words_code}
-                locaddr.0 dup add.{num_elements} swap push.{key}
-                # => [KEY, start_ptr, end_ptr, pad(16)]
+                "push.{attachment_word} loc_storew_le.{attachment_loc} dropw
+                locaddr.{attachment_loc} dup add.{WORD_SIZE} swap push.{attachment_commitment}
+                # => [ATTACHMENT_COMMITMENT, attachment_ptr, attachment_end_ptr, pad(16)]
 
                 adv.insert_mem dropw drop drop
+                # => [pad(16)]
+
+                push.0.0.0.{attachment_scheme} loc_storew_le.{entry_loc} dropw
+                push.{attachment_commitment} loc_storew_le.{commitment_loc} dropw
                 # => [pad(16)]",
-                num_elements = words.len() * WORD_SIZE,
+                attachment_commitment = Hasher::hash_elements(attachment_word.as_elements()),
+                commitment_loc = entry_loc + WORD_SIZE,
             )
         })
         .collect::<Vec<_>>()
@@ -1534,33 +1561,20 @@ fn note_sealed_callback_masm_returning(
         drop
         # => [pad(16)]
 
-        {insert_entries_code}
+        {write_attachments_code}
 
-        push.{attachment_list_commitment} push.{num_attachments}
+        locaddr.0
+        # => [list_ptr, pad(16)]
+
+        {list_code}
         # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(16)]
 
         exec.::miden::core::sys::truncate_stack
         # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
     end
-    "
+    ",
+        num_locals = attachment_loc + WORD_SIZE,
     )
-}
-
-/// Returns the commitment to and the words of the attachment list of the provided single-word
-/// attachments, given as pairs of scheme and word, and the advice map entries that hold the
-/// elements of each attachment under its commitment.
-///
-/// The list holds, for each attachment, its scheme padded to a word followed by its commitment.
-fn attachment_list(attachments: &[(u16, Word)]) -> (Word, Vec<Word>, Vec<AdviceMapEntry>) {
-    let mut list = Vec::new();
-    let mut attachment_entries = Vec::new();
-    for &(attachment_scheme, attachment_word) in attachments {
-        let attachment_commitment = Hasher::hash_elements(attachment_word.as_elements());
-        list.extend([Word::from([u32::from(attachment_scheme), 0, 0, 0]), attachment_commitment]);
-        attachment_entries.push((attachment_commitment, vec![attachment_word]));
-    }
-
-    (Hasher::hash_elements(Word::words_as_elements(&list)), list, attachment_entries)
 }
 
 /// Returns the single-word note attachments with the provided schemes and words.
