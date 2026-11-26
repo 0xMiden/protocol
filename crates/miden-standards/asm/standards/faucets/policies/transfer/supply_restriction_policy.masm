@@ -26,12 +26,6 @@ const ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE = "transfer e
 #! frozen or confiscated amounts of the native account on the issuing faucet, and returns no
 #! attachment for the accepted ones.
 #!
-#! Amounts received in input notes can be sent in the same transaction, as long as the restricted
-#! amount remains in the account.
-#!
-#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
-#! after the reference block.
-#!
 #! Inputs:  [note_idx, pad(15)]
 #! Outputs: [0, EMPTY_WORD, pad(11)]
 #!
@@ -41,9 +35,7 @@ const ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE = "transfer e
 #!   EMPTY_WORD.
 #!
 #! Panics if:
-#! - the native account is restricted, it is not the issuing faucet, and its initial balance plus
-#!   the amount received in all input notes is less than its restricted amount plus the amount sent
-#!   in all output notes created so far.
+#! - the native account sends restricted amounts (see `check_native_account`).
 #!
 #! Invocation: call
 @account_procedure
@@ -52,22 +44,48 @@ pub proc check_send_policy(note_idx: u16) -> (NoteAttachmentCount, NoteAttachmen
     drop
     # => [pad(16)]
 
-    exec.expiration::apply_default
+    exec.check_native_account
     # => [pad(16)]
+end
+
+#! Asserts that the transaction does not spend frozen or confiscated amounts of the native account
+#! on the issuing faucet. The issuing faucet itself is exempt.
+#!
+#! Amounts received in input notes can be sent in the same transaction, as long as the restricted
+#! amount remains in the account.
+#!
+#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
+#! after the reference block.
+#!
+#! The send policy runs this check, and a send policy that combines it with other checks can `exec`
+#! it.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the native account is restricted, it is not the issuing faucet, and its initial balance plus
+#!   the amount received in all input notes is less than its restricted amount plus the amount sent
+#!   in all output notes created so far.
+#!
+#! Invocation: exec
+pub proc check_native_account()
+    exec.expiration::apply_default
+    # => []
 
     exec.native_account::get_id
-    # => [account_id_suffix, account_id_prefix, pad(16)]
+    # => [account_id_suffix, account_id_prefix]
 
     dup.1 dup.1 exec.active_account::get_id exec.account_id::eq
-    # => [is_issuer, account_id_suffix, account_id_prefix, pad(16)]
+    # => [is_issuer, account_id_suffix, account_id_prefix]
 
     # the issuing faucet is exempt
     if.true
         drop drop
-        # => [pad(16)]
+        # => []
     else
         exec.assert_restricted_amount_not_sent
-        # => [pad(16)]
+        # => []
     end
 end
 
