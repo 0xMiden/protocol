@@ -14,4 +14,5 @@ mod transaction;
 mod transaction_effects;
 mod transaction_inputs;
 mod transaction_logs;
+mod transaction_summary;
 mod transaction_witness;
