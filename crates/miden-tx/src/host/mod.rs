@@ -172,6 +172,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// # Errors
     ///
     /// Returns an error if the [`AccountUpdateTracker`] cannot be created for the account.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
