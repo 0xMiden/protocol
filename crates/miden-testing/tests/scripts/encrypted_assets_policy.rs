@@ -7,7 +7,13 @@ use miden_processor::advice::AdviceError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::asset::{
+    Asset,
+    AssetAmount,
+    FungibleAsset,
+    NonFungibleAsset,
+    NonFungibleAssetDetails,
+};
 use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
@@ -20,7 +26,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::{ExecutedTransaction, OutputNote, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
+use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BlocklistStorage,
     BurnPolicy,
@@ -32,6 +38,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_IS_BLOCKED,
     ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO,
+    ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{EncryptedAssetsAttachment, EncryptedAssetsIssuerKey, P2idNote};
@@ -316,6 +323,79 @@ async fn issuer_decrypts_attachment_of_proven_private_note() -> anyhow::Result<(
     assert_eq!(plaintext.serial_num(), note.recipient().serial_num());
     assert_eq!(plaintext.assets(), note.assets());
     assert_eq!(plaintext.nullifier(output_note.metadata()), nullifier);
+
+    Ok(())
+}
+
+/// A wallet sends a private note holding the faucet's asset and an asset of another faucet. The
+/// send policy rejects the note, since its attachment would show the other asset to the issuer.
+#[tokio::test]
+async fn send_policy_rejects_private_note_with_other_assets() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let faucet =
+        add_faucet(&mut builder, policy_manager(SendPolicy::with_encrypted_assets(issuer_key())))?;
+    let assets = [
+        Asset::from(FungibleAsset::new(faucet.id(), NOTE_AMOUNT)?),
+        Asset::from(FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?, 10)?),
+    ];
+    let wallet = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak },
+        assets,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let note: Note = P2idNote::builder()
+        .sender(wallet.id())
+        .target(AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?)
+        .assets(assets)
+        .note_type(NoteType::Private)
+        .serial_number(Word::from([1u32; 4]))
+        .build()?
+        .into();
+    let result = execute_send(&mock_chain, &wallet, faucet.id(), &note).await?;
+
+    assert_transaction_executor_error!(result, ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS);
+
+    Ok(())
+}
+
+/// The send policy counts all assets of a private note, so it also rejects a private note that
+/// holds two assets of a non-fungible faucet with the policy.
+#[tokio::test]
+async fn send_policy_rejects_private_note_with_two_assets_of_the_faucet() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account_builder = AccountBuilder::new([51; 32])
+        .account_type(AccountType::Public)
+        .with_component(
+            NonFungibleFaucet::builder()
+                .name(TokenName::new("NFT")?)
+                .symbol("NFT".try_into()?)
+                .build()?,
+        )
+        .with_component(Authority::AuthControlled)
+        .with_components(policy_manager(SendPolicy::with_encrypted_assets(issuer_key())));
+    let faucet =
+        builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)?;
+    let assets = [1u8, 2].map(|data| {
+        Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(faucet.id(), vec![data])))
+    });
+    let wallet = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak },
+        assets,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let note: Note = P2idNote::builder()
+        .sender(wallet.id())
+        .target(AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?)
+        .assets(assets)
+        .note_type(NoteType::Private)
+        .serial_number(Word::from([1u32; 4]))
+        .build()?
+        .into();
+    let result = execute_send(&mock_chain, &wallet, faucet.id(), &note).await?;
+
+    assert_transaction_executor_error!(result, ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS);
 
     Ok(())
 }

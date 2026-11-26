@@ -7,6 +7,12 @@ exactly the new commit's content regardless of how it was produced, so no
 base-selection logic is needed. Spawns code-reviewer + security-reviewer
 via `_review.run_review`.
 
+The review runs in the directory the `git commit` ran in, following the
+command's `cd <dir>` segments and `git -C <dir>`, so a commit made in
+another worktree (e.g. by a subagent) is reviewed there. When that
+directory cannot be resolved to a git worktree, the session's `cwd` is
+used.
+
 PostToolUse cannot un-make the commit, so on a blocking finding it exits 2:
 Claude Code feeds the findings back to the agent and halts progress. The
 agent fixes and `git commit --amend`s, which re-fires this hook on the
@@ -16,13 +22,14 @@ amended commit until it's clean.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _classify import matches  # noqa: E402
-from _hookutils import command_from_payload, read_payload, recent_user_prompts  # noqa: E402
+from _hookutils import command_dir, command_from_payload, read_payload, recent_user_prompts  # noqa: E402
 from _review import run_review  # noqa: E402
 
 TARGET = ("git", ["commit"])
@@ -51,13 +58,17 @@ def main() -> None:
     if cwd is not None and not isinstance(cwd, str):
         cwd = None
 
+    # Review where the commit was made: the command may `cd` or `git -C`
+    # into another worktree than the session's.
+    cwd = command_dir(command, *TARGET, cwd)
+
     # Root commit has no parent — nothing to diff against; skip.
     if not _has_parent(cwd):
         sys.exit(0)
     if _no_changes(cwd):
         sys.exit(0)
 
-    sys.stderr.write("Post-commit: reviewing HEAD~1..HEAD (code + security)...\n")
+    sys.stderr.write(f"Post-commit: reviewing HEAD~1..HEAD in {cwd or os.getcwd()} (code + security)...\n")
     intent = recent_user_prompts(payload.get("transcript_path"))
     blocked, rendered = run_review("HEAD~1..HEAD", cwd, intent)
     sys.stderr.write(rendered + "\n")

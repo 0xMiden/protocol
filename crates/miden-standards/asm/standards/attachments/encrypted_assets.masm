@@ -37,13 +37,13 @@ pub const ENCRYPTED_ASSETS_ATTACHMENT_SCHEME = 8
 
 # Issuer key
 
-#! The value slot that holds the first four elements of the issuer's EcGFp5 public key,
+#! The value slot that holds the head of the issuer's EcGFp5 public key, its first four elements
 #! [public_key_0, public_key_1, public_key_2, public_key_3].
-pub const ISSUER_KEY_0_SLOT = word("miden::standards::attachments::encrypted_assets::issuer_key_0")
+pub const ISSUER_KEY_HEAD_SLOT = word("miden::standards::attachments::encrypted_assets::issuer_key_head")
 
-#! The value slot that holds the fifth element of the issuer's EcGFp5 public key,
+#! The value slot that holds the tail of the issuer's EcGFp5 public key, its fifth element
 #! [public_key_4, 0, 0, 0].
-pub const ISSUER_KEY_1_SLOT = word("miden::standards::attachments::encrypted_assets::issuer_key_1")
+pub const ISSUER_KEY_TAIL_SLOT = word("miden::standards::attachments::encrypted_assets::issuer_key_tail")
 
 # Layouts
 
@@ -124,7 +124,7 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO = "issuer public key for encrypted as
 #!   - the transaction arguments provide no IES seal seed.
 #!
 #! Invocation: exec
-pub proc build_attachment(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmentCommitment)
+pub proc new(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmentCommitment)
     dup exec.output_note::get_metadata
     # => [METADATA, note_idx]
 
@@ -156,8 +156,8 @@ end
 #! - public_key is the issuer's EcGFp5 public key in increasing coefficient order.
 #!
 #! Panics if:
-#! - the active account has no `ISSUER_KEY_0_SLOT` or `ISSUER_KEY_1_SLOT`, or no issuer public key
-#!   in them.
+#! - the active account has no `ISSUER_KEY_HEAD_SLOT` or `ISSUER_KEY_TAIL_SLOT`, or no issuer
+#!   public key in them.
 #!
 #! Invocation: call
 @account_procedure
@@ -176,7 +176,7 @@ end
 #! the account-wide `Authority` component.
 #!
 #! Attachments built before the rotation stay encrypted to the previous key. The key is checked to
-#! be a valid EcGFp5 public key only when `build_attachment` encrypts to it.
+#! be a valid EcGFp5 public key only when `new` encrypts to it.
 #!
 #! Inputs:  [public_key(5), pad(11)]
 #! Outputs: [pad(16)]
@@ -200,13 +200,13 @@ pub proc set_issuer_key(public_key: ecgfp5::PointEncoding)
     assertz.err=ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO
     # => [public_key(5), pad(11)]
 
-    push.ISSUER_KEY_0_SLOT[0..2] exec.native_account::set_item dropw
+    push.ISSUER_KEY_HEAD_SLOT[0..2] exec.native_account::set_item dropw
     # => [public_key_4, pad(15)]
 
     push.0.0.0 movup.3
     # => [public_key_4, 0, 0, 0, pad(15)]
 
-    push.ISSUER_KEY_1_SLOT[0..2] exec.native_account::set_item dropw
+    push.ISSUER_KEY_TAIL_SLOT[0..2] exec.native_account::set_item dropw
     # => [pad(16)]
 end
 
@@ -262,13 +262,14 @@ proc encrypt_note_details(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmen
     # encrypt the plaintext to the issuer's public key
     dup locaddr.ENCRYPT_NOTE_DETAILS_ENVELOPE_LOC
     push.IES_CONTEXT_LEN locaddr.ENCRYPT_NOTE_DETAILS_IES_CONTEXT_LOC
-    # => [context_ptr, context_len, dst_ptr, plaintext_len, plaintext_len]
+    # => [context_ptr, context_len, envelope_ptr, plaintext_len, plaintext_len]
 
     movup.3 locaddr.ENCRYPT_NOTE_DETAILS_PLAINTEXT_LOC
-    # => [src_ptr, plaintext_len, context_ptr, context_len, dst_ptr, plaintext_len]
+    # => [plaintext_ptr, plaintext_len, context_ptr, context_len, envelope_ptr, plaintext_len]
 
     exec.get_issuer_public_key
-    # => [public_key(5), src_ptr, plaintext_len, context_ptr, context_len, dst_ptr, plaintext_len]
+    # => [public_key(5), plaintext_ptr, plaintext_len, context_ptr, context_len, envelope_ptr,
+    #     plaintext_len]
 
     exec.ecgfp5_eidos::seal
     # => [plaintext_len]
@@ -301,18 +302,18 @@ end
 #! - public_key is the issuer's EcGFp5 public key in increasing coefficient order.
 #!
 #! Panics if:
-#! - the active account has no `ISSUER_KEY_0_SLOT` or `ISSUER_KEY_1_SLOT`.
+#! - the active account has no `ISSUER_KEY_HEAD_SLOT` or `ISSUER_KEY_TAIL_SLOT`.
 #! - the slots hold no public key, i.e. the five key elements are zero.
 #!
 #! Invocation: exec
 proc get_issuer_public_key() -> ecgfp5::PointEncoding
-    push.ISSUER_KEY_1_SLOT[0..2] exec.active_account::get_item
+    push.ISSUER_KEY_TAIL_SLOT[0..2] exec.active_account::get_item
     # => [public_key_4, 0, 0, 0]
 
     movdn.3 drop drop drop
     # => [public_key_4]
 
-    push.ISSUER_KEY_0_SLOT[0..2] exec.active_account::get_item
+    push.ISSUER_KEY_HEAD_SLOT[0..2] exec.active_account::get_item
     # => [public_key(5)]
 
     # an unset key reads as all zeros, which is not a valid public key
