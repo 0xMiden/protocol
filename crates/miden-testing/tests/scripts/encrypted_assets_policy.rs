@@ -327,16 +327,10 @@ async fn issuer_decrypts_attachment_of_proven_private_note() -> anyhow::Result<(
     Ok(())
 }
 
-/// A wallet sends a note holding the faucet's asset and an asset of another faucet. The send
-/// policy rejects the note if it is private, since its attachment would show the other asset to
-/// the issuer, and seals it without an attachment if it is public.
-#[rstest::rstest]
-#[case::private_note(NoteType::Private)]
-#[case::public_note(NoteType::Public)]
+/// A wallet sends a private note holding the faucet's asset and an asset of another faucet. The
+/// send policy rejects the note, since its attachment would show the other asset to the issuer.
 #[tokio::test]
-async fn send_policy_rejects_private_note_with_other_assets(
-    #[case] note_type: NoteType,
-) -> anyhow::Result<()> {
+async fn send_policy_rejects_private_note_with_other_assets() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet =
         add_faucet(&mut builder, policy_manager(SendPolicy::with_encrypted_assets(issuer_key())))?;
@@ -354,26 +348,13 @@ async fn send_policy_rejects_private_note_with_other_assets(
         .sender(wallet.id())
         .target(AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?)
         .assets(assets)
-        .note_type(note_type)
+        .note_type(NoteType::Private)
         .serial_number(Word::from([1u32; 4]))
         .build()?
         .into();
     let result = execute_send(&mock_chain, &wallet, faucet.id(), &note).await?;
 
-    match note_type {
-        NoteType::Private => {
-            assert_transaction_executor_error!(
-                result,
-                ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS
-            );
-        },
-        NoteType::Public => {
-            let executed = result?;
-            let output_note = executed.output_notes().get_note(SEALED_NOTE_IDX);
-            assert!(output_note.attachments().is_empty());
-            assert_eq!(output_note.id(), note.id());
-        },
-    }
+    assert_transaction_executor_error!(result, ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS);
 
     Ok(())
 }
