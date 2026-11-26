@@ -31,6 +31,7 @@ use miden_protocol::note::{
     NoteScriptRoot,
     NoteTag,
 };
+use miden_protocol::utils::FeltSliceExt;
 use miden_protocol::{Felt, WORD_SIZE, Word};
 use miden_standards::note::{
     MintNote,
@@ -117,7 +118,7 @@ impl XUsdcMintNoteStorage {
         let serial_num = intent_header.nonce().to_word();
         let recipient = P2idNoteStorage::new(recipient_id).into_recipient(serial_num);
         let tag = NoteTag::with_account_target(recipient_id);
-        let storage = MintNoteStorage::new_public(recipient, asset, tag)
+        let storage = MintNoteStorage::new_public_output(recipient, asset, tag)
             .expect("p2id note storage should not exceed max number of storage items");
 
         Self { storage }
@@ -182,12 +183,7 @@ impl From<&XUsdcDeposit> for NoteAttachment {
             elements.push(Felt::ZERO);
         }
 
-        let words: Vec<Word> = elements
-            .as_chunks::<{ Word::NUM_ELEMENTS }>()
-            .0
-            .iter()
-            .map(|chunk| Word::new(*chunk))
-            .collect();
+        let words = elements.to_words().expect("the elements should be padded to whole words");
         NoteAttachment::with_words(
             NoteAttachmentScheme::new(XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME)
                 .expect("the transport scheme is neither reserved nor past the protocol maximum"),

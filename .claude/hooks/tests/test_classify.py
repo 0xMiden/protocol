@@ -6,6 +6,7 @@ test_hooks.py.
 import pytest
 
 from _classify import (
+    invocation_dir,
     iter_match_args,
     match_args,
     matches,
@@ -315,3 +316,70 @@ def test_iter_match_args_mixed_segments():
 def test_iter_match_args_empty_subcommand():
     # An empty subcommand is meaningless; yield nothing.
     assert list(iter_match_args("gh", "gh", [])) == []
+
+
+# ---------------------------------------------------------------------------
+# invocation_dir — the directory the last `git commit` segment runs in, so
+# post_commit_review reviews the worktree the commit was made in.
+# ---------------------------------------------------------------------------
+
+
+SESSION_DIR = "/home/u/repo"
+
+# Each case: (command, expected directory, or None for "unknown").
+INVOCATION_DIR_CASES: list[tuple[str, str | None]] = [
+    # No directory change: the session directory.
+    ("git commit -m x", SESSION_DIR),
+    # A `cd` or `git -C` into another worktree.
+    ("cd /home/u/wt && git commit -m x", "/home/u/wt"),
+    ("git -C /home/u/wt commit -m x", "/home/u/wt"),
+    ("cd /home/u/wt && make lint && git add a b && git commit -F msg.txt", "/home/u/wt"),
+    ("cd /home/u/wt; git commit -m x", "/home/u/wt"),
+    ("cd /home/u/wt\ngit commit -m x", "/home/u/wt"),
+    # Relative paths resolve against the directory so far.
+    ("cd ../wt && git commit -m x", "/home/u/wt"),
+    ("cd .claude && cd worktrees/wt && git commit -m x", "/home/u/repo/.claude/worktrees/wt"),
+    # `-C` applies after the `cd`s; several apply in order, each relative to the previous.
+    ("cd /home/u && git -C wt commit -m x", "/home/u/wt"),
+    ("git -C /home/u -C wt -C ../wt2 commit -m x", "/home/u/wt2"),
+    # Env assignments and other global flags before the subcommand.
+    ('FOO=bar git -c user.name="Claude (Opus)" -C ../wt commit -m x', "/home/u/wt"),
+    # Quoted paths with spaces.
+    ('cd "/home/u/my wt" && git commit -m x', "/home/u/my wt"),
+    ("git -C '/home/u/my wt' commit -m x", "/home/u/my wt"),
+    # A directory change that cannot be followed makes the directory unknown.
+    ("cd $WT && git commit -m x", None),
+    ('cd "$(git rev-parse --show-toplevel)" && git commit -m x', None),
+    ('git -C "$WT" commit -m x', None),
+    ("cd ~/wt && git commit -m x", None),
+    ("cd && git commit -m x", None),
+    ("cd - && git commit -m x", None),
+    ("cd /home/u/wt || exit 1; git commit -m x", None),
+    ("cd /home/u/wt | cat; git commit -m x", None),
+    ("cd /home/u/wt & git commit -m x", None),
+    ("pushd /home/u/wt && git commit -m x", None),
+    ("(cd /home/u/wt && git commit -m x)", None),
+    # ...until an absolute `cd` makes it known again.
+    ("cd $WT && cd /home/u/wt && git commit -m x", "/home/u/wt"),
+    ("cd $WT && cd wt && git commit -m x", None),
+    # The last `git commit` wins: HEAD is that commit when the hook runs.
+    ("git commit -m a && cd /home/u/wt && git commit -m b", "/home/u/wt"),
+    # A `cd` after the commit does not move it.
+    ("cd /home/u/wt && git commit -m x && cd /tmp", "/home/u/wt"),
+    # No real `git commit`.
+    ('echo "cd /home/u/wt && git commit -m x"', None),
+    ('cd /home/u/wt && echo "git commit -m x"', None),
+    ("git status", None),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), INVOCATION_DIR_CASES)
+def test_invocation_dir(command: str, expected: str | None) -> None:
+    assert invocation_dir(command, "git", ["commit"], SESSION_DIR) == expected
+
+
+def test_invocation_dir_without_session_dir() -> None:
+    # Without a starting directory, only an absolute path can be resolved.
+    assert invocation_dir("git commit -m x", "git", ["commit"], None) is None
+    assert invocation_dir("cd wt && git commit -m x", "git", ["commit"], None) is None
+    assert invocation_dir("cd /home/u/wt && git commit -m x", "git", ["commit"], None) == "/home/u/wt"

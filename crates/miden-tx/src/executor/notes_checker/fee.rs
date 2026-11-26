@@ -4,6 +4,7 @@ use miden_protocol::note::Note;
 use super::bundle::{NoteBundle, SponsorshipInput};
 use super::error::FeeError;
 use super::standards_errors::{
+    ERR_FEE_INSUFFICIENT_BALANCE,
     ERR_FEE_MANAGER_INPUT_NOTE_FEE_NOT_COVERED,
     ERR_FEE_MANAGER_SPONSORSHIP_WRONG_ASSET,
     ERR_NOTE_SCRIPT_NOT_IN_FEE_SCHEDULE,
@@ -22,6 +23,19 @@ impl NoteBundle {
             NoteBundle::Reclaim(_) => None,
         }
     }
+}
+
+/// Returns `true` if the failed execution stopped because the account's vault holds less of the
+/// fee asset than the fees the transaction must pay.
+///
+/// Unlike a [`FeeError`], this says nothing about the notes: the same notes may be consumable once
+/// the account holds more of the fee asset.
+pub(super) fn is_insufficient_fee_balance(error: &TransactionExecutorError) -> bool {
+    matches!(
+        error,
+        TransactionExecutorError::TransactionProgramExecutionFailed(execution_error)
+            if ERR_FEE_INSUFFICIENT_BALANCE.matches_execution_error(execution_error)
+    )
 }
 
 /// Returns the fee error the failed execution of a transaction consuming `feature_note` and the

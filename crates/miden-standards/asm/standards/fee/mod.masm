@@ -29,23 +29,20 @@ pub type ConversionInfo = word
 
 # Estimated upper bound on the number of cycles a pay_fee flow spends after the kernel's
 # compute_fee call returns: rate conversion, fee-asset construction, serial-number derivation,
-# recipient computation, note creation and funding. Guarded by the fee-payment regression tests.
+# recipient computation, note creation, funding, sealing and the attachment check. Guarded by the
+# fee-payment regression tests.
 const PAY_FEE_CYCLES = 8192
 
-# Estimated upper bounds on the number of kernel epilogue cycles spent after the auth procedure
-# returns: output vault build, output notes commitment, account patch and final account
-# commitments. The cost scales with the number of output notes (measured ~330 cycles per
-# asset-less note; ~1k-2k base for note-less transactions), so the estimate is computed as
-# BASE + PER_NOTE * (num_output_notes + 1), counting the fee note itself. Note that the per-note
-# figure is measured on asset-less notes; notes carrying many assets cost more, so asset-heavy
-# transactions may slightly under-estimate the fee (which fails closed: the batch builder may
-# reject the underpaying note). Guarded by the fee-payment regression tests.
+# Estimated post-auth epilogue cost: a base cost plus a per-output-note cost, including the fee note.
+# The per-note estimate is based on notes without assets and may undercount asset-heavy transactions.
 const POST_AUTH_EPILOGUE_BASE_CYCLES = 4096
 const POST_AUTH_EPILOGUE_PER_NOTE_CYCLES = 512
 
 # Estimated upper bound on the number of cycles a pay_fee flow spends per sponsorship note it
-# creates (serial number derivation, note creation, vault withdrawal and funding) plus that note's
-# share of the epilogue, charged by estimate_fee for the notes a later pay_fee flow would create.
+# creates (serial number derivation, note creation, vault withdrawal, funding, sealing and the
+# attachment check) plus that note's share of the epilogue, charged by estimate_fee for the notes a
+# later pay_fee flow would create. The second pricing of the network notes that pay_fee performs is
+# not part of it: estimate_fee measures that separately.
 const SPONSORSHIP_NOTE_CYCLES = 4096
 
 # Exclusive upper bound of the high u32 limb of a converted fee amount. Bounding the high limb
@@ -78,6 +75,8 @@ const ERR_FEE_CONVERSION_RATE_NUMERATOR_ZERO = "fee conversion rate numerator mu
 const ERR_FEE_CONVERTED_AMOUNT_OVERFLOW = "converted fee amount does not fit into a fungible asset amount"
 
 const ERR_FEE_EXCEEDS_MAX_FEE = "the transaction fee and the sponsored fees exceed the max fee"
+
+const ERR_FEE_NOTE_HAS_ATTACHMENTS = "the TX_FEE note must not carry attachments"
 
 # PROCEDURES
 # =================================================================================================
@@ -271,11 +270,16 @@ pub proc apply_cycle_margins(num_extra_cycles: felt) -> felt
     # => [num_estimated_extra_cycles]
 end
 
-#! Creates a new TX_FEE output note and funds it with the provided asset from the
-#! account's vault.
+#! Creates a new TX_FEE output note, funds it with the provided asset from the account's vault and
+#! seals it.
 #!
 #! The note's serial number is derived as hash(FEE_DOMAIN || [serial_number_block, initial_nonce,
 #! account_id_suffix, account_id_prefix]).
+#!
+#! The sealed note must carry no attachments, such as ones added by an asset callback. The fee is
+#! computed before the note is created, so a large attachment would add cost the fee does not
+#! cover, and an auth procedure that pays the fee after verifying signatures would leave the
+#! attachment outside the signed transaction summary.
 #!
 #! Inputs:  [serial_number_block, initial_nonce, ASSET_ID, ASSET_VALUE]
 #! Outputs: []
@@ -291,6 +295,7 @@ end
 #! - serial_number_block is not a u32.
 #! - the account vault holds less of the payment asset than the amount to be paid.
 #! - the maximum number of output notes is exceeded.
+#! - the sealed note carries attachments.
 #!
 #! Invocation: exec
 pub proc create_and_fund_fee_note(serial_number_block: BlockNumber, initial_nonce: felt, asset: Asset)
@@ -318,29 +323,52 @@ pub proc create_and_fund_fee_note(serial_number_block: BlockNumber, initial_nonc
     exec.output_note::create
     # => [note_idx, ASSET_ID, ASSET_VALUE]
 
-    movdn.8
-    # => [ASSET_ID, ASSET_VALUE, note_idx]
+    dup movdn.9 movdn.8
+    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     # move the fee asset from the vault into the note
     # (see basic_wallet::move_asset_to_note for the same sequence in call form)
     dupw.1 dupw.1
-    # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx]
+    # => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
-    exec.native_account::remove_asset dropw
-    # => [ASSET_ID, ASSET_VALUE, note_idx]
+    exec.fees::remove_fee_asset dropw
+    # => [ASSET_ID, ASSET_VALUE, note_idx, note_idx]
 
     exec.output_note::add_asset
+    # => [note_idx]
+
+    dup exec.output_note::seal
+    # => [note_idx]
+
+    exec.output_note::get_attachments_commitment
+    # => [ATTACHMENTS_COMMITMENT]
+
+    exec.eidos::empty_felt_sequence_digest
+    assert_eqw.err=ERR_FEE_NOTE_HAS_ATTACHMENTS
     # => []
 end
 
 #! Estimates the fee a pay_fee flow would pay for this transaction without creating any note.
 #!
-#! Prices the network output notes the way pay_fee sponsors them (see
-#! fees::estimate_network_note_sponsorships) and computes the transaction fee via compute_fee,
-#! charging on top of num_extra_cycles the cycles pay_fee would spend creating the sponsorship
-#! notes and the margins pay_fee applies. The estimate is an upper bound of what pay_fee pays as
-#! long as the caller's num_extra_cycles bounds the cycles spent between this call and the
-#! pay_fee flow.
+#! The estimate has two parts. The sponsored fees are the prices of the network output notes,
+#! obtained the way pay_fee sponsors them (see fees::estimate_network_note_sponsorships). The
+#! transaction fee is computed via compute_fee from the cycles spent so far plus the cycles that
+#! are still to come.
+#!
+#! Within one execution, each network output note is priced twice: once by this procedure, and
+#! once more by pay_fee when it creates the note's sponsorship. A pricing calls the target's fee
+#! policy through FPI, so the second one costs cycles that compute_fee has to count. This procedure
+#! therefore measures the cycles its own pricing took and charges them once more.
+#!
+#! On top of num_extra_cycles, the cycles still to come are thus:
+#! - the second pricing of the network notes, measured as described above;
+#! - the creation of the sponsorship notes, SPONSORSHIP_NOTE_CYCLES per priced note;
+#! - the margins pay_fee applies, see apply_cycle_margins.
+#!
+#! The estimate is an upper bound of what pay_fee pays under two conditions. num_extra_cycles
+#! must bound what the caller spends between this call and the pay_fee flow. And each target's
+#! fee policy must cost the same on the second pricing, which holds for a policy whose cost
+#! depends only on state the transaction cannot change in between.
 #!
 #! Inputs:  [num_extra_cycles]
 #! Outputs: [fee_amount, total_sponsored_fee_amount]
@@ -360,11 +388,21 @@ end
 #!
 #! Invocation: exec
 pub proc estimate_fee(num_extra_cycles: u32) -> (AssetAmount, AssetAmount)
+    clk
+    # => [clk_before_pricing, num_extra_cycles]
+
     exec.fees::estimate_network_note_sponsorships
-    # => [num_sponsored_notes, total_sponsored_fee_amount, num_extra_cycles]
+    # => [num_sponsored_notes, total_sponsored_fee_amount, clk_before_pricing, num_extra_cycles]
 
     # charge the creation of the sponsorship notes a pay_fee flow would perform
-    mul.SPONSORSHIP_NOTE_CYCLES movup.2 add
+    mul.SPONSORSHIP_NOTE_CYCLES
+    # => [creation_cycles, total_sponsored_fee_amount, clk_before_pricing, num_extra_cycles]
+
+    # pay_fee prices the notes a second time, so charge the cycles the pricing above took again
+    clk movup.3 sub add
+    # => [pricing_and_creation_cycles, total_sponsored_fee_amount, num_extra_cycles]
+
+    movup.2 add
     # => [num_extra_cycles, total_sponsored_fee_amount]
 
     exec.apply_cycle_margins
@@ -433,6 +471,7 @@ end
 #! - the computed fee is non-zero and serial_number_block is not a u32.
 #! - the account vault holds less of the fee asset than the amount to be paid.
 #! - the maximum number of output notes is exceeded.
+#! - the TX_FEE note carries attachments once sealed.
 #!
 #! Invocation: exec
 pub proc pay_fee(

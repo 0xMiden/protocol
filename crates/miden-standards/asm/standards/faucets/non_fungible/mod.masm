@@ -194,6 +194,8 @@ end
 #! the MINT note must equal it, so a MINT note created for one faucet cannot be minted by another
 #! faucet.
 #!
+#! The note is left unsealed so the caller can add attachments; the caller must seal it.
+#!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
 #! Outputs: [note_idx, pad(15)]
 #!

@@ -51,7 +51,7 @@ const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT = "max sup
 const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY = "token_supply plus the amount passed to distribute would exceed the maximum supply"
 const ERR_FUNGIBLE_ASSET_MINT_AMOUNT_IS_ZERO = "the amount to mint is zero"
 const ERR_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET = "the asset stored in the MINT note does not belong to this faucet"
-const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "asset amount to burn exceeds the existing token supply"
+const ERR_FAUCET_SUPPLY_DECREASE_EXCEEDS_TOKEN_SUPPLY = "amount to remove from the token supply exceeds the existing token supply"
 
 # =================================================================================================
 # PRIVATE HELPERS — token config slot access
@@ -229,6 +229,42 @@ pub proc set_max_supply(new_max_supply: AssetAmount)
     # => [pad(16)]
 end
 
+#! Decreases the token supply of the faucet by the given amount.
+#!
+#! This procedure performs NO authorization. It only updates the supply accounting and does not
+#! burn any asset; callers are responsible for removing the amount from circulation (e.g. by
+#! burning it or by permanently restricting it in a holder's vault).
+#!
+#! Inputs:  [amount]
+#! Outputs: []
+#!
+#! Panics if:
+#! - amount is greater than the current token supply.
+#!
+#! Invocation: exec
+pub proc decrease_token_supply(amount: AssetAmount)
+    exec.get_token_config_internal
+    # => [token_supply, max_supply, decimals, token_symbol, amount]
+
+    dup.4 dup.1
+    # => [token_supply, amount, token_supply, max_supply, decimals, token_symbol, amount]
+
+    # assert that amount <= token_supply
+    lte assert.err=ERR_FAUCET_SUPPLY_DECREASE_EXCEEDS_TOKEN_SUPPLY
+    # => [token_supply, max_supply, decimals, token_symbol, amount]
+
+    movup.4
+    # => [amount, token_supply, max_supply, decimals, token_symbol]
+
+    # compute new_token_supply = token_supply - amount
+    sub
+    # => [new_token_supply, max_supply, decimals, token_symbol]
+
+    # update the token config slot with the new supply
+    push.TOKEN_CONFIG_SLOT[0..2] exec.native_account::set_item dropw
+    # => []
+end
+
 # =================================================================================================
 # MINT AND SEND
 # =================================================================================================
@@ -239,6 +275,8 @@ end
 #! output note carrying the asset is created for the recipient. The asset minted is derived
 #! for the active faucet; the `ASSET_ID` stored in the MINT note must belong to that faucet,
 #! so a MINT note created for one faucet cannot be minted by another faucet.
+#!
+#! The note is left unsealed so the caller can add attachments; the caller must seal it.
 #!
 #! Inputs:  [ASSET_ID, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
 #! Outputs: [note_idx, pad(15)]
@@ -451,24 +489,6 @@ pub proc receive_and_burn(asset: Asset)
     # Subtract burnt amount from current token_supply in storage.
     # ---------------------------------------------------------------------------------------------
 
-    push.TOKEN_CONFIG_SLOT[0..2] exec.active_account::get_item
-    # => [token_supply, max_supply, decimals, token_symbol, amount, pad(15)]
-
-    dup.4 dup.1
-    # => [token_supply, amount, token_supply, max_supply, decimals, token_symbol, amount, pad(15)]
-
-    # assert that amount <= token_supply
-    lte assert.err=ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY
-    # => [token_supply, max_supply, decimals, token_symbol, amount, pad(15)]
-
-    movup.4
-    # => [amount, token_supply, max_supply, decimals, token_symbol, pad(15)]
-
-    # compute new_token_supply = token_supply - amount
-    sub
-    # => [new_token_supply, max_supply, decimals, token_symbol, pad(15)]
-
-    # update the token config slot with the new supply
-    push.TOKEN_CONFIG_SLOT[0..2] exec.native_account::set_item dropw
+    exec.decrease_token_supply
     # => [pad(16)]
 end

@@ -75,6 +75,12 @@ pub enum NoteFailure {
         /// The error the failing execution produced.
         error: TransactionExecutorError,
     },
+    /// Adding the note's bundle left the account unable to pay the transaction's fees, so the note
+    /// may be consumable once the account holds more of the fee asset.
+    InsufficientFee {
+        /// The error the failing execution produced.
+        error: TransactionExecutorError,
+    },
 }
 
 /// Represents a failed note consumption.
@@ -122,7 +128,9 @@ impl FailedNote {
     /// otherwise.
     pub fn execution_error(&self) -> Option<&TransactionExecutorError> {
         match &self.failure {
-            NoteFailure::Blamed { error, .. } | NoteFailure::Fee { error, .. } => Some(error),
+            NoteFailure::Blamed { error, .. }
+            | NoteFailure::Fee { error, .. }
+            | NoteFailure::InsufficientFee { error } => Some(error),
             NoteFailure::Collateral { .. } | NoteFailure::Rejected { .. } => None,
         }
     }
@@ -136,7 +144,8 @@ impl FailedNote {
             NoteFailure::Blamed { num_cycles, .. } => *num_cycles,
             NoteFailure::Collateral { .. }
             | NoteFailure::Rejected { .. }
-            | NoteFailure::Fee { .. } => None,
+            | NoteFailure::Fee { .. }
+            | NoteFailure::InsufficientFee { .. } => None,
         }
     }
 }

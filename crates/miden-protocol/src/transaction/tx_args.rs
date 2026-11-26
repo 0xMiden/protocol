@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use miden_crypto::merkle::InnerNodeInfo;
 
 use super::script::TransactionScript;
-use super::{Felt, Word};
+use super::{Felt, IesSealSeed, Word};
 use crate::EMPTY_WORD;
 use crate::account::AccountCodeUpgrade;
 use crate::account::auth::BoundSignature;
@@ -35,6 +35,9 @@ use crate::vm::{AdviceInputs, AdviceMap};
 ///   as a key to access the corresponding value.
 /// - Account code upgrade: the [`AccountCodeUpgrade`] of the native account if the transaction
 ///   upgrades its code.
+/// - IES seal seed: the [`IesSealSeed`] from which the host derives the ephemeral secrets of the
+///   IES `seal` requests. Use a fresh seed for every transaction and reuse it only to re-execute or
+///   prove that transaction. Executing a transaction that seals without a seed fails.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransactionArgs {
     tx_script: Option<TransactionScript>,
@@ -45,6 +48,7 @@ pub struct TransactionArgs {
     advice_inputs: AdviceInputs,
     auth_args: Word,
     account_code_upgrade: Option<AccountCodeUpgrade>,
+    ies_seal_seed: Option<IesSealSeed>,
 }
 
 impl TransactionArgs {
@@ -62,10 +66,12 @@ impl TransactionArgs {
             AdviceInputs::from(advice_map),
             EMPTY_WORD,
             None,
+            None,
         )
     }
 
     /// Creates [`TransactionArgs`] from all of its components.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_parts(
         tx_script: Option<TransactionScript>,
         tx_script_args: Word,
@@ -75,6 +81,7 @@ impl TransactionArgs {
         advice_inputs: AdviceInputs,
         auth_args: Word,
         account_code_upgrade: Option<AccountCodeUpgrade>,
+        ies_seal_seed: Option<IesSealSeed>,
     ) -> Self {
         Self {
             tx_script,
@@ -85,6 +92,7 @@ impl TransactionArgs {
             advice_inputs,
             auth_args,
             account_code_upgrade,
+            ies_seal_seed,
         }
     }
 
@@ -136,6 +144,13 @@ impl TransactionArgs {
     #[must_use]
     pub fn with_account_code_upgrade(mut self, account_code_upgrade: AccountCodeUpgrade) -> Self {
         self.account_code_upgrade = Some(account_code_upgrade);
+        self
+    }
+
+    /// Returns new [`TransactionArgs`] instantiated with the provided IES seal seed.
+    #[must_use]
+    pub fn with_ies_seal_seed(mut self, ies_seal_seed: IesSealSeed) -> Self {
+        self.ies_seal_seed = Some(ies_seal_seed);
         self
     }
 
@@ -197,6 +212,11 @@ impl TransactionArgs {
     /// Returns the code upgrade of the native account, if the transaction upgrades its code.
     pub fn account_code_upgrade(&self) -> Option<&AccountCodeUpgrade> {
         self.account_code_upgrade.as_ref()
+    }
+
+    /// Returns the seed of the IES `seal` requests, if any.
+    pub fn ies_seal_seed(&self) -> Option<&IesSealSeed> {
+        self.ies_seal_seed.as_ref()
     }
 
     // STATE MUTATORS
@@ -279,6 +299,7 @@ mod tests {
             Vec::new(),
             advice_inputs.clone(),
             Word::new([Felt::from(5_u32); 4]),
+            None,
             None,
         );
 
