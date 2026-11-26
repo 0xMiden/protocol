@@ -28,8 +28,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _classify import invocation_dir, matches  # noqa: E402
-from _hookutils import command_from_payload, read_payload, recent_user_prompts, repo_root  # noqa: E402
+from _classify import matches  # noqa: E402
+from _hookutils import command_dir, command_from_payload, read_payload, recent_user_prompts  # noqa: E402
 from _review import run_review  # noqa: E402
 
 TARGET = ("git", ["commit"])
@@ -60,9 +60,7 @@ def main() -> None:
 
     # Review where the commit was made: the command may `cd` or `git -C`
     # into another worktree than the session's.
-    commit_dir = invocation_dir(command, *TARGET, cwd)
-    if commit_dir is not None and repo_root(commit_dir) is not None:
-        cwd = commit_dir
+    cwd = command_dir(command, *TARGET, cwd)
 
     # Root commit has no parent — nothing to diff against; skip.
     if not _has_parent(cwd):

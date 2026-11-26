@@ -26,7 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _classify import match_args, matches  # noqa: E402
-from _hookutils import command_from_payload, read_payload, recent_user_prompts  # noqa: E402
+from _hookutils import command_from_payload, read_payload, recent_user_prompts, worktree_for  # noqa: E402
 from _review import run_review  # noqa: E402
 
 TARGET = ("gh", ["pr", "create"])
@@ -76,7 +76,7 @@ def resolve_target(args: list[str], cwd: str | None) -> tuple[str, str, str | No
         return base, "HEAD", cwd
     # `gh` accepts `<owner>:<branch>` for a head in a fork.
     head_branch = head_branch.split(":", 1)[-1]
-    worktree = _worktree_for(head_branch, cwd)
+    worktree = worktree_for(head_branch, cwd)
     if worktree is not None:
         return base, "HEAD", worktree
     return base, _branch_ref(head_branch, cwd), cwd
@@ -90,25 +90,6 @@ def flag_value(args: list[str], long: str, short: str) -> str | None:
             return args[i + 1]
         if tok.startswith(f"{long}="):
             return tok.split("=", 1)[1]
-    return None
-
-
-def _worktree_for(branch: str, cwd: str | None) -> str | None:
-    """The path of the worktree that has `branch` checked out, if any."""
-    result = subprocess.run(
-        ["git", "worktree", "list", "--porcelain"],
-        capture_output=True,
-        text=True,
-        cwd=cwd,
-    )
-    if result.returncode != 0:
-        return None
-    path = None
-    for line in result.stdout.splitlines():
-        if line.startswith("worktree "):
-            path = line.removeprefix("worktree ")
-        elif line == f"branch refs/heads/{branch}":
-            return path
     return None
 
 

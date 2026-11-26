@@ -2,9 +2,10 @@
 
 Kept separate from `_classify.py` because the concerns are different:
 `_classify` parses Bash commands; this module wraps the bits of the
-repository that hooks need to inspect (git toplevel, Makefile target
-presence). Both modules live alongside the hook scripts so they're
-importable via the `sys.path` shim in each hook.
+repository that hooks need to inspect (git toplevel, worktrees, the
+directory a command runs in, Makefile target presence). Both modules
+live alongside the hook scripts so they're importable via the
+`sys.path` shim in each hook.
 """
 
 from __future__ import annotations
@@ -15,6 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+from _classify import invocation_dir
 
 # Strips harness-injected <system-reminder> blocks from user message text so
 # only what the human actually typed is surfaced to the reviewers.
@@ -37,6 +40,37 @@ def repo_root(cwd: str | None = None) -> Path | None:
     if not out:
         return None
     return Path(out)
+
+
+def command_dir(command: str, binary: str, subcommand: list[str], cwd: str | None) -> str | None:
+    """Return the directory the last `binary subcommand` invocation in
+    `command` runs in, following its `cd <dir>` segments and `git -C <dir>`
+    (see `_classify.invocation_dir`), when that is inside a git worktree;
+    otherwise `cwd`.
+    """
+    directory = invocation_dir(command, binary, subcommand, cwd)
+    if directory is not None and repo_root(directory) is not None:
+        return directory
+    return cwd
+
+
+def worktree_for(branch: str, cwd: str | None) -> str | None:
+    """The path of the worktree that has `branch` checked out, if any."""
+    result = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+    if result.returncode != 0:
+        return None
+    path = None
+    for line in result.stdout.splitlines():
+        if line.startswith("worktree "):
+            path = line.removeprefix("worktree ")
+        elif line == f"branch refs/heads/{branch}":
+            return path
+    return None
 
 
 def makefile_has_target(makefile: Path, target: str) -> bool:
