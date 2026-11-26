@@ -1,4 +1,5 @@
-use {AccountId, Asset, AssetAmount, AssetId, AssetValue} from miden::protocol::types
+use {AccountId, Asset, AssetAmount, AssetId, AssetValue, InputNoteIndex, OutputNoteIndex}
+    from miden::protocol::types
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::asset
@@ -289,7 +290,7 @@ end
 #!
 #! Invocation: exec
 @locals(128)
-pub proc get_output_note_amount(asset_id: AssetId, note_idx: u16) -> AssetAmount
+pub proc get_output_note_amount(asset_id: AssetId, note_idx: OutputNoteIndex) -> AssetAmount
     # write the assets to local memory, which fits ASSET_SIZE * MAX_ASSETS_PER_NOTE elements
     movup.4 locaddr.NOTE_ASSETS_LOC exec.output_note::get_assets
     # => [num_assets, ASSET_ID]
@@ -316,7 +317,7 @@ end
 #!
 #! Invocation: exec
 @locals(128)
-pub proc get_input_note_amount(asset_id: AssetId, note_idx: u16) -> AssetAmount
+pub proc get_input_note_amount(asset_id: AssetId, note_idx: InputNoteIndex) -> AssetAmount
     # write the assets to local memory, which fits ASSET_SIZE * MAX_ASSETS_PER_NOTE elements
     movup.4 locaddr.NOTE_ASSETS_LOC exec.input_note::get_initial_assets
     # => [num_assets, ASSET_ID]

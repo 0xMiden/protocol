@@ -6,7 +6,8 @@
 # Receiving assets is never restricted, and the issuing faucet is exempt so that minting does not
 # depend on its own restricted amounts.
 
-use {AccountId, NoteAttachmentCount, NoteAttachmentListCommitment} from miden::protocol::types
+use {AccountId, NoteAttachmentCount, NoteAttachmentListCommitment, OutputNoteIndex}
+    from miden::protocol::types
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::native_account
@@ -39,7 +40,7 @@ const ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE = "transfer e
 #!
 #! Invocation: call
 @account_procedure
-pub proc check_send_policy(note_idx: u16) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
+pub proc check_send_policy(note_idx: OutputNoteIndex) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
     # the check covers all output notes rather than only the one being sealed
     drop
     # => [pad(16)]

@@ -4,7 +4,7 @@
 # holding the issuing faucet's assets, built by `miden::standards::attachments::encrypted_assets`,
 # and rejects a private note that holds more than one asset.
 
-use {NoteAttachmentCount, NoteAttachmentListCommitment} from miden::protocol::types
+use {NoteAttachmentCount, NoteAttachmentListCommitment, OutputNoteIndex} from miden::protocol::types
 use {ENCRYPTED_ASSETS_ATTACHMENT_SCHEME} from miden::standards::attachments::encrypted_assets
 use miden::protocol::output_note
 use miden::standards::attachments::encrypted_assets
@@ -44,7 +44,7 @@ const ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS = "private note with an encr
 #!
 #! Invocation: call
 @account_procedure
-pub proc check_send_policy(note_idx: u16) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
+pub proc check_send_policy(note_idx: OutputNoteIndex) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
     dup exec.encrypted_assets::new
     # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, pad(15)]
 

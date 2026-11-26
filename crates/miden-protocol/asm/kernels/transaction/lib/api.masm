@@ -6,6 +6,7 @@ use {
     AssetValue,
     BlockNumber,
     Bool,
+    InputNoteIndex,
     NoteAssetsCommitment,
     NoteAttachmentScheme,
     NoteId,
@@ -15,6 +16,7 @@ use {
     NoteSerialNumber,
     NoteTag,
     NoteType,
+    OutputNoteIndex,
     StorageSlotId,
     TransactionScriptRoot,
 } from miden::protocol_utils::types
@@ -1154,13 +1156,13 @@ end
 #! The returned commitment and number of assets are the ones the note was created with; they do
 #! not change when assets are removed from the note during transaction execution.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [ASSETS_COMMITMENT, num_assets, pad(11)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the assets data from
 #!   the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose assets info should be returned.
+#! - note_idx is the index of the input note whose assets info should be returned.
 #! - ASSETS_COMMITMENT is a sequential hash of the assets the specified input note was created
 #!   with.
 #! - num_assets is the number of assets the specified input note was created with.
@@ -1171,7 +1173,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_initial_assets_info(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteAssetsCommitment, u8, [felt; 11])
+pub proc input_note_get_initial_assets_info(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (NoteAssetsCommitment, u8, [felt; 11])
     # get the input note pointer depending on whether the requested note is the active one or if it
     # was requested by index.
     exec.get_requested_note_ptr
@@ -1196,14 +1198,14 @@ end
 #! The asset is returned as it currently is: if it was removed from the note, the returned
 #! ASSET_ID and ASSET_VALUE are both the EMPTY_WORD.
 #!
-#! Inputs:  [is_active_note, asset_index, note_index, pad(13)]
+#! Inputs:  [is_active_note, asset_index, note_idx, pad(13)]
 #! Outputs: [ASSET_ID, ASSET_VALUE, pad(8)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the asset from the
 #!   active note or from the note with the specified index.
 #! - asset_index is the index of the asset to return.
-#! - note_index is the index of the input note whose asset should be returned.
+#! - note_idx is the index of the input note whose asset should be returned.
 #! - ASSET_ID is the asset ID of the asset at the specified index.
 #! - ASSET_VALUE is the value of the asset at the specified index.
 #!
@@ -1214,10 +1216,10 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_asset(is_active_note: Bool, asset_index: u8, note_index: u16, padding: [felt; 13]) -> (Asset, [felt; 8])
-    # bring note_index directly above is_active_note so the note pointer can be resolved
+pub proc input_note_get_asset(is_active_note: Bool, asset_index: u8, note_idx: InputNoteIndex, padding: [felt; 13]) -> (Asset, [felt; 8])
+    # bring note_idx directly above is_active_note so the note pointer can be resolved
     movup.2 swap
-    # => [is_active_note, note_index, asset_index, pad(13)]
+    # => [is_active_note, note_idx, asset_index, pad(13)]
 
     # get the input note pointer depending on whether the requested note is the active one or if it
     # was requested by index.
@@ -1246,7 +1248,7 @@ end
 #! If the entire asset value is removed, the asset's slot in the note is cleared, i.e. set to
 #! (EMPTY_WORD, EMPTY_WORD). This is always the case for non-composable assets.
 #!
-#! Inputs:  [is_active_note, ASSET_ID, ASSET_VALUE, note_index, pad(6)]
+#! Inputs:  [is_active_note, ASSET_ID, ASSET_VALUE, note_idx, pad(6)]
 #! Outputs: [FINAL_ASSET_VALUE, pad(12)]
 #!
 #! Where:
@@ -1254,7 +1256,7 @@ end
 #!   active note or from the note with the specified index.
 #! - ASSET_ID is the asset ID of the asset to remove from the note.
 #! - ASSET_VALUE is the value of the asset to remove from the note.
-#! - note_index is the index of the input note from which the asset should be removed.
+#! - note_idx is the index of the input note from which the asset should be removed.
 #! - FINAL_ASSET_VALUE is the value of the asset remaining in the note after removal, which is
 #!   the EMPTY_WORD if the entire asset was removed.
 #!
@@ -1272,17 +1274,17 @@ end
 #! - the amount of the fungible asset in the note is less than the amount to be removed.
 #!
 #! Invocation: dynexec
-pub proc input_note_remove_asset(is_active_note: Bool, asset: Asset, note_index: u16, padding: [felt; 6]) -> (AssetValue, [felt; 12])
+pub proc input_note_remove_asset(is_active_note: Bool, asset: Asset, note_idx: InputNoteIndex, padding: [felt; 6]) -> (AssetValue, [felt; 12])
     # check that this procedure was not invoked by an asset callback
     exec.memory::assert_not_in_asset_callback
-    # => [is_active_note, ASSET_ID, ASSET_VALUE, note_index, pad(6)]
+    # => [is_active_note, ASSET_ID, ASSET_VALUE, note_idx, pad(6)]
 
-    # bring note_index directly above is_active_note so the note pointer can be resolved
+    # bring note_idx directly above is_active_note so the note pointer can be resolved
     movup.9 swap
-    # => [is_active_note, note_index, ASSET_ID, ASSET_VALUE, pad(6)]
+    # => [is_active_note, note_idx, ASSET_ID, ASSET_VALUE, pad(6)]
 
     exec.authenticate_indexed_input_note_asset_removal
-    # => [is_active_note, note_index, ASSET_ID, ASSET_VALUE, pad(6)]
+    # => [is_active_note, note_idx, ASSET_ID, ASSET_VALUE, pad(6)]
 
     # get the input note pointer depending on whether the requested note is the active one or if it
     # was requested by index.
@@ -1315,13 +1317,13 @@ end
 #! The note's initial assets info (see input_note_get_initial_assets_info) is not affected by this
 #! procedure.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [ASSETS_COMMITMENT, num_assets, pad(11)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether the assets should be removed from the
 #!   active note or from the note with the specified index.
-#! - note_index is the index of the input note from which the assets should be removed.
+#! - note_idx is the index of the input note from which the assets should be removed.
 #! - ASSETS_COMMITMENT is a sequential hash of the assets removed by this procedure.
 #! - num_assets is the number of assets removed by this procedure.
 #!
@@ -1334,13 +1336,13 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_remove_all_assets(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteAssetsCommitment, u8, [felt; 11])
+pub proc input_note_remove_all_assets(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (NoteAssetsCommitment, u8, [felt; 11])
     # check that this procedure was not invoked by an asset callback
     exec.memory::assert_not_in_asset_callback
-    # => [is_active_note, note_index, pad(14)]
+    # => [is_active_note, note_idx, pad(14)]
 
     exec.authenticate_indexed_input_note_asset_removal
-    # => [is_active_note, note_index, pad(14)]
+    # => [is_active_note, note_idx, pad(14)]
 
     # get the input note pointer depending on whether the requested note is the active one or if it
     # was requested by index.
@@ -1363,14 +1365,14 @@ end
 
 #! Returns the recipient of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [RECIPIENT, pad(12)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the assets data from
 #!   the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose assets info should be returned. Notice that if
-#!   is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose assets info should be returned. Notice that if
+#!   is_active_note is 1, note_idx is ignored.
 #! - RECIPIENT is the commitment to the input note's script, storage, the serial number.
 #!
 #! Panics if:
@@ -1379,7 +1381,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_recipient(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteRecipient, [felt; 12])
+pub proc input_note_get_recipient(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (NoteRecipient, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1401,14 +1403,14 @@ end
 
 #! Returns the metadata of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [METADATA, pad(12)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the metadata from
 #!   the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose metadata should be returned. Notice that if
-#!   is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose metadata should be returned. Notice that if
+#!   is_active_note is 1, note_idx is ignored.
 #! - METADATA is the metadata of the specified input note.
 #!
 #! Panics if:
@@ -1417,7 +1419,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_metadata(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteMetadata, [felt; 12])
+pub proc input_note_get_metadata(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (NoteMetadata, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1443,14 +1445,14 @@ end
 
 #! Returns the serial number of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [SERIAL_NUMBER, pad(12)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the serial number
 #!   of the active note or of the note with the specified index.
-#! - note_index is the index of the input note whose serial number should be returned. Notice that 
-#!   if is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose serial number should be returned. Notice that 
+#!   if is_active_note is 1, note_idx is ignored.
 #! - SERIAL_NUMBER is the serial number of the specified input note.
 #!
 #! Panics if:
@@ -1459,7 +1461,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_serial_number(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteSerialNumber, [felt; 12])
+pub proc input_note_get_serial_number(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (NoteSerialNumber, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1483,14 +1485,14 @@ end
 
 #! Returns the note ID of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [NOTE_ID, pad(12)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the note ID of the
 #!   active note or of the note with the specified index.
-#! - note_index is the index of the input note whose ID should be returned. Notice that if
-#!   is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose ID should be returned. Notice that if
+#!   is_active_note is 1, note_idx is ignored.
 #! - NOTE_ID is the ID of the specified input note, cached by the transaction prologue.
 #!
 #! Panics if:
@@ -1499,7 +1501,7 @@ end
 #!   from an incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_note_id(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteId, [felt; 12])
+pub proc input_note_get_note_id(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (NoteId, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1523,14 +1525,14 @@ end
 
 #! Returns the storage commitment and length of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [NOTE_STORAGE_COMMITMENT, num_storage_items, pad(11)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the storage commitment 
 #!   and length from the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose data should be returned. Notice that if
-#!   is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose data should be returned. Notice that if
+#!   is_active_note is 1, note_idx is ignored.
 #! - NOTE_STORAGE_COMMITMENT is the storage commitment of the specified input note.
 #! - num_storage_items is the number of storage items of the specified input note.
 #!
@@ -1540,7 +1542,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_storage_info(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (Commitment, u16, [felt; 11])
+pub proc input_note_get_storage_info(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (Commitment, u16, [felt; 11])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1568,14 +1570,14 @@ end
 
 #! Returns the script root of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [SCRIPT_ROOT, pad(12)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the storage commitment 
 #!   and length from the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose data should be returned. Notice that if
-#!   is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose data should be returned. Notice that if
+#!   is_active_note is 1, note_idx is ignored.
 #! - SCRIPT_ROOT is the script root of the specified input note.
 #!
 #! Panics if:
@@ -1584,7 +1586,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_script_root(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteScriptRoot, [felt; 12])
+pub proc input_note_get_script_root(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (NoteScriptRoot, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1608,14 +1610,14 @@ end
 
 #! Returns the attachments commitment of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [ATTACHMENTS_COMMITMENT, pad(12)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the attachments
 #!   commitment from the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose attachments commitment should be returned.
-#!   Notice that if is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose attachments commitment should be returned.
+#!   Notice that if is_active_note is 1, note_idx is ignored.
 #! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the specified input note.
 #!
 #! Panics if:
@@ -1624,7 +1626,7 @@ end
 #!   attachments from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_attachments_commitment(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (Commitment, [felt; 12])
+pub proc input_note_get_attachments_commitment(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (Commitment, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1666,7 +1668,7 @@ end
 #! - the active account is not the native account.
 #!
 #! Invocation: dynexec
-pub proc output_note_create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient, padding: [felt; 10]) -> (u16, [felt; 15])
+pub proc output_note_create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient, padding: [felt; 10]) -> (OutputNoteIndex, [felt; 15])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [tag, note_type, RECIPIENT, pad(10)]
@@ -1700,7 +1702,7 @@ end
 #! - the output note is sealed.
 #!
 #! Invocation: dynexec
-pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) -> [felt; 16]
+pub proc output_note_add_asset(asset: Asset, note_idx: OutputNoteIndex, padding: [felt; 7]) -> [felt; 16]
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
@@ -1735,7 +1737,7 @@ end
 #!   note's attachment limits.
 #!
 #! Invocation: dynexec
-pub proc output_note_seal(note_idx: u16, padding: [felt; 15]) -> [felt; 16]
+pub proc output_note_seal(note_idx: OutputNoteIndex, padding: [felt; 15]) -> [felt; 16]
     exec.memory::assert_native_account
     exec.memory::assert_not_in_asset_callback
     exec.output_note::assert_note_index_in_bounds
@@ -1754,7 +1756,7 @@ end
 #! - the note index points to a non-existent output note.
 #!
 #! Invocation: dynexec
-pub proc output_note_is_sealed(note_idx: u16, padding: [felt; 15]) -> (Bool, [felt; 15])
+pub proc output_note_is_sealed(note_idx: OutputNoteIndex, padding: [felt; 15]) -> (Bool, [felt; 15])
     exec.output_note::assert_note_index_in_bounds
     # => [note_idx, pad(15)]
 
@@ -1785,7 +1787,7 @@ end
 #! - the note already has 4 attachments.
 #!
 #! Invocation: dynexec
-pub proc output_note_add_attachment(attachment_scheme: NoteAttachmentScheme, attachment: word, note_idx: u16, padding: [felt; 10]) -> [felt; 16]
+pub proc output_note_add_attachment(attachment_scheme: NoteAttachmentScheme, attachment: word, note_idx: OutputNoteIndex, padding: [felt; 10]) -> [felt; 16]
     # assert that the provided note index is less than the total number of output notes
     dup.5 exec.output_note::assert_note_index_in_bounds drop
     # => [attachment_scheme, ATTACHMENT, note_idx, pad(10)]
@@ -1804,11 +1806,11 @@ end
 
 #! Returns the information about assets in the output note with the specified index.
 #!
-#! Inputs:  [note_index, pad(15)]
+#! Inputs:  [note_idx, pad(15)]
 #! Outputs: [ASSETS_COMMITMENT, num_assets, pad(11)]
 #!
 #! Where:
-#! - note_index is the index of the output note whose assets info should be returned.
+#! - note_idx is the index of the output note whose assets info should be returned.
 #! - num_assets is the number of assets in the specified note.
 #! - ASSETS_COMMITMENT is a sequential hash of the assets in the specified note.
 #!
@@ -1816,10 +1818,10 @@ end
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: dynexec
-pub proc output_note_get_assets_info(note_index: u16, padding: [felt; 15]) -> (NoteAssetsCommitment, u8, [felt; 11])
+pub proc output_note_get_assets_info(note_idx: OutputNoteIndex, padding: [felt; 15]) -> (NoteAssetsCommitment, u8, [felt; 11])
     # assert that the provided note index is less than the total number of output notes
     exec.output_note::assert_note_index_in_bounds
-    # => [note_index, pad(15)]
+    # => [note_idx, pad(15)]
 
     # get the assets info
     exec.output_note::get_assets_info
@@ -1834,21 +1836,21 @@ end
 
 #! Returns the commitment over all attachments.
 #!
-#! Inputs:  [note_index, pad(15)]
+#! Inputs:  [note_idx, pad(15)]
 #! Outputs: [ATTACHMENTS_COMMITMENT, pad(12)]
 #!
 #! Where:
-#! - note_index is the index of the output note whose attachments commitment should be returned.
+#! - note_idx is the index of the output note whose attachments commitment should be returned.
 #! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: dynexec
-pub proc output_note_get_attachments_commitment(note_index: u16, padding: [felt; 15]) -> (Commitment, [felt; 12])
+pub proc output_note_get_attachments_commitment(note_idx: OutputNoteIndex, padding: [felt; 15]) -> (Commitment, [felt; 12])
     # assert that the provided note index is less than the total number of output notes
     exec.output_note::assert_note_index_in_bounds
-    # => [note_index, pad(15)]
+    # => [note_idx, pad(15)]
 
     # get the attachments commitment
     exec.output_note::get_attachments_commitment
@@ -1861,21 +1863,21 @@ end
 
 #! Returns the recipient of the output note with the specified index.
 #!
-#! Inputs:  [note_index, pad(15)]
+#! Inputs:  [note_idx, pad(15)]
 #! Outputs: [RECIPIENT, pad(12)]
 #!
 #! Where:
-#! - note_index is the index of the output note whose recipient should be returned.
+#! - note_idx is the index of the output note whose recipient should be returned.
 #! - RECIPIENT is the commitment to the output note's script, storage, the serial number.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: dynexec
-pub proc output_note_get_recipient(note_index: u16, padding: [felt; 15]) -> (NoteRecipient, [felt; 12])
+pub proc output_note_get_recipient(note_idx: OutputNoteIndex, padding: [felt; 15]) -> (NoteRecipient, [felt; 12])
     # assert that the provided note index is less than the total number of output notes
     exec.output_note::assert_note_index_in_bounds
-    # => [note_index, pad(15)]
+    # => [note_idx, pad(15)]
 
     # get the note data pointer by the provided index
     exec.memory::get_output_note_ptr
@@ -1892,21 +1894,21 @@ end
 
 #! Returns the metadata of the output note with the specified index.
 #!
-#! Inputs:  [note_index, pad(15)]
+#! Inputs:  [note_idx, pad(15)]
 #! Outputs: [METADATA, pad(12)]
 #!
 #! Where:
-#! - note_index is the index of the output note whose metadata should be returned.
+#! - note_idx is the index of the output note whose metadata should be returned.
 #! - METADATA is the metadata of the specified output note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: dynexec
-pub proc output_note_get_metadata(note_index: u16, padding: [felt; 15]) -> (NoteMetadata, [felt; 12])
+pub proc output_note_get_metadata(note_idx: OutputNoteIndex, padding: [felt; 15]) -> (NoteMetadata, [felt; 12])
     # assert that the provided note index is less than the total number of output notes
     exec.output_note::assert_note_index_in_bounds
-    # => [note_index, pad(15)]
+    # => [note_idx, pad(15)]
 
     # get the note data pointer by the provided index
     exec.memory::get_output_note_ptr
@@ -2311,19 +2313,19 @@ end
 #! If the pointer to the active note was requested, but no note is being executed, 0 
 #! is returned.
 #!
-#! Inputs:  [is_active_note, note_index]
+#! Inputs:  [is_active_note, note_idx]
 #! Outputs: [input_note_ptr]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return requested data from
 #!   the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose data should be returned. Notice that if
-#!   is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose data should be returned. Notice that if
+#!   is_active_note is 1, note_idx is ignored.
 #! - input_note_ptr is the pointer to the correct input note. 
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-proc get_requested_note_ptr(is_active_note: Bool, note_index: u16) -> ptr<InputNoteData>
+proc get_requested_note_ptr(is_active_note: Bool, note_idx: InputNoteIndex) -> ptr<InputNoteData>
     # get the memory pointer to the note with the specified index and verify it is valid
     swap exec.input_note::get_input_note_ptr swap
     # => [is_active_note, indexed_input_note_ptr]

@@ -12,6 +12,7 @@ use {
     NoteRecipient,
     NoteTag,
     NoteType,
+    OutputNoteIndex,
 } from miden::protocol_utils::types
 use {OutputNoteData} from miden::tx_kernel_core::types
 use miden::tx_kernel_core::account
@@ -124,7 +125,7 @@ const NOTE_BEFORE_ADD_ATTACHMENT_EVENT = event("miden::protocol::note::before_ad
 #! - the note_type is unknown.
 #! - the note tag is not a u32.
 #! - the number of output notes exceeds the maximum limit of 1024.
-pub proc create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> u16
+pub proc create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> OutputNoteIndex
     emit.NOTE_BEFORE_CREATED_EVENT
     # => [tag, note_type, RECIPIENT]
 
@@ -166,14 +167,14 @@ end
 #!
 #! The provided output note index is expected to be less than the total number of output notes.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [ASSETS_COMMITMENT, num_assets]
 #!
 #! Where:
-#! - note_index is the index of the output note whose assets info should be returned.
+#! - note_idx is the index of the output note whose assets info should be returned.
 #! - num_assets is the number of assets in the specified note.
 #! - ASSETS_COMMITMENT is a sequential hash of the assets in the specified note.
-pub proc get_assets_info(note_index: u16) -> (NoteAssetsCommitment, u8)
+pub proc get_assets_info(note_idx: OutputNoteIndex) -> (NoteAssetsCommitment, u8)
     # get the note data pointer based on the index of the requested note
     exec.memory::get_output_note_ptr
     # => [note_data_ptr]
@@ -217,13 +218,13 @@ end
 
 #! Returns the commitment over all attachments in the note with the provided index.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [ATTACHMENTS_COMMITMENT]
 #!
 #! Where:
-#! - note_index is the index of the output note whose attachments commitment should be returned.
+#! - note_idx is the index of the output note whose attachments commitment should be returned.
 #! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note.
-pub proc get_attachments_commitment(note_index: u16) -> NoteAttachmentsCommitment
+pub proc get_attachments_commitment(note_idx: OutputNoteIndex) -> NoteAttachmentsCommitment
     # get the note data pointer based on the index of the requested note
     exec.memory::get_output_note_ptr
     # => [note_ptr]
@@ -266,7 +267,7 @@ end
 #! - the non-fungible asset already exists in the note.
 #! - the total number of ASSETs exceeds the maximum of 16.
 #! - the output note is sealed.
-pub proc add_asset(asset: Asset, note_idx: u16)
+pub proc add_asset(asset: Asset, note_idx: OutputNoteIndex)
     # reject assets with a Custom composition; only None and Fungible are supported today
     exec.asset::assert_supported_composition
     # => [ASSET_ID, ASSET_VALUE, note_idx]
@@ -330,7 +331,7 @@ end
 pub proc add_attachment(
     attachment_scheme: NoteAttachmentScheme,
     attachment_commitment: NoteAttachmentCommitment,
-    note_idx: u16
+    note_idx: OutputNoteIndex
 )
     # validate attachment_scheme does not exceed max
     dup u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
@@ -426,7 +427,7 @@ end
 #! - an invoked callback panics.
 #! - a callback returns 0 attachments with a non-empty attachment list commitment.
 #! - an attachment list returned by a callback is invalid (see `add_attachment_list`).
-pub proc seal(note_idx: u16)
+pub proc seal(note_idx: OutputNoteIndex)
     dup exec.memory::get_output_note_ptr
     # => [note_ptr, note_idx]
 
@@ -451,16 +452,16 @@ end
 
 #! Assert that the provided note index is less than the total number of output notes.
 #!
-#! Inputs:  [note_index]
-#! Outputs: [note_index]
-pub proc assert_note_index_in_bounds(note_index: u16) -> u16
+#! Inputs:  [note_idx]
+#! Outputs: [note_idx]
+pub proc assert_note_index_in_bounds(note_idx: OutputNoteIndex) -> OutputNoteIndex
     # assert that the provided note index is less than the total number of notes
     dup exec.memory::get_num_output_notes
-    # => [output_notes_num, note_index, note_index]
+    # => [output_notes_num, note_idx, note_idx]
 
     u32assert2.err=ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS
     u32lt assert.err=ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS
-    # => [note_index]
+    # => [note_idx]
 end
 
 # HELPER PROCEDURES
@@ -638,7 +639,7 @@ end
 #!
 #! Where:
 #! - note_idx is the index of the next note to be created.
-proc increment_num_output_notes() -> u16
+proc increment_num_output_notes() -> OutputNoteIndex
     # get the current number of output notes
     exec.memory::get_num_output_notes
     # => [note_idx]
@@ -791,7 +792,7 @@ end
 #! - an invoked callback panics.
 #! - a callback returns 0 attachments with a non-empty attachment list commitment.
 #! - an attachment list returned by a callback is invalid (see `add_attachment_list`).
-proc invoke_on_before_note_sealed_callbacks(note_ptr: ptr<OutputNoteData>, note_idx: u16)
+proc invoke_on_before_note_sealed_callbacks(note_ptr: ptr<OutputNoteData>, note_idx: OutputNoteIndex)
     dup exec.memory::get_output_note_asset_data_ptr
     # => [assets_start_ptr, note_ptr, note_idx]
 
@@ -869,7 +870,7 @@ proc maybe_invoke_on_before_note_sealed_callback(
     faucet_id: AccountId,
     assets_start_ptr: ptr<Asset>,
     asset_ptr: ptr<Asset>,
-    note_idx: u16
+    note_idx: OutputNoteIndex
 )
     # check whether the faucet already occurs among the preceding assets in kernel memory;
     # the callback flag is a bit of the faucet ID, so all assets of a faucet share it
@@ -941,7 +942,7 @@ end
 proc add_attachment_list(
     num_attachments: NoteAttachmentCount,
     attachment_list_commitment: NoteAttachmentListCommitment,
-    note_idx: u16
+    note_idx: OutputNoteIndex
 )
     # bound num_attachments by the note's attachment limit, so the list fits into local memory
     dup u32assert.err=ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS
