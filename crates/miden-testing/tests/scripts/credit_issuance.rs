@@ -11,7 +11,7 @@
 //!
 //! The counterparties never read private note details from the chain: each one derives the notes
 //! it expects from the agreed terms and watches the chain for their IDs. Their accounts are private
-//! too, so the chain holds only commitments to their states. The faucet is a network account,
+//! too, so the chain holds only commitments to their states. The NFT faucet is a network account,
 //! which must be public.
 //!
 //! A second test covers the stablecoin side: the issuer confiscates stablecoins from a holder and
@@ -42,7 +42,6 @@ use miden_protocol::asset::{
     NonFungibleAsset,
     TokenSymbol,
 };
-use miden_protocol::block::BlockAccountUpdate;
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
 use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteTag, NoteType, PartialNote};
@@ -294,6 +293,9 @@ fn compute_interest(principal: AssetAmount, interest_percent: u8) -> anyhow::Res
 // ================================================================================================
 
 /// The accounts of the flow and the terms the parties agreed on.
+///
+/// `originator`, `creditor` and `borrower` are the parties' own copies of their private account
+/// states, which [`commit_private`] keeps current.
 struct TestSetup {
     originator: Account,
     creditor: Account,
@@ -494,7 +496,7 @@ async fn credit_issuance_and_repayment() -> anyhow::Result<()> {
     commit_private(&mut mock_chain, &mut setup.creditor, &consume_repayment_note_tx)?;
 
     assert_eq!(setup.creditor.vault().get(bond.id()), None);
-    assert_eq!(setup.creditor.vault().get_balance(setup.stablecoin_asset_id)?, repayment_amount,);
+    assert_eq!(setup.creditor.vault().get_balance(setup.stablecoin_asset_id)?, repayment_amount);
 
     // STEP 8: the consumption created a public BURN note for the faucet carrying the bond
     // --------------------------------------------------------------------------------------------
@@ -701,12 +703,13 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
 /// principal and the borrower repays the principal plus interest.
 ///
 /// The creditor and the borrower have private accounts, so a block holds only the new commitments
-/// to their states and does not show their balances change. The stablecoin faucet's send policy
-/// attaches the details of every private note holding the stablecoin, encrypted to the issuer's
-/// public key. The chain holds only the note's header and attachments, so of all observers of the
-/// chain, only the issuer learns what the note holds and which nullifier it has. The issuer thus
-/// tracks the out-flow of stablecoins from the sender when the note is created, and their in-flow
-/// to the recipient when the note's nullifier appears on-chain.
+/// to their states (see [`commit_private`]) and does not show how their balances change. The
+/// stablecoin faucet's send policy attaches the details of every private note holding the
+/// stablecoin, encrypted to the issuer's public key. The chain holds only the note's header and
+/// attachments, so of all observers of the chain, only the issuer learns what the note holds and
+/// which nullifier it has. The issuer thus tracks the out-flow of stablecoins from the sender when
+/// the note is created, and their in-flow to the recipient when the note's nullifier appears
+/// on-chain.
 #[tokio::test]
 async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
     let principal = AssetAmount::new(PRINCIPAL)?;
@@ -725,8 +728,9 @@ async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
         )))
         .build();
     // The creditor holds the principal and the borrower holds the interest, which are all
-    // stablecoins in circulation. The faucet is public, since every transfer of the stablecoin
-    // calls its policies as a foreign account, which needs the faucet's code and storage.
+    // stablecoins in circulation. The faucet is public: every transfer of the stablecoin invokes
+    // the faucet's callbacks as a foreign account, so the holder executing the transfer needs the
+    // faucet's code and storage, which the chain provides only for a public account.
     let stablecoin_faucet =
         add_stablecoin_faucet(&mut builder, issuer_id, repayment_amount, token_policy_manager, [])?;
     let stablecoin_faucet_id = stablecoin_faucet.id();
@@ -757,7 +761,6 @@ async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
     // the note holds. The issuer decrypts the attachment, which it accepts only if the decrypted
     // details recompute the note's ID: it learns the amount the creditor sent, and computes the
     // nullifier that consuming the note will reveal.
-    assert!(latest_account_update(&mock_chain, creditor.id())?.is_private());
     let (loan_on_chain, loan_details) = issuer_decrypts_new_note(&mock_chain, &issuer_secret_key)?;
     assert_eq!(loan_details.assets(), &NoteAssets::new(vec![principal_asset.into()])?);
     assert_eq!(loan_details.note_id(loan_on_chain.metadata()), loan_on_chain.id());
@@ -801,9 +804,7 @@ async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
         send_private_stablecoins(&mut mock_chain, &mut borrower, creditor.id(), repayment_asset)
             .await?;
 
-    // the block holds only the borrower's new account commitment, and the issuer decrypts the
-    // repayment note like the loan note
-    assert!(latest_account_update(&mock_chain, borrower.id())?.is_private());
+    // the issuer decrypts the repayment note like the loan note
     let (repayment_on_chain, repayment_details) =
         issuer_decrypts_new_note(&mock_chain, &issuer_secret_key)?;
     assert_eq!(repayment_details.assets(), &NoteAssets::new(vec![repayment_asset.into()])?);
@@ -1132,23 +1133,15 @@ fn commit_private(
     commit(mock_chain, executed_tx)?;
     account.apply_patch(executed_tx.account_patch())?;
 
-    let account_update = latest_account_update(mock_chain, account.id())?;
-    assert_eq!(account_update.final_state_commitment(), account.to_commitment());
-
-    Ok(())
-}
-
-/// Returns the update of the account `account_id` in the latest block.
-fn latest_account_update(
-    mock_chain: &MockChain,
-    account_id: AccountId,
-) -> anyhow::Result<BlockAccountUpdate> {
-    mock_chain
-        .latest_block()
+    let block = mock_chain.latest_block();
+    let account_update = block
         .body()
         .updated_accounts()
         .iter()
-        .find(|update| update.account_id() == account_id)
-        .cloned()
-        .with_context(|| format!("the latest block does not update account {account_id}"))
+        .find(|update| update.account_id() == account.id())
+        .context("the block must update the account")?;
+    assert!(account_update.is_private(), "the block must hold only the account's commitment");
+    assert_eq!(account_update.final_state_commitment(), account.to_commitment());
+
+    Ok(())
 }
