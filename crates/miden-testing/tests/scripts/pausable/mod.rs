@@ -48,6 +48,7 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
+use super::fungible_faucet_account;
 use super::rbac::{build_grant_role_note, build_note, role, test_account_id};
 
 pub(crate) static OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(11));
@@ -65,16 +66,7 @@ fn add_faucet_with_pause(
     builder: &mut MockChainBuilder,
     owner: AccountId,
 ) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("SYM")?)
-        .symbol("SYM".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
-    let account_builder = AccountBuilder::new([43u8; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(43)?
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(Pausable::unpaused())
         .with_component(PausableManager);
@@ -451,16 +443,7 @@ fn add_faucet_with_pause_and_policies(
     builder: &mut MockChainBuilder,
     owner: AccountId,
 ) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("SYM")?)
-        .symbol("SYM".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
-    let account_builder = AccountBuilder::new([44u8; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(44)?
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
@@ -752,16 +735,7 @@ async fn pausable_set_max_supply_fails_when_paused() -> anyhow::Result<()> {
 fn add_faucet_with_pause_auth_controlled(
     builder: &mut MockChainBuilder,
 ) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("SYM")?)
-        .symbol("SYM".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
-    let account_builder = AccountBuilder::new([46u8; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(46)?
         .with_component(Authority::AuthControlled)
         .with_component(Pausable::unpaused())
         .with_component(PausableManager);

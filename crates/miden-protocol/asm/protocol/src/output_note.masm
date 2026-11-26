@@ -3,6 +3,7 @@ use {
     Bool,
     NoteAttachmentCommitment,
     NoteAttachmentCount,
+    NoteAttachmentListCommitment,
     NoteAttachmentScheme,
     NoteAttachmentsCommitment,
     NoteId,
@@ -10,13 +11,26 @@ use {
     NoteRecipient,
     NoteTag,
     NoteType,
+    OutputNoteIndex,
 } from miden::protocol::types
 use miden::protocol::note
 use miden::protocol::note_internal
 use miden::core::crypto::hashes::eidos
+use miden::core::word
 use {WORD_NUM_ELEMENTS} from miden::protocol::constants
+use {ATTACHMENT_LIST_ENTRY_SIZE, ATTACHMENT_RESERVED_SCHEME, MAX_ATTACHMENTS_PER_NOTE}
+    from miden::protocol::note
 use {OUTPUT_NOTE_ADD_ASSET_OFFSET, OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET, OUTPUT_NOTE_CREATE_OFFSET, OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET, OUTPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET, OUTPUT_NOTE_GET_METADATA_OFFSET, OUTPUT_NOTE_GET_RECIPIENT_OFFSET, OUTPUT_NOTE_IS_SEALED_OFFSET, OUTPUT_NOTE_SEAL_OFFSET}
     from miden::protocol::kernel_proc_offsets
+
+# ERRORS
+# =================================================================================================
+
+const ERR_ATTACHMENT_LIST_RESERVED_SCHEME_WITH_COMMITMENT =
+    "attachment scheme 0 represents no attachment and requires the empty word as attachment commitment"
+
+const ERR_ATTACHMENT_LIST_TOO_MANY_ATTACHMENTS =
+    "number of attachments in an attachment list cannot exceed 4"
 
 # PROCEDURES
 # =================================================================================================
@@ -42,7 +56,7 @@ use {OUTPUT_NOTE_ADD_ASSET_OFFSET, OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET, OUTPUT_NOT
 #! - the number of output notes exceeds the maximum limit of 1024.
 #!
 #! Invocation: exec
-pub proc create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> u16
+pub proc create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> OutputNoteIndex
     # pad the stack before the syscall to prevent accidental modification of the deeper stack
     # elements
     push.0 movdn.6 push.0
@@ -73,7 +87,7 @@ end
 #! final only once `seal` returns. Sealing is idempotent: sealing an already sealed note returns
 #! without invoking any callback.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: []
 #!
 #! Panics if:
@@ -86,11 +100,11 @@ end
 #!   note's attachment limits.
 #!
 #! Invocation: exec
-pub proc seal(note_index: u16)
+pub proc seal(note_idx: OutputNoteIndex)
     # Pad above the caller's remaining stack before bringing the note index to the top.
     padw padw padw push.0.0
     movup.14 push.OUTPUT_NOTE_SEAL_OFFSET
-    # => [offset, note_index, pad(14)]
+    # => [offset, note_idx, pad(14)]
 
     syscall.exec_kernel_proc
     # => [pad(16)]
@@ -101,18 +115,18 @@ end
 
 #! Returns whether the specified output note is sealed against asset and attachment changes.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [is_sealed]
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: exec
-pub proc is_sealed(note_index: u16) -> Bool
+pub proc is_sealed(note_idx: OutputNoteIndex) -> Bool
     # Pad above the caller's remaining stack before bringing the note index to the top.
     padw padw padw push.0.0
     movup.14 push.OUTPUT_NOTE_IS_SEALED_OFFSET
-    # => [offset, note_index, pad(14)]
+    # => [offset, note_idx, pad(14)]
 
     syscall.exec_kernel_proc
     # => [is_sealed, pad(15)]
@@ -126,11 +140,11 @@ end
 #!
 #! This information can then be used to retrieve the actual assets from the advice map.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [ASSETS_COMMITMENT, num_assets]
 #!
 #! Where:
-#! - note_index is the index of the output note whose assets info should be returned.
+#! - note_idx is the index of the output note whose assets info should be returned.
 #! - num_assets is the number of assets in the specified note.
 #! - ASSETS_COMMITMENT is a sequential hash of the assets in the specified note.
 #!
@@ -138,17 +152,17 @@ end
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: exec
-pub proc get_assets_info(note_index: u16) -> (word, u8)
+pub proc get_assets_info(note_idx: OutputNoteIndex) -> (word, u8)
     # start padding the stack
     push.0.0 movup.2
-    # => [note_index, 0, 0]
+    # => [note_idx, 0, 0]
 
     push.OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET
-    # => [offset, note_index, 0, 0]
+    # => [offset, note_idx, 0, 0]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, note_index, pad(14)]
+    # => [offset, note_idx, pad(14)]
 
     syscall.exec_kernel_proc
     # => [ASSETS_COMMITMENT, num_assets, pad(11)]
@@ -172,19 +186,19 @@ end
 #! [ASSET_ID_0, ASSET_VALUE_0, ASSET_ID_1, ASSET_VALUE_1, ..., ASSET_ID_N, ASSET_VALUE_N], where each asset occupies two words. For more detailed
 #! information about the layout of each asset see the description of the `Asset` Rust type.
 #!
-#! Inputs:  [dest_ptr, note_index]
+#! Inputs:  [dest_ptr, note_idx]
 #! Outputs: [num_assets]
 #!
 #! Where:
 #! - dest_ptr is the memory address to write the assets.
-#! - note_index is the index of the output note whose assets info should be returned.
+#! - note_idx is the index of the output note whose assets info should be returned.
 #! - num_assets is the number of assets in the specified note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: exec
-pub proc get_assets(dest_ptr: ptr<Asset>, note_index: u16) -> u8
+pub proc get_assets(dest_ptr: ptr<Asset>, note_idx: OutputNoteIndex) -> u8
     # get the assets commitment and assets number
     swap exec.get_assets_info
     # => [ASSETS_COMMITMENT, num_assets, dest_ptr]
@@ -200,11 +214,11 @@ end
 
 #! Returns the commitment over all attachments of the output note with the specified index.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [ATTACHMENTS_COMMITMENT]
 #!
 #! Where:
-#! - note_index is the index of the output note whose attachments commitment should be returned.
+#! - note_idx is the index of the output note whose attachments commitment should be returned.
 #! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note. A note without
 #!   attachments uses the empty hash.
 #!
@@ -212,17 +226,17 @@ end
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: exec
-pub proc get_attachments_commitment(note_index: u16) -> NoteAttachmentsCommitment
+pub proc get_attachments_commitment(note_idx: OutputNoteIndex) -> NoteAttachmentsCommitment
     # start padding the stack
     push.0.0 movup.2
-    # => [note_index, 0, 0]
+    # => [note_idx, 0, 0]
 
     push.OUTPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET
-    # => [offset, note_index, 0, 0]
+    # => [offset, note_idx, 0, 0]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, note_index, pad(14)]
+    # => [offset, note_idx, pad(14)]
 
     syscall.exec_kernel_proc
     # => [ATTACHMENTS_COMMITMENT, pad(12)]
@@ -249,7 +263,7 @@ end
 #! - the active account is not the native account.
 #!
 #! Invocation: exec
-pub proc add_asset(asset: Asset, note_idx: u16)
+pub proc add_asset(asset: Asset, note_idx: OutputNoteIndex)
     push.OUTPUT_NOTE_ADD_ASSET_OFFSET
     # => [offset, ASSET_ID, ASSET_VALUE, note_idx]
 
@@ -300,7 +314,7 @@ end
 pub proc add_attachment(
     attachment_scheme: NoteAttachmentScheme,
     attachment_commitment: NoteAttachmentCommitment,
-    note_idx: u16
+    note_idx: OutputNoteIndex
 )
     push.OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET
     # => [offset, attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
@@ -344,7 +358,7 @@ end
 pub proc add_word_attachment(
     attachment_scheme: NoteAttachmentScheme,
     attachment: word,
-    note_idx: u16
+    note_idx: OutputNoteIndex
 )
     # => [attachment_scheme, ATTACHMENT, note_idx]
 
@@ -410,7 +424,7 @@ pub proc add_attachment_from_memory(
     attachment_scheme: NoteAttachmentScheme,
     num_words: u16,
     attachment_ptr: ptr<word>,
-    note_idx: u16
+    note_idx: OutputNoteIndex
 )
     # Compute num_elements = num_words * WORD_NUM_ELEMENTS
     movdn.3 mul.WORD_NUM_ELEMENTS
@@ -441,30 +455,152 @@ pub proc add_attachment_from_memory(
     # => []
 end
 
+#! Returns the attachment list that holds the provided attachment, as an `on_before_note_sealed`
+#! callback returns it, and inserts the list into the advice map under its commitment.
+#!
+#! The list holds the single entry `[attachment_scheme, 0, 0, 0, ATTACHMENT_COMMITMENT]`. The
+#! reserved attachment scheme 0 with the empty word as commitment represents no attachment, for
+#! which the procedure returns 0 attachments and the empty word and inserts nothing. The procedure
+#! does not insert the attachment, whose elements must be in the advice map under
+#! ATTACHMENT_COMMITMENT.
+#!
+#! Inputs:
+#!   Operand stack: [attachment_scheme, ATTACHMENT_COMMITMENT]
+#! Outputs:
+#!   Operand stack: [num_attachments, ATTACHMENT_LIST_COMMITMENT]
+#!   Advice map: {
+#!     ATTACHMENT_LIST_COMMITMENT: [attachment_scheme, 0, 0, 0, ATTACHMENT_COMMITMENT],
+#!   }
+#!
+#! Where:
+#! - attachment_scheme is the scheme of the attachment, or 0 for no attachment.
+#! - ATTACHMENT_COMMITMENT is the commitment to the attachment, or the empty word for no
+#!   attachment.
+#! - num_attachments is the number of attachments in the list, 1 or 0 for no attachment.
+#! - ATTACHMENT_LIST_COMMITMENT is the commitment to the attachment list, or the empty word for no
+#!   attachment.
+#!
+#! Panics if:
+#! - attachment_scheme is 0 and ATTACHMENT_COMMITMENT is not the empty word.
+#!
+#! Invocation: exec
+pub proc single_attachment_list(
+    attachment_scheme: NoteAttachmentScheme,
+    attachment_commitment: NoteAttachmentCommitment
+) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
+    dup eq.ATTACHMENT_RESERVED_SCHEME
+    # => [is_reserved_scheme, attachment_scheme, ATTACHMENT_COMMITMENT]
+
+    if.true
+        # the reserved scheme represents no attachment, which has the empty word as commitment
+        movdn.4 exec.word::eqz
+        assert.err=ERR_ATTACHMENT_LIST_RESERVED_SCHEME_WITH_COMMITMENT
+        # => [attachment_scheme]
+
+        padw movup.4
+        # => [num_attachments, EMPTY_WORD]
+    else
+        # pad the attachment scheme to a word to form the list entry
+        push.0.0.0 movup.3
+        # => [attachment_scheme, 0, 0, 0, ATTACHMENT_COMMITMENT]
+
+        adv.insert_hdword exec.eidos::hash_double_word
+        # => [ATTACHMENT_LIST_COMMITMENT]
+
+        push.1
+        # => [num_attachments, ATTACHMENT_LIST_COMMITMENT]
+    end
+end
+
+#! Returns the attachment list held in memory at the provided address, as an
+#! `on_before_note_sealed` callback returns it, and inserts the list into the advice map under its
+#! commitment.
+#!
+#! The list holds num_attachments entries of two words each, the attachment scheme padded to a word
+#! with zeros followed by the attachment commitment:
+#! `[attachment_scheme, 0, 0, 0, ATTACHMENT_COMMITMENT]`. For 0 attachments, the procedure returns
+#! the empty word as the list commitment and inserts nothing. The procedure does not insert the listed attachments, whose
+#! elements must be in the advice map under their commitments.
+#!
+#! Inputs:
+#!   Operand stack: [num_attachments, attachment_list_ptr]
+#! Outputs:
+#!   Operand stack: [num_attachments, ATTACHMENT_LIST_COMMITMENT]
+#!   Advice map: {
+#!     ATTACHMENT_LIST_COMMITMENT: [[ATTACHMENT_LIST_ELEMENTS]],
+#!   }
+#!
+#! Where:
+#! - num_attachments is the number of attachments in the list.
+#! - attachment_list_ptr is the memory address of the first entry of the list.
+#! - ATTACHMENT_LIST_COMMITMENT is the commitment to the attachment list, or the empty word if
+#!   num_attachments is 0.
+#! - ATTACHMENT_LIST_ELEMENTS are the elements of the list entries.
+#!
+#! Panics if:
+#! - num_attachments exceeds 4.
+#! - attachment_list_ptr is not word-aligned.
+#!
+#! Invocation: exec
+pub proc attachment_list_from_memory(
+    num_attachments: NoteAttachmentCount,
+    attachment_list_ptr: ptr<word>
+) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
+    # bound num_attachments by the note's attachment limit
+    dup u32assert.err=ERR_ATTACHMENT_LIST_TOO_MANY_ATTACHMENTS
+    u32lte.MAX_ATTACHMENTS_PER_NOTE assert.err=ERR_ATTACHMENT_LIST_TOO_MANY_ATTACHMENTS
+    # => [num_attachments, attachment_list_ptr]
+
+    dup eq.0
+    # => [is_empty_list, num_attachments, attachment_list_ptr]
+
+    if.true
+        # the empty list is represented by the empty word
+        swap drop padw movup.4
+        # => [num_attachments, EMPTY_WORD]
+    else
+        dup movdn.2
+        # => [num_attachments, attachment_list_ptr, num_attachments]
+
+        mul.ATTACHMENT_LIST_ENTRY_SIZE dup.1 add swap
+        # => [attachment_list_ptr, list_end_ptr, num_attachments]
+
+        dup.1 dup.1 exec.eidos::hash_words
+        # => [ATTACHMENT_LIST_COMMITMENT, attachment_list_ptr, list_end_ptr, num_attachments]
+
+        # insert the list elements into the advice map keyed by the list commitment
+        adv.insert_mem
+        # => [ATTACHMENT_LIST_COMMITMENT, attachment_list_ptr, list_end_ptr, num_attachments]
+
+        movup.4 drop movup.4 drop movup.4
+        # => [num_attachments, ATTACHMENT_LIST_COMMITMENT]
+    end
+end
+
 #! Returns the recipient of the output note with the specified index.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [RECIPIENT]
 #!
 #! Where:
-#! - note_index is the index of the output note whose recipient should be returned.
+#! - note_idx is the index of the output note whose recipient should be returned.
 #! - RECIPIENT is the commitment to the note note's script, storage, the serial number.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: exec
-pub proc get_recipient(note_index: u16) -> NoteRecipient
+pub proc get_recipient(note_idx: OutputNoteIndex) -> NoteRecipient
     # start padding the stack
     push.0.0 movup.2
-    # => [note_index, 0, 0]
+    # => [note_idx, 0, 0]
 
     push.OUTPUT_NOTE_GET_RECIPIENT_OFFSET
-    # => [offset, note_index, 0, 0]
+    # => [offset, note_idx, 0, 0]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, note_index, pad(14)]
+    # => [offset, note_idx, pad(14)]
 
     syscall.exec_kernel_proc
     # => [RECIPIENT, pad(12)]
@@ -476,28 +612,28 @@ end
 
 #! Returns the metadata of the output note with the specified index.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [METADATA]
 #!
 #! Where:
-#! - note_index is the index of the output note whose metadata should be returned.
+#! - note_idx is the index of the output note whose metadata should be returned.
 #! - METADATA is the metadata of the specified output note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: exec
-pub proc get_metadata(note_index: u16) -> NoteMetadata
+pub proc get_metadata(note_idx: OutputNoteIndex) -> NoteMetadata
     # start padding the stack
     push.0.0 movup.2
-    # => [note_index, 0, 0]
+    # => [note_idx, 0, 0]
 
     push.OUTPUT_NOTE_GET_METADATA_OFFSET
-    # => [offset, note_index, 0, 0]
+    # => [offset, note_idx, 0, 0]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, note_index, pad(14)]
+    # => [offset, note_idx, pad(14)]
 
     syscall.exec_kernel_proc
     # => [METADATA, pad(12)]
@@ -523,7 +659,7 @@ end
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: exec
-pub proc compute_note_id(note_idx: u16) -> NoteId
+pub proc compute_note_id(note_idx: OutputNoteIndex) -> NoteId
     dup exec.get_assets_info
     # => [ASSETS_COMMITMENT, num_assets, note_idx]
 
@@ -555,12 +691,12 @@ end
 #! Searches the metadata of the output note with the specified index for the specified
 #! attachment scheme and returns the index of the first matching slot.
 #!
-#! Inputs:  [attachment_scheme, note_index]
+#! Inputs:  [attachment_scheme, note_idx]
 #! Outputs: [is_found, attachment_idx]
 #!
 #! Where:
 #! - attachment_scheme is the scheme of the attachment to find.
-#! - note_index is the index of the output note.
+#! - note_idx is the index of the output note.
 #! - is_found is 1 if the attachment with the provided scheme was found, 0 otherwise.
 #! - attachment_idx is the index (0-3) of the first matching slot, or undefined if not found.
 #!
@@ -568,7 +704,7 @@ end
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: exec
-pub proc find_attachment(attachment_scheme: NoteAttachmentScheme, note_index: u16) -> (Bool, u8)
+pub proc find_attachment(attachment_scheme: NoteAttachmentScheme, note_idx: OutputNoteIndex) -> (Bool, u8)
     swap exec.get_metadata
     # => [METADATA, attachment_scheme]
 
@@ -582,12 +718,12 @@ end
 #! Writes the attachment commitments of the output note with the specified index to the provided
 #! destination pointer.
 #!
-#! Inputs:  [dest_ptr, note_index]
+#! Inputs:  [dest_ptr, note_idx]
 #! Outputs: [num_attachments]
 #!
 #! Where:
 #! - dest_ptr is the memory address to which to write the attachment commitments.
-#! - note_index is the index of the output note.
+#! - note_idx is the index of the output note.
 #! - num_attachments is the number of attachments in the note.
 #!
 #! Panics if:
@@ -598,7 +734,7 @@ end
 #! Invocation: exec
 pub proc write_attachment_commitments_to_memory(
     dest_ptr: ptr<NoteAttachmentCommitment>,
-    note_index: u16
+    note_idx: OutputNoteIndex
 ) -> NoteAttachmentCount
     swap exec.get_attachments_commitment
     # => [ATTACHMENTS_COMMITMENT, dest_ptr]
@@ -610,13 +746,13 @@ end
 #! Writes the attachment with the provided index from the output note with the specified index
 #! to the provided destination pointer.
 #!
-#! Inputs:  [dest_ptr, attachment_idx, note_index]
+#! Inputs:  [dest_ptr, attachment_idx, note_idx]
 #! Outputs: [num_words]
 #!
 #! Where:
 #! - dest_ptr is the memory address to which to write the attachment data.
 #! - attachment_idx is the index of the attachment to retrieve.
-#! - note_index is the index of the output note.
+#! - note_idx is the index of the output note.
 #! - num_words is the number of words in the attachment.
 #!
 #! Panics if:
@@ -630,13 +766,13 @@ end
 pub proc write_attachment_to_memory(
     dest_ptr: ptr<word>,
     attachment_idx: u8,
-    note_index: u16
+    note_idx: OutputNoteIndex
 ) -> u16
     # set up call to write the attachment commitments to local memory
     # we allocate 16 elements of memory (max num attachments * WORD_SIZE) to store all
     # four attachment commitments
     movdn.2 swap locaddr.0
-    # => [attachment_commitments_ptr, note_index, attachment_idx, dest_ptr]
+    # => [attachment_commitments_ptr, note_idx, attachment_idx, dest_ptr]
 
     exec.write_attachment_commitments_to_memory
     # => [num_attachments, attachment_idx, dest_ptr]

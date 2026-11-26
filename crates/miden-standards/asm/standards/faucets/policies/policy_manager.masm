@@ -7,6 +7,7 @@ use {
     NoteRecipient,
     NoteTag,
     NoteType,
+    OutputNoteIndex,
     StorageSlotId,
 } from miden::protocol::types
 use miden::core::word
@@ -191,7 +192,7 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc invoke_send_policy(note_idx: u16) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
+pub proc invoke_send_policy(note_idx: OutputNoteIndex) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
     exec.expiration::apply_default
     # => [note_idx, pad(15)]
 

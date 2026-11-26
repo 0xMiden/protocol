@@ -37,8 +37,8 @@ procedure_root!(
 /// active, transfers fail if they would spend frozen or confiscated amounts of the native account.
 /// Receiving assets is never restricted.
 ///
-/// A restricted account can only send what it held at the beginning of the transaction, so it must
-/// spend assets it receives in a later transaction.
+/// Assets received in input notes can be sent in the same transaction, as long as the restricted
+/// amount remains in the account.
 ///
 /// The issuing faucet is exempt from its own restrictions.
 #[derive(Debug, Clone, Default)]

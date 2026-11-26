@@ -1798,8 +1798,8 @@ pub enum ValidatorConfigError {
     TooManyKeys { count: usize },
     #[error("validator set contains duplicate public keys")]
     DuplicateKey,
-    #[error("quorum is {quorum} but must equal the validator count of {count}")]
-    QuorumMustEqualValidatorCount { quorum: u16, count: usize },
+    #[error("quorum is {quorum} but must be between 1 and the validator count of {count}")]
+    QuorumOutOfRange { quorum: u16, count: usize },
 }
 
 // NULLIFIER TREE ERROR
