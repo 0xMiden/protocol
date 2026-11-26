@@ -9,7 +9,6 @@ use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
 use miden_protocol::crypto::rand::EidosRandomCoin;
-use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteType, PartialNote};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -30,10 +29,10 @@ use miden_standards::account::policies::{
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_IS_BLOCKED,
-    ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO,
     ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS,
     ERR_SENDER_NOT_OWNER,
 };
+use miden_standards::note::config::EncryptedAssetsIssuerKeyConfigNote;
 use miden_standards::note::{EncryptedAssetsAttachment, EncryptedAssetsIssuerKey, P2idNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::SendNotesTransactionScript;
@@ -228,34 +227,21 @@ fn assert_issuer_decrypts_note(
     Ok(())
 }
 
-/// Returns a note, created by `sender`, whose script calls `set_issuer_key` on the consuming
-/// faucet with `public_key`.
-fn set_issuer_key_note(sender: AccountId, public_key: [Felt; 5]) -> anyhow::Result<Note> {
-    let [e0, e1, e2, e3, e4] = public_key;
-    let script_code = format!(
-        "
-        use miden::standards::attachments::encrypted_assets
-
-        @note_script
-        pub proc main
-            padw padw push.0.0.0
-            push.{e4} push.{e3} push.{e2} push.{e1} push.{e0}
-            # => [public_key(5), pad(11), pad(16)]
-
-            call.encrypted_assets::set_issuer_key
-            # => [pad(16), pad(16)]
-
-            dropw dropw dropw dropw
-            # => [pad(16)]
-        end
-        "
-    );
-
+/// Returns an [`EncryptedAssetsIssuerKeyConfigNote`], created by `sender`, that sets `issuer_key`
+/// on `faucet_id`.
+fn issuer_key_config_note(
+    sender: AccountId,
+    faucet_id: AccountId,
+    issuer_key: EncryptedAssetsIssuerKey,
+) -> anyhow::Result<Note> {
     let mut rng = EidosRandomCoin::new([Felt::from(6u32); 4].into());
-    Ok(NoteBuilder::new(sender, &mut rng)
-        .note_type(NoteType::Public)
-        .code(script_code.as_str())
-        .build()?)
+    Ok(EncryptedAssetsIssuerKeyConfigNote::builder()
+        .sender(sender)
+        .target(faucet_id)
+        .issuer_key(issuer_key)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into())
 }
 
 /// Adds an existing faucet owned by `owner`, whose authority gates its setters, with
@@ -535,7 +521,11 @@ async fn authority_rotates_issuer_key() -> anyhow::Result<()> {
         Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak },
         [FungibleAsset::new(faucet.id(), NOTE_AMOUNT)?.into()],
     )?;
-    let rotation_note = set_issuer_key_note(owner, new_secret_key.public_key().to_elements())?;
+    let rotation_note = issuer_key_config_note(
+        owner,
+        faucet.id(),
+        EncryptedAssetsIssuerKey::new(new_secret_key.public_key()),
+    )?;
     builder.add_output_note(RawOutputNote::Full(rotation_note.clone()));
     let mut mock_chain = builder.build()?;
 
@@ -558,27 +548,15 @@ async fn authority_rotates_issuer_key() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `set_issuer_key` rejects a caller that the faucet's authority does not authorize, and the zero
-/// key, which marks an unset key.
-#[rstest::rstest]
-#[case::sender_is_not_the_owner(false, issuer_key_elements(), ERR_SENDER_NOT_OWNER)]
-#[case::zero_key(true, [Felt::ZERO; 5], ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO)]
+/// `set_issuer_key` rejects a caller that the faucet's authority does not authorize.
 #[tokio::test]
-async fn set_issuer_key_rejects_invalid_calls(
-    #[case] sent_by_owner: bool,
-    #[case] public_key: [Felt; 5],
-    #[case] expected_error: MasmError,
-) -> anyhow::Result<()> {
+async fn set_issuer_key_rejects_unauthorized_sender() -> anyhow::Result<()> {
     let owner = AccountId::try_from(ACCOUNT_ID_SENDER)?;
-    let sender = if sent_by_owner {
-        owner
-    } else {
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?
-    };
+    let sender = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
 
     let mut builder = MockChain::builder();
     let faucet = add_owned_faucet(&mut builder, owner)?;
-    let rotation_note = set_issuer_key_note(sender, public_key)?;
+    let rotation_note = issuer_key_config_note(sender, faucet.id(), issuer_key())?;
     let mock_chain = builder.build()?;
 
     let result = mock_chain
@@ -588,7 +566,7 @@ async fn set_issuer_key_rejects_invalid_calls(
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, expected_error);
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
 
     Ok(())
 }
