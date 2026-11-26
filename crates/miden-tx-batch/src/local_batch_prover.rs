@@ -145,6 +145,7 @@ impl LocalBatchProver {
             input_notes,
             output_notes,
             batch_expiration_block_num,
+            code_patch,
         ) = proposed_batch.into_parts();
 
         ProvenBatch::new_unchecked(
@@ -157,6 +158,7 @@ impl LocalBatchProver {
             batch_expiration_block_num,
             tx_headers,
             public_logs,
+            code_patch,
             proof,
         )
     }

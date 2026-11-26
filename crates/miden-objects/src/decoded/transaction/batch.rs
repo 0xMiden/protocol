@@ -85,6 +85,7 @@ impl crate::BuildUnchecked for ProvenBatch {
             unwrap_infallible(self.expiration_block_num.verify()),
             transactions,
             public_logs,
+            self.code_patch.verify()?,
             self.proof,
         )?)
     }
@@ -123,6 +124,8 @@ impl VerifyWith<&miden_protocol::batch::ProposedBatch> for ProvenBatch {
             Some("expiration block")
         } else if batch.transactions().as_slice() != proposed.transaction_headers().as_slice() {
             Some("transaction headers")
+        } else if batch.code_patch() != proposed.code_patch() {
+            Some("code patch")
         } else {
             None
         };

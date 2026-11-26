@@ -21,6 +21,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::AccountIdBuilder;
+use miden_protocol::testing::assembler::assemble_test_package;
 use miden_protocol::transaction::{
     InputNote,
     InputNoteCommitment,
@@ -28,12 +29,14 @@ use miden_protocol::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     RawOutputNote,
+    TransactionCodePatch,
 };
 use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::LocalTransactionProver;
+use miden_tx_batch::LocalBatchProver;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
@@ -1040,6 +1043,60 @@ fn noop_tx_before_state_updating_tx_against_same_account() -> anyhow::Result<()>
     let update = batch.account_updates().get(&account1.id()).unwrap();
     assert_eq!(update.initial_state_commitment(), account1.to_commitment());
     assert_eq!(update.final_state_commitment(), random_final_state_commitment);
+
+    Ok(())
+}
+
+/// Tests that the proposed and the proven batch carry the merged code patch of their transactions.
+#[test]
+fn batch_carries_merged_code_patch() -> anyhow::Result<()> {
+    let TestSetup { mut chain, account1, account2, .. } = setup_chain();
+    let block1 = chain.block_header(1);
+    let block2 = chain.prove_next_block()?;
+
+    let first_patch = TransactionCodePatch::mock();
+    // Shares `foo` with the mock patch.
+    let second_mast = assemble_test_package(
+        "test-batch-code-patch",
+        "test::batch_code_patch",
+        "
+        pub proc foo
+            push.1 drop
+        end
+
+        pub proc baz
+            push.3 drop
+        end
+        ",
+    )
+    .mast_forest()
+    .clone();
+    let second_patch = TransactionCodePatch::new(second_mast)?;
+
+    let tx1 =
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
+            .reference_block(&block1)
+            .code_patch(first_patch.clone())
+            .build()?;
+    let tx2 =
+        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
+            .reference_block(&block1)
+            .code_patch(second_patch.clone())
+            .build()?;
+
+    let batch = ProposedBatch::new_unverified(
+        [tx1, tx2].into_iter().map(Arc::new).collect(),
+        block2.header().clone(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+
+    let expected_patch = TransactionCodePatch::merge([&first_patch, &second_patch])?;
+    assert_eq!(expected_patch.created_procedures().len(), 3);
+    assert_eq!(batch.code_patch(), &expected_patch);
+
+    let proven_batch = LocalBatchProver::default().prove_dummy(batch)?;
+    assert_eq!(proven_batch.code_patch(), &expected_patch);
 
     Ok(())
 }

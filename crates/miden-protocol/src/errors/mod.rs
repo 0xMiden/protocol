@@ -1357,6 +1357,8 @@ pub enum ProposedBatchError {
     /// Public log contents or aggregate limits are invalid.
     #[error("invalid public transaction logs")]
     TransactionLogs(#[from] TransactionLogError),
+    #[error("failed to merge the code patches of the transactions")]
+    CodePatchMerge(#[source] CodePatchError),
     #[error("failed to verify transaction {transaction_id} in transaction batch")]
     TransactionVerificationFailed {
         transaction_id: TransactionId,

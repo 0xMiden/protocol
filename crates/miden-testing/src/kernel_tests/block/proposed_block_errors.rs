@@ -30,6 +30,7 @@ fn with_reference_block_commitment(batch: &ProvenBatch, commitment: Word) -> Pro
         batch.batch_expiration_block_num(),
         batch.transactions().clone(),
         batch.public_logs().clone(),
+        batch.code_patch().clone(),
         batch.proof().clone(),
     )
     .expect("batch expiration block number should remain valid")

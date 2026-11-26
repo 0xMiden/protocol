@@ -96,6 +96,7 @@ fn logged_owners() -> (ProvenBatch, BlockBody) {
         1.into(),
         headers.clone(),
         public_logs.clone(),
+        TransactionCodePatch::default(),
         dummy_execution_proof(),
     )
     .unwrap();
@@ -208,6 +209,7 @@ fn checked_owners_revalidate_public_log_associations() {
         batch.batch_expiration_block_num(),
         batch.transactions().clone(),
         PublicTransactionLogs::default(),
+        batch.code_patch().clone(),
         batch.proof().clone(),
     );
     assert!(matches!(
