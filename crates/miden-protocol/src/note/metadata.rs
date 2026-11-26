@@ -285,57 +285,6 @@ impl NoteMetadata {
     }
 }
 
-impl Serializable for NoteMetadata {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.partial_metadata.write_into(target);
-
-        let present_headers_iter =
-            self.attachment_headers.iter().filter(|header| !header.is_absent());
-
-        let num_headers_present = u8::try_from(present_headers_iter.clone().count())
-            .expect("num attachments is validated to be at most 4");
-        num_headers_present.write_into(target);
-        target.write_many(present_headers_iter);
-
-        self.attachments_commitment.write_into(target);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.partial_metadata.get_size_hint()
-            + core::mem::size_of::<u8>()
-            + self
-                .attachment_headers
-                .iter()
-                .filter(|header| !header.is_absent())
-                .map(NoteAttachmentHeader::get_size_hint)
-                .sum::<usize>()
-            + self.attachments_commitment.get_size_hint()
-    }
-}
-
-impl Deserializable for NoteMetadata {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let partial_metadata = PartialNoteMetadata::read_from(source)?;
-
-        let num_headers_present = u8::read_from(source)? as usize;
-        if num_headers_present > NoteAttachments::MAX_COUNT {
-            return Err(DeserializationError::InvalidValue(format!(
-                "number of attachment headers ({num_headers_present}) exceeds maximum ({})",
-                NoteAttachments::MAX_COUNT
-            )));
-        }
-
-        let mut attachment_headers = [NoteAttachmentHeader::absent(); NoteAttachments::MAX_COUNT];
-        for header in attachment_headers.iter_mut().take(num_headers_present) {
-            *header = NoteAttachmentHeader::read_from(source)?;
-        }
-
-        let attachment_commitment = Word::read_from(source)?;
-
-        Ok(Self::from_parts(partial_metadata, attachment_headers, attachment_commitment))
-    }
-}
-
 // HELPER FUNCTIONS
 // ================================================================================================
 
@@ -424,43 +373,18 @@ mod tests {
         Ok(())
     }
 
-    #[rstest::rstest]
-    #[case::attachment_none([])]
-    #[case::attachment_two_words([
-      NoteAttachment::with_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
-      NoteAttachment::with_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
-    ])]
-    #[case::attachment_word_and_two_arrays([
-      NoteAttachment::with_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
-      NoteAttachment::with_words(
-        NoteAttachmentScheme::MAX,
-        vec![Word::from([5, 5, 5, 5u32]); 2],
-      )?,
-      NoteAttachment::with_words(
-        NoteAttachmentScheme::MAX,
-        vec![Word::from([10, 10, 10, 10u32]); NoteAttachment::MAX_NUM_WORDS as usize],
-      )?,
-    ])]
     #[test]
-    fn note_metadata_serde(
-        #[case] attachments: impl IntoIterator<Item = NoteAttachment>,
-    ) -> anyhow::Result<()> {
+    fn partial_note_metadata_serde() -> anyhow::Result<()> {
         // Use the Account ID with the maximum one bits to test if the merge function always
         // produces valid felts.
         let sender = AccountId::try_from(ACCOUNT_ID_MAX_ONES).unwrap();
         let note_type = NoteType::Public;
         let tag = NoteTag::new(u32::MAX);
         let partial_metadata = PartialNoteMetadata::new(sender, note_type).with_tag(tag);
-        let attachments = NoteAttachments::new(attachments.into_iter().collect())?;
-        let metadata = NoteMetadata::new(partial_metadata, &attachments);
 
         // Partial Metadata Roundtrip
         let deserialized = PartialNoteMetadata::read_from_bytes(&partial_metadata.to_bytes())?;
         assert_eq!(deserialized, partial_metadata);
-
-        // Metadata Roundtrip
-        let roundtripped = NoteMetadata::read_from_bytes(&metadata.to_bytes())?;
-        assert_eq!(roundtripped, metadata);
 
         Ok(())
     }

@@ -1,17 +1,9 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::account::{Account, AccountCodePatch, AccountId, AccountStorage, AccountStoragePatch};
 use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::{AccountDeltaError, AccountError};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{ACCOUNT_DELTA_COMMITMENT_DOMAIN, DoubleWord, Felt, Hasher, Word};
 
 mod delta_op;
@@ -424,48 +416,6 @@ impl SequentialCommit for AccountDelta {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for AccountDelta {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.account_id.write_into(target);
-        self.storage.write_into(target);
-        self.vault.write_into(target);
-        self.code.write_into(target);
-        self.nonce_delta.write_into(target);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.account_id.get_size_hint()
-            + self.storage.get_size_hint()
-            + self.vault.get_size_hint()
-            + self.code.get_size_hint()
-            + self.nonce_delta.get_size_hint()
-    }
-}
-
-impl Deserializable for AccountDelta {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let account_id = AccountId::read_from(source)?;
-        let storage = AccountStoragePatch::read_from(source)?;
-        let vault = AccountVaultDelta::read_from(source)?;
-        let code = AccountCodePatch::read_from(source)?;
-        let nonce_delta = Felt::read_from(source)?;
-
-        validate_nonce(nonce_delta, &storage, &vault, &code)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
-
-        Ok(Self {
-            account_id,
-            storage,
-            vault,
-            code,
-            nonce_delta,
-        })
-    }
-}
-
 // HELPER FUNCTIONS
 // ================================================================================================
 
@@ -500,13 +450,10 @@ mod tests {
 
     use super::{AccountDelta, AccountStoragePatch, AccountVaultDelta};
     use crate::account::{
-        Account,
         AccountCode,
         AccountCodePatch,
         AccountId,
         AccountPatch,
-        AccountStorage,
-        AccountType,
         AccountVaultPatch,
         StorageMapKey,
         StorageMapPatch,
@@ -515,20 +462,10 @@ mod tests {
         StorageSlotPatch,
         StorageValuePatch,
     };
-    use crate::asset::{
-        Asset,
-        AssetVault,
-        FungibleAsset,
-        NonFungibleAsset,
-        NonFungibleAssetDetails,
-    };
+    use crate::asset::{FungibleAsset, NonFungibleAsset};
     use crate::crypto::SequentialCommit;
     use crate::errors::{AccountDeltaError, AccountError};
-    use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_SENDER,
-        ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
-        AccountIdBuilder,
-    };
+    use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
     use crate::utils::serde::Serializable;
     use crate::{
         ACCOUNT_DELTA_COMMITMENT_DOMAIN,
@@ -853,22 +790,8 @@ mod tests {
 
     #[test]
     fn account_delta_size_hint() {
-        // AccountDelta
-        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
         let storage_patch = AccountStoragePatch::new();
-        let vault_delta = AccountVaultDelta::default();
         assert_eq!(storage_patch.to_bytes().len(), storage_patch.get_size_hint());
-        assert_eq!(vault_delta.to_bytes().len(), vault_delta.get_size_hint());
-
-        let account_delta = AccountDelta::new(
-            account_id,
-            storage_patch,
-            vault_delta,
-            AccountCodePatch::default(),
-            Felt::ZERO,
-        )
-        .unwrap();
-        assert_eq!(account_delta.to_bytes().len(), account_delta.get_size_hint());
 
         let storage_patch = AccountStoragePatch::from_iters(
             [StorageSlotName::mock(1)],
@@ -887,58 +810,9 @@ mod tests {
                 ),
             )],
         );
-
-        let non_fungible: Asset = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
-            AccountIdBuilder::new()
-                .account_type(AccountType::Public)
-                .build_with_rng(&mut rand::rng()),
-            vec![6],
-        ))
-        .into();
-        let fungible_2: Asset = FungibleAsset::new(
-            AccountIdBuilder::new()
-                .account_type(AccountType::Public)
-                .build_with_rng(&mut rand::rng()),
-            10,
-        )
-        .unwrap()
-        .into();
-        let vault_delta = AccountVaultDelta::from_iters([non_fungible], [fungible_2]);
-
         assert_eq!(storage_patch.to_bytes().len(), storage_patch.get_size_hint());
-        assert_eq!(vault_delta.to_bytes().len(), vault_delta.get_size_hint());
-
-        let account_delta = AccountDelta::new(
-            account_id,
-            storage_patch,
-            vault_delta,
-            AccountCodePatch::default(),
-            Felt::ONE,
-        )
-        .unwrap();
-        assert_eq!(account_delta.to_bytes().len(), account_delta.get_size_hint());
-
-        // Account
-
-        let account_id =
-            AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE).unwrap();
-
-        let asset_vault = AssetVault::mock();
-        assert_eq!(asset_vault.to_bytes().len(), asset_vault.get_size_hint());
-
-        let account_storage = AccountStorage::mock();
-        assert_eq!(account_storage.to_bytes().len(), account_storage.get_size_hint());
 
         let account_code = AccountCode::mock();
         assert_eq!(account_code.to_bytes().len(), account_code.get_size_hint());
-
-        let account = Account::new_existing(
-            account_id,
-            asset_vault,
-            account_storage,
-            account_code,
-            Felt::ONE,
-        );
-        assert_eq!(account.to_bytes().len(), account.get_size_hint());
     }
 }

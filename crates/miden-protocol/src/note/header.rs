@@ -1,13 +1,4 @@
-use super::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    NoteDetailsCommitment,
-    NoteId,
-    NoteMetadata,
-    Serializable,
-};
+use super::{NoteDetailsCommitment, NoteId, NoteMetadata};
 
 // NOTE HEADER
 // ================================================================================================
@@ -48,45 +39,5 @@ impl NoteHeader {
     /// Consumes self and returns the note header's metadata.
     pub fn into_metadata(self) -> NoteMetadata {
         self.metadata
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for NoteHeader {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.metadata.write_into(target);
-        self.details_commitment.write_into(target);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.metadata.get_size_hint() + self.details_commitment.get_size_hint()
-    }
-}
-
-impl Deserializable for NoteHeader {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let metadata = NoteMetadata::read_from(source)?;
-        let details_commitment = NoteDetailsCommitment::read_from(source)?;
-
-        Ok(Self::new(details_commitment, metadata))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use assert_matches::assert_matches;
-
-    use super::*;
-    use crate::utils::serde::{Deserializable, DeserializationError};
-
-    #[test]
-    fn note_header_deserialization_rejects_unsupported_version() {
-        let error = NoteHeader::read_from_bytes(&[0]).unwrap_err();
-
-        assert_matches!(error, DeserializationError::InvalidValue(message) => {
-            assert!(message.contains("note version is 0"));
-        });
     }
 }
