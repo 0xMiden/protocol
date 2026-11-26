@@ -119,7 +119,7 @@ fn invoke_wrappers_are_live_and_the_asset_is_policed() -> Result<()> {
     // Check the send and receive callbacks in component storage.
     let expected_callbacks = [
         (
-            AssetCallbacks::on_before_asset_added_to_note_slot(),
+            AssetCallbacks::on_before_note_sealed_slot(),
             TokenPolicyManager::invoke_send_policy_root().as_word(),
         ),
         (

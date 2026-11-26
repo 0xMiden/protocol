@@ -4,7 +4,6 @@ use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset, TokenSymbol};
 use miden_protocol::block::FeeParameters;
-use miden_protocol::errors::tx_kernel::ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW;
 use miden_protocol::note::{Note, NoteScriptRoot, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
@@ -20,10 +19,14 @@ use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
-use miden_standards::errors::standards::ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT;
+use miden_standards::errors::standards::{
+    ERR_FEE_INSUFFICIENT_BALANCE,
+    ERR_NETWORK_ACCOUNT_TRANSACTION_HAS_NO_EFFECT,
+};
 use miden_standards::note::config::NetworkAccountConfigNote;
 use miden_standards::note::{
     BurnNote,
@@ -174,8 +177,8 @@ async fn native_faucet_pays_fee_in_its_own_asset() -> anyhow::Result<()> {
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
     let mut faucet_account = create_native_fungible_faucet_for_genesis(
         [10; 32],
@@ -191,7 +194,7 @@ async fn native_faucet_pays_fee_in_its_own_asset() -> anyhow::Result<()> {
     let mint_asset = FungibleAsset::new(fee_faucet_id, 1)?;
     let mint_note: Note = MintNote::builder()
         .sender(ACCOUNT_ID_SENDER.try_into()?)
-        .mint_storage(MintNoteStorage::new_private(
+        .mint_storage(MintNoteStorage::new_private_output(
             Word::from([5, 6, 7, 8u32]),
             mint_asset,
             NoteTag::default(),
@@ -342,17 +345,14 @@ async fn network_account_no_fee_note_on_zero_fee_chain() -> anyhow::Result<()> {
 }
 
 /// A network account whose vault holds none of the native fee asset fails fee payment with the
-/// specific vault error.
+/// fee-specific error.
 #[tokio::test]
 async fn network_account_fee_payment_fails_without_funds() -> anyhow::Result<()> {
     let input_note = NoteBuilder::new(ACCOUNT_ID_SENDER.try_into()?, &mut rand::rng()).build()?;
     let (_, result) =
         execute_network_account_tx(VERIFICATION_BASE_FEE, [], Some(input_note)).await?;
 
-    assert_transaction_executor_error!(
-        result,
-        ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
-    );
+    assert_transaction_executor_error!(result, ERR_FEE_INSUFFICIENT_BALANCE);
 
     Ok(())
 }
