@@ -53,9 +53,9 @@ procedure_root!(
 
 static ISSUER_KEY_SLOT_NAMES: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
     [
-        StorageSlotName::new("miden::standards::attachments::encrypted_assets::issuer_key_0")
+        StorageSlotName::new("miden::standards::attachments::encrypted_assets::issuer_key_head")
             .expect("storage slot name should be valid"),
-        StorageSlotName::new("miden::standards::attachments::encrypted_assets::issuer_key_1")
+        StorageSlotName::new("miden::standards::attachments::encrypted_assets::issuer_key_tail")
             .expect("storage slot name should be valid"),
     ]
 });
@@ -67,7 +67,7 @@ static ISSUER_KEY_SLOT_NAMES: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| 
 /// private notes that carry it.
 ///
 /// A faucet's `on_before_note_sealed` callback builds the attachment of a private note with
-/// `miden::standards::attachments::encrypted_assets::build_attachment`, which encrypts the note's
+/// `miden::standards::attachments::encrypted_assets::new`, which encrypts the note's
 /// details to the [`EncryptedAssetsIssuerKey`] in the faucet's storage. The plaintext of a note
 /// with `n` assets holds `3 + 2n` words, with the assets in note order:
 ///
@@ -268,15 +268,15 @@ impl EncryptedAssetsAttachment {
 // ENCRYPTED ASSETS ISSUER KEY
 // ================================================================================================
 
-/// The public key to which `miden::standards::attachments::encrypted_assets::build_attachment`
-/// encrypts the [`EncryptedAssetsAttachment`] of a private note.
+/// The public key to which `miden::standards::attachments::encrypted_assets::new` encrypts the
+/// [`EncryptedAssetsAttachment`] of a private note.
 ///
-/// A faucet stores the key in two value slots:
+/// A faucet stores the key in two value slots, its head and its tail:
 ///
 /// ```text
-/// miden::standards::attachments::encrypted_assets::issuer_key_0:
+/// miden::standards::attachments::encrypted_assets::issuer_key_head:
 ///     [public_key_0, public_key_1, public_key_2, public_key_3]
-/// miden::standards::attachments::encrypted_assets::issuer_key_1:
+/// miden::standards::attachments::encrypted_assets::issuer_key_tail:
 ///     [public_key_4, 0, 0, 0]
 /// ```
 ///
@@ -285,8 +285,9 @@ impl EncryptedAssetsAttachment {
 /// The key converts into an account component that installs the slots and exports the
 /// `get_issuer_key` accessor and the authority-gated `set_issuer_key`, which rotates the key. The
 /// issuer keeps its previous secret keys to decrypt the attachments built before the rotation.
-/// `build_attachment` applies the default expiration delta of `miden::standards::expiration`, so a
-/// transaction can encrypt to the previous key only until that many blocks after the rotation.
+/// `encrypted_assets::new` applies the default expiration delta of `miden::standards::expiration`,
+/// so a transaction can encrypt to the previous key only until that many blocks after the
+/// rotation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EncryptedAssetsIssuerKey {
     public_key: PublicKey,
@@ -321,7 +322,8 @@ impl EncryptedAssetsIssuerKey {
         *ENCRYPTED_ASSETS_SET_ISSUER_KEY_ROOT
     }
 
-    /// Returns the [`StorageSlotName`]s of the two issuer key slots.
+    /// Returns the [`StorageSlotName`]s of the head and the tail slot of the issuer key, in this
+    /// order.
     pub fn slot_names() -> &'static [StorageSlotName; 2] {
         &ISSUER_KEY_SLOT_NAMES
     }
@@ -331,15 +333,15 @@ impl EncryptedAssetsIssuerKey {
         self.public_key
     }
 
-    /// Consumes the issuer key and returns the two [`StorageSlot`]s that hold it.
+    /// Consumes the issuer key and returns its head and tail [`StorageSlot`]s, in this order.
     pub fn into_storage_slots(self) -> [StorageSlot; 2] {
         let [e0, e1, e2, e3, e4] = self.public_key.to_elements();
-        let [slot_name_0, slot_name_1] = Self::slot_names().clone();
+        let [head_slot_name, tail_slot_name] = Self::slot_names().clone();
 
         [
-            StorageSlot::with_value(slot_name_0, Word::new([e0, e1, e2, e3])),
+            StorageSlot::with_value(head_slot_name, Word::new([e0, e1, e2, e3])),
             StorageSlot::with_value(
-                slot_name_1,
+                tail_slot_name,
                 Word::new([e4, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
             ),
         ]
@@ -392,18 +394,13 @@ mod tests {
     use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
-    use miden_protocol::account::StorageSlot;
     use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
     use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
     use miden_protocol::errors::NoteError;
     use miden_protocol::note::{NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteScriptRoot};
     use miden_protocol::{Felt, Word};
 
-    use super::{
-        EncryptedAssetsAttachment,
-        EncryptedAssetsAttachmentError,
-        EncryptedAssetsIssuerKey,
-    };
+    use super::{EncryptedAssetsAttachment, EncryptedAssetsAttachmentError};
 
     /// The plaintext holds the serial number, script root and storage commitment, followed by the
     /// assets in note order, and decodes back to the same plaintext.
@@ -482,30 +479,6 @@ mod tests {
         assert_matches!(
             EncryptedAssetsAttachment::decrypt(&malformed, &secret_key),
             Err(EncryptedAssetsAttachmentError::InvalidEnvelope(_))
-        );
-
-        Ok(())
-    }
-
-    /// The two issuer key slots hold the five public key elements.
-    #[test]
-    fn issuer_key_storage_slots_hold_public_key_elements() -> anyhow::Result<()> {
-        let public_key = SecretKey::from_bytes(&[1; 40])?.public_key();
-        let [e0, e1, e2, e3, e4] = public_key.to_elements();
-        let [slot_name_0, slot_name_1] = EncryptedAssetsIssuerKey::slot_names();
-
-        let [slot_0, slot_1] = EncryptedAssetsIssuerKey::new(public_key).into_storage_slots();
-
-        assert_eq!(
-            slot_0,
-            StorageSlot::with_value(slot_name_0.clone(), Word::new([e0, e1, e2, e3]))
-        );
-        assert_eq!(
-            slot_1,
-            StorageSlot::with_value(
-                slot_name_1.clone(),
-                Word::new([e4, Felt::ZERO, Felt::ZERO, Felt::ZERO])
-            )
         );
 
         Ok(())

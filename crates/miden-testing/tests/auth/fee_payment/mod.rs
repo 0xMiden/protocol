@@ -54,8 +54,9 @@ pub(super) fn attaching_callback_faucet(seed: [u8; 32]) -> anyhow::Result<Accoun
         COMPONENT_NAME,
         "
         use miden::core::crypto::hashes::eidos
+        use miden::protocol::output_note
 
-        @locals(12)
+        @locals(4)
         @account_procedure
         pub proc on_before_note_sealed
             drop
@@ -69,16 +70,10 @@ pub(super) fn attaching_callback_faucet(seed: [u8; 32]) -> anyhow::Result<Accoun
             locaddr.0 dup add.4 movdn.5 movdn.4 adv.insert_mem
             # => [ATTACHMENT_COMMITMENT, start_ptr, end_ptr, pad(16)]
 
-            # write the attachment list [attachment_scheme, 0, 0, 0, ATTACHMENT_COMMITMENT]
-            movup.4 drop movup.4 drop loc_storew_le.8 dropw
-            push.0.0.0.7 loc_storew_le.4 dropw
-            # => [pad(16)]
+            movup.4 drop movup.4 drop push.7
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(16)]
 
-            # put the attachment list into the advice map under its commitment
-            locaddr.4 dup add.8 swap dup.1 dup.1 exec.eidos::hash_words
-            # => [ATTACHMENT_LIST_COMMITMENT, start_ptr, end_ptr, pad(16)]
-
-            adv.insert_mem movup.4 drop movup.4 drop push.1
+            exec.output_note::single_attachment_list
             # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(16)]
 
             exec.::miden::core::sys::truncate_stack

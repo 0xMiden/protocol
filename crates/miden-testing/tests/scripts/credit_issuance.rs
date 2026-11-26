@@ -14,10 +14,22 @@
 //!
 //! A second test covers the stablecoin side: the issuer confiscates stablecoins from a holder and
 //! re-mints them to another account, which leaves the token supply unchanged.
+//!
+//! A third test shows how the issuer tracks its stablecoin while the creditor funds the borrower
+//! and the borrower repays in private P2ID notes: the stablecoin faucet encrypts the details of
+//! every private note holding the stablecoin to the issuer's key, so the issuer learns the amount
+//! and the nullifier of each note, and sees on-chain when the note is consumed.
 
 use anyhow::Context;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountId,
+    AccountType,
+    StorageMapKey,
+};
 use miden_protocol::asset::{
     Asset,
     AssetAmount,
@@ -27,13 +39,19 @@ use miden_protocol::asset::{
     TokenSymbol,
 };
 use miden_protocol::block::account_tree::AccountIdKey;
+use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
 use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteTag, NoteType, PartialNote};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
 };
 use miden_protocol::testing::word::WordMockExt;
-use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
+use miden_protocol::transaction::{
+    ExecutedTransaction,
+    OutputNote,
+    PrivateOutputNote,
+    RawOutputNote,
+};
 use miden_protocol::{Hasher, Word};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::AuthNetworkAccount;
@@ -67,6 +85,8 @@ use miden_standards::note::config::{
 };
 use miden_standards::note::{
     BurnNote,
+    EncryptedAssetsAttachment,
+    EncryptedAssetsIssuerKey,
     MintNote,
     MintNoteStorage,
     NetworkNoteExt,
@@ -76,7 +96,13 @@ use miden_standards::note::{
     TxFeeNote,
 };
 use miden_standards::tx_script::SendNotesTransactionScript;
-use miden_testing::{AccountState, Auth, MockChain, assert_transaction_executor_error};
+use miden_testing::{
+    AccountState,
+    Auth,
+    MockChain,
+    MockChainBuilder,
+    assert_transaction_executor_error,
+};
 use miden_tx::TransactionExecutorError;
 use rand::RngExt;
 
@@ -528,14 +554,6 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let issuer_id = AccountId::mock_private(1);
 
-    // the holder already holds all stablecoins in circulation
-    let stablecoin = FungibleFaucet::builder()
-        .name(TokenName::new("STABLE")?)
-        .symbol(TokenSymbol::new("STBL")?)
-        .decimals(6)
-        .max_supply(FungibleAsset::MAX_AMOUNT)
-        .token_supply(holder_amount)
-        .build()?;
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::owner_only())
         .active_burn_policy(BurnPolicy::allow_all())
@@ -545,17 +563,13 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
         ])?)
         .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
         .build();
-    let faucet_seed = builder.rng_mut().random();
-    let stablecoin_faucet = builder.add_account_from_builder(
-        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
-        AccountBuilder::new(faucet_seed)
-            .account_type(AccountType::Public)
-            .with_component(stablecoin)
-            .with_components(AccessControl::Ownable2Step { owner: issuer_id })
-            .with_components(token_policy_manager)
-            .with_component(BlocklistManager)
-            .with_component(SupplyRestrictionManager),
-        AccountState::Exists,
+    // the holder already holds all stablecoins in circulation
+    let stablecoin_faucet = add_stablecoin_faucet(
+        &mut builder,
+        issuer_id,
+        holder_amount,
+        token_policy_manager,
+        [BlocklistManager.into(), SupplyRestrictionManager.into()],
     )?;
     let stablecoin_faucet_id = stablecoin_faucet.id();
     let holder_asset = FungibleAsset::new(stablecoin_faucet_id, holder_amount.as_u64())?;
@@ -689,6 +703,138 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The stablecoin issuer tracks the private notes in which the creditor funds the borrower with the
+/// principal and the borrower repays the principal plus interest.
+///
+/// The stablecoin faucet's send policy attaches the details of every private note holding the
+/// stablecoin, encrypted to the issuer's public key. The chain holds only the note's header and
+/// attachments, so of all observers of the chain, only the issuer learns what the note holds and
+/// which nullifier it has. The issuer thus tracks the out-flow of stablecoins from the sender when
+/// the note is created, and their in-flow to the recipient when the note's nullifier appears
+/// on-chain.
+#[tokio::test]
+async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
+    let principal = AssetAmount::new(PRINCIPAL)?;
+    let interest = compute_interest(principal, INTEREST_PERCENT)?;
+    let repayment_amount = (principal + interest)?;
+    let issuer_id = AccountId::mock_private(1);
+    let issuer_secret_key = SecretKey::with_rng(&mut rand::rng());
+
+    let mut builder = MockChain::builder();
+    // the faucet encrypts the details of its private notes to the issuer's public key
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::owner_only())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(SendPolicy::with_encrypted_assets(EncryptedAssetsIssuerKey::new(
+            issuer_secret_key.public_key(),
+        )))
+        .build();
+    // the creditor holds the principal and the borrower holds the interest, which are all
+    // stablecoins in circulation
+    let stablecoin_faucet =
+        add_stablecoin_faucet(&mut builder, issuer_id, repayment_amount, token_policy_manager, [])?;
+    let stablecoin_faucet_id = stablecoin_faucet.id();
+    let stablecoin_asset_id = AssetId::new_fungible(stablecoin_faucet_id);
+    let principal_asset = FungibleAsset::new(stablecoin_faucet_id, principal.as_u64())?;
+    let repayment_asset = FungibleAsset::new(stablecoin_faucet_id, repayment_amount.as_u64())?;
+
+    let creditor = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
+        [principal_asset.into()],
+    )?;
+    let borrower = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
+        [FungibleAsset::new(stablecoin_faucet_id, interest.as_u64())?.into()],
+    )?;
+    let mut mock_chain = builder.build()?;
+
+    // STEP 1: the creditor funds the borrower with the principal in a private P2ID note
+    // --------------------------------------------------------------------------------------------
+
+    // the creditor shares the details of the note with the borrower off-chain
+    let loan_note =
+        send_private_stablecoins(&mut mock_chain, &creditor, borrower.id(), principal_asset)
+            .await?;
+
+    // STEP 2: the issuer decrypts the loan note in the new block
+    // --------------------------------------------------------------------------------------------
+
+    // Anyone sees in the block that the creditor created a private note, but only its header and
+    // attachments, not what it holds. The issuer decrypts the attachment, which it accepts only if
+    // the decrypted details recompute the note's ID: it learns the amount the creditor sent, and
+    // computes the nullifier that consuming the note will reveal.
+    let (loan_on_chain, loan_details) = issuer_decrypts_new_note(&mock_chain, &issuer_secret_key)?;
+    assert_eq!(loan_details.assets(), &NoteAssets::new(vec![principal_asset.into()])?);
+    assert_eq!(loan_details.note_id(loan_on_chain.metadata()), loan_on_chain.id());
+    let loan_nullifier = loan_details.nullifier(loan_on_chain.metadata());
+    // the nullifier is not on-chain until the note is consumed
+    assert!(mock_chain.is_note_unspent(&loan_nullifier));
+
+    // another key cannot decrypt the attachment
+    let other_secret_key = SecretKey::with_rng(&mut rand::rng());
+    assert!(
+        EncryptedAssetsAttachment::decrypt_and_verify_note(
+            loan_on_chain.header(),
+            loan_on_chain.attachments(),
+            &other_secret_key,
+        )
+        .is_none()
+    );
+
+    // STEP 3: the borrower consumes the loan note, revealing its nullifier
+    // --------------------------------------------------------------------------------------------
+
+    let consume_loan_tx = consume_private_stablecoins(
+        &mut mock_chain,
+        borrower.id(),
+        loan_note,
+        stablecoin_faucet_id,
+    )
+    .await?;
+
+    // the consumption reveals the nullifier the issuer computed, so the issuer sees the note spent
+    assert_eq!(consume_loan_tx.input_notes().get_note(0).note().nullifier(), loan_nullifier);
+    assert!(mock_chain.is_note_consumed(&loan_nullifier));
+
+    let borrower_account = mock_chain.committed_account(borrower.id())?;
+    assert_eq!(borrower_account.vault().get_balance(stablecoin_asset_id)?, repayment_amount);
+
+    // STEP 4: the borrower repays the principal plus interest in a private P2ID note
+    // --------------------------------------------------------------------------------------------
+
+    let repayment_note =
+        send_private_stablecoins(&mut mock_chain, &borrower, creditor.id(), repayment_asset)
+            .await?;
+
+    // the issuer decrypts the repayment note like the loan note
+    let (repayment_on_chain, repayment_details) =
+        issuer_decrypts_new_note(&mock_chain, &issuer_secret_key)?;
+    assert_eq!(repayment_details.assets(), &NoteAssets::new(vec![repayment_asset.into()])?);
+    let repayment_nullifier = repayment_details.nullifier(repayment_on_chain.metadata());
+
+    // STEP 5: the creditor consumes the repayment note, revealing its nullifier
+    // --------------------------------------------------------------------------------------------
+
+    let consume_repayment_tx = consume_private_stablecoins(
+        &mut mock_chain,
+        creditor.id(),
+        repayment_note,
+        stablecoin_faucet_id,
+    )
+    .await?;
+
+    assert_eq!(
+        consume_repayment_tx.input_notes().get_note(0).note().nullifier(),
+        repayment_nullifier
+    );
+    assert!(mock_chain.is_note_consumed(&repayment_nullifier));
+
+    let creditor_account = mock_chain.committed_account(creditor.id())?;
+    assert_eq!(creditor_account.vault().get_balance(stablecoin_asset_id)?, repayment_amount);
+
+    Ok(())
+}
+
 // HELPERS
 // ================================================================================================
 
@@ -730,6 +876,39 @@ fn create_nft_faucet(init_seed: [u8; 32], owner: AccountId) -> anyhow::Result<Ac
         token_policy_manager,
         fee_policy_manager,
     )?)
+}
+
+/// Adds an existing public stablecoin faucet controlled by `issuer_id`, with `token_supply` in
+/// circulation, to the chain.
+///
+/// The faucet applies the policies of `token_policy_manager` and installs the provided
+/// `components`, e.g. the procedures that manage these policies. Only the issuer can mint.
+fn add_stablecoin_faucet(
+    builder: &mut MockChainBuilder,
+    issuer_id: AccountId,
+    token_supply: AssetAmount,
+    token_policy_manager: TokenPolicyManager,
+    components: impl IntoIterator<Item = AccountComponent>,
+) -> anyhow::Result<Account> {
+    let stablecoin = FungibleFaucet::builder()
+        .name(TokenName::new("STABLE")?)
+        .symbol(TokenSymbol::new("STBL")?)
+        .decimals(6)
+        .max_supply(FungibleAsset::MAX_AMOUNT)
+        .token_supply(token_supply)
+        .build()?;
+    let faucet_seed = builder.rng_mut().random();
+
+    builder.add_account_from_builder(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
+        AccountBuilder::new(faucet_seed)
+            .account_type(AccountType::Public)
+            .with_component(stablecoin)
+            .with_components(AccessControl::Ownable2Step { owner: issuer_id })
+            .with_components(token_policy_manager)
+            .with_components(components),
+        AccountState::Exists,
+    )
 }
 
 /// Returns the latest committed token supply of the stablecoin faucet.
@@ -780,6 +959,103 @@ async fn send_stablecoins(
         .build()?
         .execute()
         .await)
+}
+
+/// Executes a transaction in which `sender` sends `asset` to `target_id` in a private P2ID note,
+/// and adds it to the chain.
+///
+/// The stablecoin faucet's send policy encrypts the details of the note, so the transaction
+/// provides them by expecting the note. Returns the note as the transaction created it, i.e. with
+/// the attachment of the policy.
+async fn send_private_stablecoins(
+    mock_chain: &mut MockChain,
+    sender: &Account,
+    target_id: AccountId,
+    asset: FungibleAsset,
+) -> anyhow::Result<Note> {
+    let note: Note = P2idNote::builder()
+        .sender(sender.id())
+        .target(target_id)
+        .assets([asset])
+        .note_type(NoteType::Private)
+        .serial_number(rand::rng().random())
+        .build()?
+        .into();
+    let send_notes_script = SendNotesTransactionScript::new(
+        &sender.code_interface(),
+        &[PartialNote::from(note.clone())],
+    )?;
+
+    let send_tx = mock_chain
+        .build_transaction(sender.id())
+        .send_notes_script(&send_notes_script)
+        .expected_output_note(RawOutputNote::Full(note))
+        .foreign_accounts([mock_chain.get_foreign_account_inputs(asset.faucet_id())?])
+        .build()?
+        .execute()
+        .await?;
+    let [RawOutputNote::Full(sent_note)] = send_tx.output_notes().iter().collect::<Vec<_>>()[..]
+    else {
+        anyhow::bail!("the transaction must create exactly the full P2ID note");
+    };
+    let sent_note = sent_note.clone();
+    commit(mock_chain, &send_tx)?;
+
+    Ok(sent_note)
+}
+
+/// Executes a transaction in which the account `account_id` consumes the private `note` holding
+/// stablecoins, whose details it received off-chain, and adds it to the chain.
+///
+/// Adding the stablecoins to the vault invokes the faucet's asset callback, so the transaction
+/// reads the faucet as a foreign account.
+async fn consume_private_stablecoins(
+    mock_chain: &mut MockChain,
+    account_id: AccountId,
+    note: Note,
+    stablecoin_faucet_id: AccountId,
+) -> anyhow::Result<ExecutedTransaction> {
+    let consume_tx = mock_chain
+        .build_transaction(account_id)
+        .authenticated_input_note(note)
+        .foreign_accounts([mock_chain.get_foreign_account_inputs(stablecoin_faucet_id)?])
+        .build()?
+        .execute()
+        .await?;
+    commit(mock_chain, &consume_tx)?;
+
+    Ok(consume_tx)
+}
+
+/// Returns the single private note of the latest block whose encrypted asset attachment decrypts
+/// with the issuer's `secret_key`, and the note details the issuer learns from it.
+///
+/// The block holds only the headers and attachments of its private notes.
+fn issuer_decrypts_new_note(
+    mock_chain: &MockChain,
+    secret_key: &SecretKey,
+) -> anyhow::Result<(PrivateOutputNote, EncryptedAssetsAttachment)> {
+    let decrypted_notes: Vec<_> = mock_chain
+        .latest_block()
+        .body()
+        .output_notes()
+        .filter_map(|(_, note)| {
+            let OutputNote::Private(note) = note else {
+                return None;
+            };
+            EncryptedAssetsAttachment::decrypt_and_verify_note(
+                note.header(),
+                note.attachments(),
+                secret_key,
+            )
+            .map(|details| (note.clone(), details))
+        })
+        .collect();
+
+    let Ok([decrypted_note]) = <[_; 1]>::try_from(decrypted_notes) else {
+        anyhow::bail!("the issuer must decrypt exactly one note of the block");
+    };
+    Ok(decrypted_note)
 }
 
 /// Executes a transaction against `sender` that creates `note`.

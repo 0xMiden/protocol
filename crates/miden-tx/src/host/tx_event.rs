@@ -602,7 +602,12 @@ impl TransactionEvent {
             },
 
             TransactionEventId::IesEcgfp5EidosSeal => {
-                Some(TransactionEvent::IesEcgfp5EidosSeal(IesSealRequest::extract(process)?))
+                // Expected stack state: [event, PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5)]
+                Some(TransactionEvent::IesEcgfp5EidosSeal(IesSealRequest {
+                    public_key: core::array::from_fn(|idx| process.get_stack_item(9 + idx)),
+                    plaintext_digest: process.get_stack_word(1),
+                    context_digest: process.get_stack_word(5),
+                }))
             },
 
             TransactionEventId::LinkMapSet => Some(TransactionEvent::LinkMapSet {
@@ -744,20 +749,8 @@ pub(crate) struct IesSealRequest {
     pub(super) public_key: [Felt; 5],
     /// The digest of the plaintext.
     pub(super) plaintext_digest: Word,
-    /// The digest of the context.
+    /// The digest of the IES context.
     pub(super) context_digest: Word,
-}
-
-impl IesSealRequest {
-    /// Extracts the request from the stack of the `miden::protocol::ies::ecgfp5_eidos::seal` event.
-    fn extract(process: &ProcessorState) -> Result<Self, TransactionKernelError> {
-        // Expected stack state: [event, PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5)]
-        Ok(Self {
-            public_key: core::array::from_fn(|idx| process.get_stack_item(9 + idx)),
-            plaintext_digest: process.get_stack_word(1),
-            context_digest: process.get_stack_word(5),
-        })
-    }
 }
 
 /// Leaves out the digests, which let anyone who sees them check guesses of a plaintext.
