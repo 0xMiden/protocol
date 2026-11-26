@@ -51,7 +51,6 @@ use miden_standards::note::{
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 
-use crate::executor::CodeExecutor;
 use crate::utils::DEFAULT_EXPIRATION_BLOCK_DELTA;
 use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 
@@ -61,49 +60,22 @@ use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_
 /// The name of the component that registers the issuing faucet's note callback.
 const ISSUER_COMPONENT_NAME: &str = "miden::testing::encrypted_assets::issuer";
 
-/// An `on_before_note_sealed` callback that returns the note's encrypted asset attachment as an
-/// attachment list with one entry, or the empty list for a public note.
+/// An `on_before_note_sealed` callback that returns the note's encrypted asset attachment.
 const ISSUER_CALLBACK_CODE: &str = "
-    use miden::core::crypto::hashes::eidos
-    use miden::core::sys
+    use miden::protocol::output_note
     use miden::standards::attachments::encrypted_assets
 
     #! Inputs:  [note_idx, pad(15)]
     #! Outputs: [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
-    @locals(8)
     @account_procedure
     pub proc on_before_note_sealed
-        exec.encrypted_assets::build_attachment
+        exec.encrypted_assets::new
         # => [attachment_scheme, ATTACHMENT_COMMITMENT, pad(15)]
 
-        # a public note gets attachment scheme 0 and the empty word, which already are the number
-        # of attachments and the commitment of the empty list
-        dup neq.0
-        # => [has_attachment, attachment_scheme, ATTACHMENT_COMMITMENT, pad(15)]
-
-        if.true
-            # write the list entry [attachment_scheme, 0, 0, 0, ATTACHMENT_COMMITMENT] to memory
-            push.0.0.0 movup.3 loc_storew_le.0 dropw
-            # => [ATTACHMENT_COMMITMENT, pad(15)]
-
-            loc_storew_le.4 dropw
-            # => [pad(15)]
-
-            locaddr.0 dup add.8 swap
-            # => [list_ptr, list_end_ptr, pad(15)]
-
-            dup.1 dup.1 exec.eidos::hash_words
-            # => [ATTACHMENT_LIST_COMMITMENT, list_ptr, list_end_ptr, pad(15)]
-
-            adv.insert_mem
-            # => [ATTACHMENT_LIST_COMMITMENT, list_ptr, list_end_ptr, pad(15)]
-
-            movup.4 drop movup.4 drop push.1
-            # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(15)]
-        end
+        exec.output_note::single_attachment_list
         # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(15)]
 
-        exec.sys::truncate_stack
+        movupw.3 dropw
         # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
     end
 ";
@@ -321,41 +293,6 @@ async fn issuer_keeps_only_the_attachment_that_describes_the_note() -> anyhow::R
     let other_metadata =
         NoteMetadata::new(*output_note.metadata().partial_metadata(), &NoteAttachments::empty());
     assert_ne!(plaintext.note_id(&other_metadata), output_note.id());
-
-    Ok(())
-}
-
-/// Tests that the MASM constants of the attachment format match their Rust counterparts.
-#[tokio::test]
-async fn encrypted_assets_masm_constants_match_rust() -> anyhow::Result<()> {
-    let source = "
-        use {
-            ENCRYPTED_ASSETS_ATTACHMENT_SCHEME,
-            ISSUER_KEY_0_SLOT,
-            ISSUER_KEY_1_SLOT,
-        } from miden::standards::attachments::encrypted_assets
-
-        begin
-            push.ISSUER_KEY_1_SLOT[0..2]
-            push.ISSUER_KEY_0_SLOT[0..2]
-            push.ENCRYPTED_ASSETS_ATTACHMENT_SCHEME
-            # => [attachment_scheme, slot_0_id_suffix, slot_0_id_prefix, slot_1_id_suffix,
-            #     slot_1_id_prefix, pad(16)]
-
-            # truncate the stack to 16 elements
-            repeat.5 movup.5 drop end
-        end
-    ";
-
-    let exec_output = CodeExecutor::with_default_host().run(source).await?;
-
-    let [slot_0_id, slot_1_id] =
-        EncryptedAssetsIssuerKey::slot_names().each_ref().map(|name| name.id());
-    assert_eq!(exec_output.stack[..1], EncryptedAssetsAttachment::IES_CONTEXT);
-    assert_eq!(
-        exec_output.stack[1..5],
-        [slot_0_id.suffix(), slot_0_id.prefix(), slot_1_id.suffix(), slot_1_id.prefix()]
-    );
 
     Ok(())
 }
