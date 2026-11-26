@@ -1,4 +1,5 @@
-use {NoteScriptRoot, NoteStorageCommitment} from miden::protocol::types
+use {InputNoteIndex, NoteScriptRoot, NoteStorageCommitment, OutputNoteIndex}
+    from miden::protocol::types
 # miden::standards::note
 #
 # Collects note-related helper procedures that operate on input notes and are candidates for
@@ -20,16 +21,16 @@ pub mod note_target
 
 #! TODO: Move this to miden::protocol::input_note.
 #!
-#! Loads the storage items of the input note at `note_index` into memory at `dest_ptr`.
+#! Loads the storage items of the input note at `note_idx` into memory at `dest_ptr`.
 #!
 #! The items are read from the advice map keyed by the note's storage commitment and validated
 #! against it, so a host that supplies wrong storage aborts the transaction.
 #!
-#! Inputs:  [note_index, dest_ptr]
+#! Inputs:  [note_idx, dest_ptr]
 #! Outputs: []
 #!
 #! Where:
-#! - note_index is the index of the input note whose storage is loaded.
+#! - note_idx is the index of the input note whose storage is loaded.
 #! - dest_ptr is the memory address the storage items are written to.
 #!
 #! Panics if:
@@ -37,7 +38,7 @@ pub mod note_target
 #! - the advice-provided storage does not match the note's storage commitment.
 #!
 #! Invocation: exec
-pub proc input_note_get_storage(note_index: u16, dest_ptr: ptr<felt>)
+pub proc input_note_get_storage(note_idx: InputNoteIndex, dest_ptr: ptr<felt>)
     exec.input_note::get_storage_info
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
 
@@ -55,11 +56,11 @@ end
 #! created with compute_and_store_recipient. As long as the recipient preimage is available, this
 #! also works for private notes.
 #!
-#! Inputs:  [output_note_idx]
+#! Inputs:  [note_idx]
 #! Outputs: [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT]
 #!
 #! Where:
-#! - output_note_idx is the index of the output note for which to recover the commitments.
+#! - note_idx is the index of the output note for which to recover the commitments.
 #! - NOTE_SCRIPT_ROOT is the recovered note script root.
 #! - STORAGE_COMMITMENT is the recovered note storage commitment.
 #!
@@ -69,7 +70,7 @@ end
 #!
 #! Invocation: exec
 pub proc output_note_get_recipient_preimage(
-    output_note_idx: u16
+    note_idx: OutputNoteIndex
 ) -> (NoteScriptRoot, NoteStorageCommitment)
     exec.output_note::get_recipient
     # => [RECIPIENT]
