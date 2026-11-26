@@ -34,6 +34,7 @@ use crate::note::config::{
     AuthorityConfigNote,
     BlocklistConfigNote,
     ConstantFeePolicyConfigNote,
+    EncryptedAssetsIssuerKeyConfigNote,
     FaucetMetadataConfigNote,
     FaucetPolicyConfigNote,
     MinBurnAmountConfigNote,
@@ -135,6 +136,9 @@ impl StandardNote {
                 Some(NoteCost::of::<FaucetMetadataConfigNote>())
             },
             StandardNote::MIN_BURN_AMOUNT_CONFIG => Some(NoteCost::of::<MinBurnAmountConfigNote>()),
+            StandardNote::ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG => {
+                Some(NoteCost::of::<EncryptedAssetsIssuerKeyConfigNote>())
+            },
             StandardNote::ALLOWLIST_CONFIG => Some(NoteCost::of::<AllowlistConfigNote>()),
             StandardNote::BLOCKLIST_CONFIG => Some(NoteCost::of::<BlocklistConfigNote>()),
             StandardNote::PAUSE_CONFIG => Some(NoteCost::of::<PauseConfigNote>()),
@@ -186,6 +190,10 @@ mod tests {
             (
                 MinBurnAmountConfigNote::script_root(),
                 MIN_BURN_AMOUNT_CONFIG_CONSUMPTION_CYCLES,
+            ),
+            (
+                EncryptedAssetsIssuerKeyConfigNote::script_root(),
+                ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG_CONSUMPTION_CYCLES,
             ),
             (AllowlistConfigNote::script_root(), ALLOWLIST_CONFIG_CONSUMPTION_CYCLES),
             (BlocklistConfigNote::script_root(), BLOCKLIST_CONFIG_CONSUMPTION_CYCLES),

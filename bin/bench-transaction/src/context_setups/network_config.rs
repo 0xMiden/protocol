@@ -24,6 +24,7 @@ use miden_protocol::account::{
     RoleSymbol,
 };
 use miden_protocol::asset::AssetAmount;
+use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
@@ -45,7 +46,6 @@ use miden_standards::account::policies::{
 };
 use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::UpgradeNote;
 use miden_standards::note::config::{
     AllowlistConfig,
     AllowlistConfigNote,
@@ -54,6 +54,7 @@ use miden_standards::note::config::{
     BlocklistConfig,
     BlocklistConfigNote,
     ConstantFeePolicyConfigNote,
+    EncryptedAssetsIssuerKeyConfigNote,
     FaucetMetadataConfig,
     FaucetMetadataConfigNote,
     FaucetPolicyConfig,
@@ -70,6 +71,7 @@ use miden_standards::note::config::{
     SupplyRestrictionConfig,
     SupplyRestrictionConfigNote,
 };
+use miden_standards::note::{EncryptedAssetsIssuerKey, UpgradeNote};
 use miden_testing::{AccountState, Auth, MockTransaction};
 use rand::Rng;
 
@@ -241,6 +243,70 @@ pub fn tx_consume_min_burn_amount_config_note_network() -> Result<MockTransactio
         .sender(owner.id())
         .target(account.id())
         .min_burn_amount(AssetAmount::new(500)?)
+        .generate_serial_number(builder.rng_mut())
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()
+}
+
+// ENCRYPTED ASSETS ISSUER KEY CONFIG NOTE SETUP
+// ================================================================================================
+
+/// Returns the transaction context for a network faucet consuming an
+/// ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG note.
+///
+/// The faucet carries a `TokenPolicyManager` whose active send policy is the encrypted assets
+/// policy, which installs the issuer key gated by the owner wallet via `Authority::OwnerControlled`
+/// (mirrors the owned faucet fixture of the `encrypted_assets_policy` test suite). The benchmarked
+/// action rotates the issuer key.
+pub fn tx_consume_encrypted_assets_issuer_key_config_note_network() -> Result<MockTransaction> {
+    let mut builder = super::chain_builder(true);
+
+    // the owner wallet authorized to send issuer key config notes
+    let owner = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("ENC")?)
+        .symbol("ENC".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+
+    let initial_issuer_key =
+        EncryptedAssetsIssuerKey::new(SecretKey::from_bytes(&[7; 40])?.public_key());
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::allow_all())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(SendPolicy::with_encrypted_assets(initial_issuer_key))
+        .active_receive_policy(ReceivePolicy::allow_all())
+        .build();
+
+    let account_builder = AccountBuilder::new([43; 32])
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Ownable2Step::new(owner.id()))
+        .with_component(Authority::OwnerControlled)
+        .with_components(token_policy_manager)
+        .with_assets([super::fee_funding_asset()?]);
+    let account = builder.add_account_from_builder(
+        super::network_auth([EncryptedAssetsIssuerKeyConfigNote::script_root()])?,
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    let new_issuer_key =
+        EncryptedAssetsIssuerKey::new(SecretKey::from_bytes(&[8; 40])?.public_key());
+    let note: Note = EncryptedAssetsIssuerKeyConfigNote::builder()
+        .sender(owner.id())
+        .target(account.id())
+        .issuer_key(new_issuer_key)
         .generate_serial_number(builder.rng_mut())
         .build()?
         .into();

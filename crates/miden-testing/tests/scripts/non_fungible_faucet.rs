@@ -2,7 +2,6 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 
-use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -54,6 +53,8 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 use rand::RngExt;
+
+use super::policy_component;
 
 /// Builds an existing public non-fungible faucet with allow-all policies (so a tx-script mint is
 /// gated only by the test auth) and an owner-controlled authority.
@@ -178,11 +179,7 @@ fn custom_mint_policy(name: &str, body: &str) -> anyhow::Result<MintPolicy> {
         "#
     );
 
-    let code = CodeBuilder::default().compile_component_code(name, &masm_source)?;
-    let root = code
-        .get_procedure_root_by_path(format!("{name}::check_policy").as_str())
-        .expect("custom mint policy should export check_policy");
-    let component = AccountComponent::new(code, vec![], AccountComponentMetadata::mock(name))?;
+    let (root, component) = policy_component(name, "check_policy", vec![], masm_source)?;
 
     Ok(MintPolicy::custom(root, [component])?)
 }

@@ -37,7 +37,7 @@ message MockChainV1 {
 message ProvenBlock {
   blockchain.BlockHeader header = 1;
   blockchain.BlockBody body = 2;
-  repeated primitives.Signature signatures = 3;
+  repeated blockchain.ValidatorSignature signatures = 3;
   primitives.ExecutionProof proof = 4;
 }
 

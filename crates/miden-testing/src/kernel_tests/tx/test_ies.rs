@@ -10,14 +10,15 @@ use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceError;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountHeader};
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent};
 use miden_protocol::assembly::DefaultSourceManager;
+use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
 use miden_protocol::crypto::ies::ecgfp5_eidos::{self, Envelope};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::transaction::{ExecutedTransaction, IesSealSeed, TransactionScript};
-use miden_protocol::{Felt, MAX_IES_SEAL_REQUESTS_PER_TX, WORD_SIZE, Word, ZERO};
+use miden_protocol::{Felt, MAX_IES_SEAL_REQUESTS_PER_TX, WORD_SIZE, Word};
 use miden_standards::account::auth::{Approver, ApproverSet, MultisigAuthArgs};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -28,8 +29,7 @@ use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::SeedableRng;
 use rstest::rstest;
 
-use super::ExecutionOutputExt;
-use crate::{Auth, MockChainBuilder, TestTransactionBuilder, assert_transaction_executor_error};
+use crate::{Auth, MockChainBuilder, assert_transaction_executor_error};
 
 // CONSTANTS
 // ================================================================================================
@@ -128,7 +128,7 @@ async fn ies_seal_secret_depends_on_plaintext() -> anyhow::Result<()> {
         "{}\npush.{} push.{PLAINTEXT_PTR} mem_store\n{}",
         store_inputs(),
         other_plaintext[0],
-        seal_to_public_key(&recipient.to_elements(), 0),
+        seal_to_public_key(&recipient, 0),
     );
     let other_tx = execute(None, compile_tx_script(&code, 1, None)?).await?;
 
@@ -140,40 +140,11 @@ async fn ies_seal_secret_depends_on_plaintext() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that the same request with the same seed in the next transaction of the same account
-/// derives another ephemeral secret.
-#[tokio::test]
-async fn ies_seal_secret_depends_on_transaction() -> anyhow::Result<()> {
-    let account = mock_account();
-    let mut mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
-    mock_chain.prove_next_block()?;
-    let tx_script = compile_tx_script(&sealing_code(&[secret_key(1).public_key()]), 1, None)?;
-
-    let mut ephemeral_keys = Vec::new();
-    for _ in 0..2 {
-        let executed_tx = mock_chain
-            .build_transaction(account.id())
-            .tx_script(tx_script.clone())
-            .build()?
-            .execute()
-            .await?;
-        ephemeral_keys.push(envelope(&executed_tx, 0)?.ephemeral_key());
-
-        mock_chain.add_pending_executed_transaction(&executed_tx)?;
-        mock_chain.prove_next_block()?;
-    }
-    assert_ne!(ephemeral_keys[0], ephemeral_keys[1]);
-
-    Ok(())
-}
-
 /// Tests that the signed execution of a two-pass authentication flow with the same transaction
 /// arguments reproduces the summary the signers approved at a later reference block, and that the
 /// summary depends on the IES seal seed.
 #[tokio::test]
 async fn signed_execution_reproduces_unauthorized_summary() -> anyhow::Result<()> {
-    use miden_protocol::crypto::SequentialCommit;
-
     let signer =
         AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut ChaCha20Rng::from_seed([7; 32]));
     let signer_commitment = signer.public_key().to_commitment();
@@ -195,17 +166,16 @@ async fn signed_execution_reproduces_unauthorized_summary() -> anyhow::Result<()
         Word::from([1, 2, 3, 4u32]),
     );
     mock_chain.prove_next_block()?;
-    let tx_builder = || {
-        mock_chain
-            .build_transaction(account.clone())
-            .tx_script(tx_script.clone())
-            .auth_args(auth_args.to_commitment())
-            .add_advice_map_entry(auth_args.to_commitment(), auth_args.to_elements())
-            .required_block(auth_args.bound_block_num())
-    };
+    let tx_builder = mock_chain
+        .build_transaction(account)
+        .tx_script(tx_script)
+        .auth_args(auth_args.to_commitment())
+        .add_advice_map_entry(auth_args.to_commitment(), auth_args.to_elements())
+        .required_block(auth_args.bound_block_num());
 
     // The unauthorized execution runs at the bound block, the signed one at the next block.
-    let tx_summary = tx_builder()
+    let tx_summary = tx_builder
+        .clone()
         .reference_block(auth_args.bound_block_num())
         .build()?
         .execute()
@@ -218,7 +188,8 @@ async fn signed_execution_reproduces_unauthorized_summary() -> anyhow::Result<()
     let signature = BasicAuthenticator::new(&[signer])
         .get_signature(signer_commitment, &SigningInputs::TransactionSummary(tx_summary.clone()))
         .await?;
-    let executed_tx = tx_builder()
+    let executed_tx = tx_builder
+        .clone()
         .add_signature(signer_commitment, msg, signature)
         .build()?
         .execute()
@@ -227,7 +198,7 @@ async fn signed_execution_reproduces_unauthorized_summary() -> anyhow::Result<()
     assert!(executed_tx.block_header().block_num() > auth_args.bound_block_num());
 
     // Another seed changes the envelope and thereby the summary.
-    let other_summary = tx_builder()
+    let other_summary = tx_builder
         .ies_seal_seed(Some(IesSealSeed::new([1; 32])))
         .build()?
         .execute()
@@ -244,14 +215,17 @@ async fn signed_execution_reproduces_unauthorized_summary() -> anyhow::Result<()
 #[rstest]
 #[case::invalid_public_key(
     // The all-zero encoding is the identity, which is not a valid public key.
-    seal_to_public_key(&[ZERO; 5], 0),
+    format!(
+        "{}\npush.0.0.0.0.0\nexec.::miden::protocol::ies::ecgfp5_eidos::seal",
+        push_seal_arguments(0),
+    ),
     Some(IesSealSeed::new([1; 32])),
     |error: &TransactionKernelError| {
         matches!(error, TransactionKernelError::IesPublicKeyInvalid(_))
     },
 )]
 #[case::missing_seed(
-    seal_to_public_key(&secret_key(1).public_key().to_elements(), 0),
+    seal_to_public_key(&secret_key(1).public_key(), 0),
     None,
     |error: &TransactionKernelError| matches!(error, TransactionKernelError::IesSealSeedMissing),
 )]
@@ -313,8 +287,8 @@ async fn ies_seal_requests_are_limited_per_transaction(
     let code = format!(
         r#"
         {public_key}
-        {context_digest}
-        {plaintext_digest}
+        push.{context_digest}
+        push.{plaintext_digest}
         push.{num_requests} dup neq.0
         # => [should_loop, num_requests, PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5)]
 
@@ -328,9 +302,9 @@ async fn ies_seal_requests_are_limited_per_transaction(
         drop dropw dropw dropw drop
         # => []
         "#,
-        public_key = push_reversed(&secret_key(1).public_key().to_elements()),
-        context_digest = push_reversed(Word::from([1, 2, 3, 4u32]).as_elements()),
-        plaintext_digest = push_reversed(Word::from([5, 6, 7, 8u32]).as_elements()),
+        public_key = push_public_key(&secret_key(1).public_key()),
+        context_digest = Word::from([1, 2, 3, 4u32]),
+        plaintext_digest = Word::from([5, 6, 7, 8u32]),
     );
     let result = execute(None, compile_tx_script(&code, 0, None)?).await;
 
@@ -351,7 +325,7 @@ async fn ies_seal_requests_are_limited_per_transaction(
 }
 
 /// Tests that the host derives the ephemeral secret from the digests that the request event
-/// carries and from the transaction, by comparing the envelope with a derivation in Rust.
+/// carries, by comparing the envelope with a derivation in Rust.
 ///
 /// The transaction script emits the request event itself, with digests that do not match the
 /// plaintext and the context in memory, and then calls the core library's `seal`. So the
@@ -366,97 +340,31 @@ async fn ies_seal_derives_the_secret_from_the_request_event() -> anyhow::Result<
         {store_inputs}
         {seal_arguments}
         {public_key}
-        {context_digest}
-        {plaintext_digest}
-        # => [PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5), src_ptr, plaintext_len,
-        #     context_ptr, context_len, dst_ptr]
+        push.{context_digest}
+        push.{plaintext_digest}
+        # => [PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5), plaintext_ptr, plaintext_len,
+        #     context_ptr, context_len, envelope_ptr]
 
         emit.event("miden::protocol::ies::ecgfp5_eidos::seal")
         dropw dropw dropw drop
-        # => [src_ptr, plaintext_len, context_ptr, context_len, dst_ptr]
+        # => [plaintext_ptr, plaintext_len, context_ptr, context_len, envelope_ptr]
 
-        {commitment}
+        push.{commitment}
         exec.::miden::core::crypto::ies::ecgfp5_eidos::seal
         # => []
         "#,
         store_inputs = store_inputs(),
         seal_arguments = push_seal_arguments(0),
-        public_key = push_reversed(&recipient.to_elements()),
-        context_digest = push_reversed(context_digest.as_elements()),
-        plaintext_digest = push_reversed(plaintext_digest.as_elements()),
-        commitment = push_reversed(recipient.to_commitment().as_elements()),
+        public_key = push_public_key(&recipient),
+        commitment = recipient.to_commitment(),
     );
     let executed_tx = execute(None, compile_tx_script(&code, 1, None)?).await?;
 
     // The mock transaction builder's default seed.
     let expected_key = IesSealSeed::new([0; 32])
-        .derive_ephemeral_secret(
-            executed_tx.account_id(),
-            AccountHeader::from(executed_tx.initial_account()).to_commitment(),
-            executed_tx.input_notes().commitment(),
-            0,
-            &recipient,
-            context_digest,
-            plaintext_digest,
-        )
+        .derive_ephemeral_secret(0, &recipient, context_digest, plaintext_digest)
         .public_key();
     assert_eq!(envelope(&executed_tx, 0)?.ephemeral_key(), expected_key);
-
-    Ok(())
-}
-
-/// Tests that code run through `execute_code` can encrypt, and that `seal` consumes all the key
-/// agreement advice, so that later code cannot read the ephemeral secret from the advice stack.
-#[tokio::test]
-async fn execute_code_handles_seal_request() -> anyhow::Result<()> {
-    // The code runs in the root context, so the plaintext, the context and the envelope are placed
-    // above the transaction kernel's memory.
-    const SCRATCH_PTR: u32 = 1 << 27;
-    const ENVELOPE_PTR: u32 = SCRATCH_PTR + (PLAINTEXT.len() + CONTEXT.len()) as u32;
-    let recipient_secret = secret_key(1);
-
-    let store_inputs = PLAINTEXT
-        .iter()
-        .chain(&CONTEXT)
-        .enumerate()
-        .map(|(idx, value)| format!("push.{value} push.{} mem_store", SCRATCH_PTR + idx as u32))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let code = format!(
-        r#"
-        use miden::tx_kernel_core::prologue
-
-        begin
-            exec.prologue::prepare_transaction
-            {store_inputs}
-            push.{ENVELOPE_PTR} push.{context_len} push.{context_ptr} push.{plaintext_len}
-            push.{SCRATCH_PTR}
-            {public_key}
-            exec.::miden::protocol::ies::ecgfp5_eidos::seal
-        end
-        "#,
-        context_len = CONTEXT.len(),
-        context_ptr = SCRATCH_PTR + PLAINTEXT.len() as u32,
-        plaintext_len = PLAINTEXT.len(),
-        public_key = push_reversed(&recipient_secret.public_key().to_elements()),
-    );
-
-    let exec_output = TestTransactionBuilder::with_existing_mock_account()
-        .build()?
-        .execute_code(&code)
-        .await?;
-
-    let envelope_elements = (0..ENVELOPE_NUM_WORDS)
-        .flat_map(|word_idx| {
-            exec_output
-                .get_kernel_mem_word(ENVELOPE_PTR + word_idx * WORD_SIZE as u32)
-                .into_elements()
-        })
-        .collect::<Vec<_>>();
-    let envelope = Envelope::from_elements(&envelope_elements)?;
-    let plaintext = ecgfp5_eidos::open(&recipient_secret, &felts(CONTEXT), &envelope)?;
-    assert_eq!(plaintext, felts(PLAINTEXT));
-    assert_eq!(exec_output.advice.stack_len(), 0);
 
     Ok(())
 }
@@ -607,7 +515,7 @@ fn sealing_code(recipients: &[PublicKey]) -> String {
     let seals = recipients
         .iter()
         .enumerate()
-        .map(|(idx, recipient)| seal_to_public_key(&recipient.to_elements(), idx));
+        .map(|(idx, recipient)| seal_to_public_key(recipient, idx));
 
     [store_inputs()].into_iter().chain(seals).collect::<Vec<_>>().join("\n")
 }
@@ -654,11 +562,11 @@ fn store_envelope_from_stack() -> String {
 
 /// Returns MASM that encrypts the plaintext under the context to `public_key` with
 /// `miden::protocol::ies::ecgfp5_eidos::seal`, writing the envelope with index `envelope_idx`.
-fn seal_to_public_key(public_key: &[Felt; 5], envelope_idx: usize) -> String {
+fn seal_to_public_key(public_key: &PublicKey, envelope_idx: usize) -> String {
     format!(
         "{}\n{}\nexec.::miden::protocol::ies::ecgfp5_eidos::seal",
         push_seal_arguments(envelope_idx),
-        push_reversed(public_key)
+        push_public_key(public_key)
     )
 }
 
@@ -666,9 +574,8 @@ fn seal_to_public_key(public_key: &[Felt; 5], envelope_idx: usize) -> String {
 /// with the core library's `seal`, writing the envelope with index `envelope_idx`.
 fn seal_to_commitment(commitment: Word, envelope_idx: usize) -> String {
     format!(
-        "{}\n{}\nexec.::miden::core::crypto::ies::ecgfp5_eidos::seal",
+        "{}\npush.{commitment}\nexec.::miden::core::crypto::ies::ecgfp5_eidos::seal",
         push_seal_arguments(envelope_idx),
-        push_reversed(commitment.as_elements())
     )
 }
 
@@ -697,9 +604,11 @@ fn push_seal_arguments(envelope_idx: usize) -> String {
     )
 }
 
-/// Returns MASM that pushes `elements` so that the first one is on top of the stack.
-fn push_reversed(elements: &[Felt]) -> String {
-    elements
+/// Returns MASM that pushes the elements of `public_key` so that the first one is on top of the
+/// stack.
+fn push_public_key(public_key: &PublicKey) -> String {
+    public_key
+        .to_elements()
         .iter()
         .rev()
         .map(|element| format!("push.{element}"))

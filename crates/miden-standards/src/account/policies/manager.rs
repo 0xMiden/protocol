@@ -1039,23 +1039,18 @@ mod tests {
         }
     }
 
-    /// Merged policies that ship the same component install it once, and only the merged policy is
-    /// allowed.
+    /// A policy that ships the same component twice installs it once.
     #[test]
-    fn merged_policies_can_share_a_component() -> anyhow::Result<()> {
-        let blocklist_policy = SendPolicy::empty_basic_blocklist();
-        let other_policy =
-            SendPolicy::custom(BasicBlocklist::receive_root(), [BasicBlocklist::default()])?;
-        let merged_policy = SendPolicy::merge([blocklist_policy, other_policy])?;
-        let merged_root = merged_policy.root();
+    fn policy_installs_a_duplicate_component_once() -> anyhow::Result<()> {
+        let send_policy = SendPolicy::custom(
+            BasicBlocklist::send_root(),
+            [BasicBlocklist::default(), BasicBlocklist::default()],
+        )?;
         let manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
-            .active_send_policy(merged_policy)
+            .active_send_policy(send_policy)
             .build();
-
-        assert_eq!(manager.active_send_policy(), Some(merged_root));
-        assert_eq!(manager.allowed_send_policies(), [merged_root]);
 
         AccountBuilder::new([1; 32])
             .with_component(NoAuth)

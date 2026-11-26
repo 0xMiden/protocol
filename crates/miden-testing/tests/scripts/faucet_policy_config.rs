@@ -10,15 +10,13 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
-use miden_protocol::asset::AssetAmount;
+use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -43,6 +41,7 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
+use super::fungible_faucet_account;
 use crate::into_private_note;
 
 // HELPERS
@@ -55,13 +54,6 @@ fn create_faucet_with_policies(
     builder: &mut MockChainBuilder,
     owner: AccountId,
 ) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("SYM")?)
-        .symbol("SYM".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .allowed_mint_policy(MintPolicy::owner_only())
@@ -71,9 +63,7 @@ fn create_faucet_with_policies(
         .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
-    let account_builder = AccountBuilder::new([43; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(43)?
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager);

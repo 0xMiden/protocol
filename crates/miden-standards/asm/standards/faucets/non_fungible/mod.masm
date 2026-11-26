@@ -1,5 +1,6 @@
 use {TokenSymbol} from miden::standards::faucets
-use {Asset, NoteRecipient, NoteTag, NoteType, StorageMapKey} from miden::protocol::types
+use {Asset, NoteRecipient, NoteTag, NoteType, OutputNoteIndex, StorageMapKey}
+    from miden::protocol::types
 # miden::standards::faucets::non_fungible
 #
 # Non-fungible (NFT) faucet logic: the token symbol slot and accessor, an asset-status registry
@@ -223,7 +224,7 @@ pub proc mint_and_send(
     tag: NoteTag,
     note_type: NoteType,
     recipient: NoteRecipient
-) -> u16
+) -> OutputNoteIndex
     # save the MINT note's ASSET_ID
     loc_storew_le.MINT_ASSET_ID_LOCAL dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]

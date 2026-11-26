@@ -1,4 +1,5 @@
-use {Asset, NoteAttachmentCount, NoteAttachmentListCommitment} from miden::protocol::types
+use {Asset, NoteAttachmentCount, NoteAttachmentListCommitment, OutputNoteIndex}
+    from miden::protocol::types
 # Generic transfer policy procedures shared by policy manager flows.
 
 # POLICY PROCEDURES
@@ -19,7 +20,7 @@ use {Asset, NoteAttachmentCount, NoteAttachmentListCommitment} from miden::proto
 #!
 #! Invocation: call
 @account_procedure
-pub proc check_send_policy(note_idx: u16) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
+pub proc check_send_policy(note_idx: OutputNoteIndex) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
     drop
     # => [0, EMPTY_WORD, pad(11)]
 end
