@@ -208,9 +208,9 @@ async fn blocked_holder_cannot_create_the_note(#[case] kind: Outgoing) -> Result
         "precondition: the block note put the holder on the faucet's blocklist"
     );
 
-    // The step OpenZeppelin asked to see. The holder's own transaction fails while the kernel
-    // moves the asset into the new note: the faucet's send policy finds the holder in the
-    // blocklist and aborts with its own error, so no note ever exists.
+    // The step OpenZeppelin asked to see. The holder's own transaction fails when it seals the
+    // new note holding the asset: the faucet's send policy finds the holder in the blocklist and
+    // aborts with its own error, so no note ever exists.
     let (note, asset) = outgoing_note(&pf, kind, 11)?;
     let result = try_emit_burn_note(&pf.mock_chain, &note, &asset, faucet_id, holder_id).await;
     assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_BLOCKED);

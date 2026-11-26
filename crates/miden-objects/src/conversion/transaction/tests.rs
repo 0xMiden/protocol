@@ -17,6 +17,7 @@ use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::note::{Note, NoteType, PartialNote, PartialNoteMetadata};
 use miden_protocol::testing::dummy_execution_proof;
 use miden_protocol::transaction::{
+    IesSealSeed,
     InputNoteCommitment,
     LogTopic,
     OutputNote,
@@ -101,9 +102,12 @@ fn transaction_args_roundtrip_normalizes_note_args_order(
         AdviceInputs::default().with_map([(dummy_word(6), vec![Felt::from(7_u32)])]),
         dummy_word(8),
         account_code_upgrade,
+        Some(IesSealSeed::new([10; 32])),
     );
 
     let message = proto::transaction::TransactionArgs::from(&args);
+    // The debug output of the message leaves the seed out.
+    assert!(!alloc::format!("{message:?}").contains(&alloc::format!("{:?}", [10_u8; 32])));
 
     assert_eq!(
         message

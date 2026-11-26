@@ -1999,6 +1999,10 @@ pub proc main
     call.wallet::move_asset_to_note
     # => [pad(16)]
 
+    # seal the note (the tx's only output note, index 0) now that it is final.
+    push.0 exec.::miden::protocol::output_note::seal
+    # => [pad(16)]
+
     exec.::miden::core::sys::truncate_stack
 end
 "#
@@ -2065,9 +2069,9 @@ pub async fn try_emit_burn_note(
         // PUBLIC note's details when tx0 creates it.
         .expected_output_note(RawOutputNote::Full(burn_note.clone()));
     // A POLICED (callback-Enabled) faucet's asset fires the SEND callback when the holder
-    // emits a note moving it out of their vault (native = the holder), so the kernel dyncalls the
-    // issuing faucet to run `basic_blocklist::check_policy` — attach it as a foreign account. A
-    // basic (Disabled) faucet — e.g. the burn oracle fixtures — fires no callback, so it is
+    // seals a note it moved the asset into (native = the holder), so the kernel dyncalls the
+    // issuing faucet to run `basic_blocklist::check_send_policy` — attach it as a foreign account.
+    // A basic (Disabled) faucet — e.g. the burn oracle fixtures — fires no callback, so it is
     // skipped.
     if faucet_id.asset_callback_flag() == AssetCallbackFlag::Enabled {
         let foreign = chain
@@ -2797,7 +2801,7 @@ pub async fn emit_note_with_attachments(
     }
     // each extra-attachment leg re-supplies the note index explicitly — the producer tx creates
     // exactly ONE output note, so its index is deterministically 0 — and calls the appender
-    // (insertion order preserved).
+    // (insertion order preserved). The script then seals that note.
     let mut extra_legs = String::new();
     for attachment in attachments.iter().skip(1) {
         let scheme_n = attachment.attachment_scheme().as_u16();
@@ -2822,6 +2826,7 @@ pub async fn emit_note_with_attachments(
          \x20\x20\x20\x20push.{tag}\n\
          \x20\x20\x20\x20call.emit_helper::emit_note_with_attachment\n\
          {extra_legs}\
+         \x20\x20\x20\x20push.0 exec.::miden::protocol::output_note::seal\n\
          \x20\x20\x20\x20exec.::miden::core::sys::truncate_stack\n\
          end\n"
     );

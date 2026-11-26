@@ -10,6 +10,7 @@ pub mod asset
 pub mod auth
 pub mod constants
 pub mod faucet
+pub mod ies
 pub mod input_note
 mod input_note_internal
 pub mod kernel_proc_offsets

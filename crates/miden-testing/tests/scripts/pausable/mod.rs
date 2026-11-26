@@ -30,8 +30,9 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::errors::standards::{
     ERR_PAUSABLE_IS_PAUSED,
@@ -467,8 +468,8 @@ fn add_faucet_with_pause_and_policies(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(TransferPolicy::empty_basic_blocklist())
-                .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+                .active_send_policy(SendPolicy::empty_basic_blocklist())
+                .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
                 .build(),
         );
 
@@ -598,7 +599,8 @@ async fn pausable_mint_fails_when_paused() -> anyhow::Result<()> {
             push.{tag}
             push.{amount}
             call.::miden::standards::faucets::fungible::mint_and_send
-            dropw dropw dropw dropw
+            exec.::miden::protocol::output_note::seal
+            dropw dropw dropw drop drop drop
         end
         "#,
         recipient = recipient_word,

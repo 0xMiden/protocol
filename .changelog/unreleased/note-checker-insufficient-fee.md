@@ -1,0 +1,1 @@
+[BREAKING] `NoteConsumptionChecker` now reports an account that cannot pay the transaction fee as `NoteFailure::InsufficientFee` and `NoteConsumptionStatus::InsufficientFee`, so clients can keep notes that only fail for lack of the fee asset.

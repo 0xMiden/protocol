@@ -176,13 +176,16 @@ async fn test_tx_fee_create_output_note_constructor() -> anyhow::Result<()> {
             exec.tx_fee::create_output_note
             # => [note_idx]
 
-            # Add an asset to the created note
-            push.{ASSET_VALUE}
+            # Add an asset to the created note and seal it
+            dup push.{ASSET_VALUE}
             push.{ASSET_ID}
             call.::miden::standards::wallets::basic::move_asset_to_note
+            # => [note_idx, pad(15)]
+
+            exec.::miden::protocol::output_note::seal
 
             # Clean up stack
-            dropw dropw dropw dropw
+            dropw dropw dropw drop drop drop
         end
         "#,
         serial_num = serial_num,

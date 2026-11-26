@@ -20,7 +20,13 @@ mod summary;
 pub use summary::{TransactionSummary, TransactionSummaryV1};
 
 mod args;
-pub use args::{NoteArgument, TransactionArgs, TransactionArgsError, TransactionScript};
+pub use args::{
+    IesSealSeed,
+    NoteArgument,
+    TransactionArgs,
+    TransactionArgsError,
+    TransactionScript,
+};
 
 mod notes;
 pub use notes::{

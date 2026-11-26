@@ -17,6 +17,8 @@ pub enum StandardNoteAttachment {
     /// See [`AccountCodeUpgradeAttachment`](crate::note::AccountCodeUpgradeAttachment) for
     /// details.
     AccountCodeUpgrade,
+    /// See [`EncryptedAssetsAttachment`](crate::note::EncryptedAssetsAttachment) for details.
+    EncryptedAssets,
 }
 
 impl StandardNoteAttachment {
@@ -28,6 +30,7 @@ impl StandardNoteAttachment {
             StandardNoteAttachment::UsdcxMint => NoteAttachmentScheme::new_const(4u16),
             StandardNoteAttachment::UsdcxBurn => NoteAttachmentScheme::new_const(5u16),
             StandardNoteAttachment::AccountCodeUpgrade => NoteAttachmentScheme::new_const(7u16),
+            StandardNoteAttachment::EncryptedAssets => NoteAttachmentScheme::new_const(8u16),
         }
     }
 }

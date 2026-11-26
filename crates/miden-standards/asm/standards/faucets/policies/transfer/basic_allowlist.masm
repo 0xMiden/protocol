@@ -1,4 +1,4 @@
-use {Asset} from miden::protocol::types
+use {Asset, NoteAttachmentCount, NoteAttachmentListCommitment} from miden::protocol::types
 # miden::standards::faucets::policies::transfer::basic_allowlist
 #
 # Basic allowlist transfer policy: rejects transfers whose native account is not allowed on the
@@ -9,7 +9,7 @@ use {Asset} from miden::protocol::types
 # transfers.
 
 use miden::protocol::account_id
-use miden::protocol::asset
+use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::faucets::policies::transfer::allowlist
 use miden::standards::expiration
@@ -17,21 +17,19 @@ use miden::standards::expiration
 # POLICY PROCEDURES
 # ================================================================================================
 
-#! Transfer policy that rejects transfers whose native account is not allowed on the issuing
-#! faucet.
-#!
-#! The same procedure root is reusable as both send and receive policy because it does not depend
-#! on custom_data.
+#! Send policy that rejects output notes created by an account that is not allowed on the
+#! issuing faucet, and returns no attachment for the accepted ones.
 #!
 #! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
 #! after the reference block.
 #!
-#! Inputs:  [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
-#! Outputs: [pad(16)]
+#! Inputs:  [note_idx, pad(15)]
+#! Outputs: [0, EMPTY_WORD, pad(11)]
 #!
 #! Where:
-#! - custom_data is `0` for the receive (account) callback and the output note index for the
-#!   send (note) callback. This policy does not inspect it.
+#! - note_idx is the index of the output note being sealed.
+#! - 0 is the number of attachments returned for the note, so the attachment list commitment is
+#!   EMPTY_WORD.
 #!
 #! Panics if:
 #! - the native account is not allowed on the issuing faucet and is not the issuing faucet
@@ -39,39 +37,87 @@ use miden::standards::expiration
 #!
 #! Invocation: call
 @account_procedure
-pub proc check_policy(asset: Asset, custom_data: felt)
+pub proc check_send_policy(note_idx: u16) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
+    exec.check_native_account
+    # => [note_idx, pad(15)]
+
+    drop
+    # => [0, EMPTY_WORD, pad(11)]
+end
+
+#! Receive policy that rejects assets added to the vault of an account that is not allowed on the
+#! issuing faucet.
+#!
+#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
+#! after the reference block.
+#!
+#! Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - ASSET_ID and ASSET_VALUE are the ID and value of the asset being added to the native
+#!   account's vault.
+#!
+#! Panics if:
+#! - the native account is not allowed on the issuing faucet and is not the issuing faucet
+#!   itself.
+#!
+#! Invocation: call
+@account_procedure
+pub proc check_receive_policy(asset: Asset)
+    exec.check_native_account
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
+    dropw dropw
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# ================================================================================================
+
+#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
+#! after the reference block and asserts that the native account is allowed on the issuing faucet.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the native account is not allowed on the issuing faucet and is not the issuing faucet
+#!   itself.
+#!
+#! Invocation: exec
+proc check_native_account
     exec.expiration::apply_default
-    # => [ASSET_ID, ASSET_VALUE, custom_data, pad(7)]
+    # => []
 
-    exec.asset::id_into_faucet_id
-    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
+    exec.assert_native_account_allowed
+    # => []
+end
 
+#! Asserts that the native account is allowed on the issuing faucet, which is the active
+#! account while an asset callback runs. The issuing faucet itself is exempt.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the native account is not allowed on the issuing faucet and is not the issuing faucet
+#!   itself.
+#!
+#! Invocation: exec
+proc assert_native_account_allowed
     exec.native_account::get_id
-    # => [account_id_suffix, account_id_prefix, faucet_id_suffix, faucet_id_prefix, ASSET_VALUE,
-    #     custom_data, pad(7)]
+    # => [account_id_suffix, account_id_prefix]
 
-    dupw exec.account_id::eq
-    # => [is_issuer, account_id_suffix, account_id_prefix, faucet_id_suffix, faucet_id_prefix,
-    #     ASSET_VALUE, custom_data, pad(7)]
+    dup.1 dup.1 exec.active_account::get_id exec.account_id::eq
+    # => [is_issuer, account_id_suffix, account_id_prefix]
 
     # the issuing faucet is exempt
-    not
-    # => [should_check_allowlist, account_id_suffix, account_id_prefix, faucet_id_suffix,
-    #     faucet_id_prefix, ASSET_VALUE, custom_data, pad(7)]
-
     if.true
-        # drop the faucet ID, keeping the native account ID for the allowlist lookup
-        movup.3 drop movup.2 drop
-        # => [account_id_suffix, account_id_prefix, ASSET_VALUE, custom_data, pad(7)]
-
-        exec.allowlist::assert_allowed
-        # => [ASSET_VALUE, custom_data, pad(7)]
+        drop drop
+        # => []
     else
-        dropw
-        # => [ASSET_VALUE, custom_data, pad(7)]
+        exec.allowlist::assert_allowed
+        # => []
     end
-    # => [ASSET_VALUE, custom_data, pad(7)]
-
-    dropw drop
-    # => [pad(16)]
 end
