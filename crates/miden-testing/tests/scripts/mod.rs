@@ -5,6 +5,7 @@ mod code_inspection;
 mod constant_fee_manager;
 mod constant_fee_policy_config;
 mod credit_issuance;
+mod encrypted_assets_issuer_key_config;
 mod encrypted_assets_policy;
 mod expiration;
 mod faucet;
