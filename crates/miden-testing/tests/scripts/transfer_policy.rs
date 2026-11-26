@@ -10,15 +10,8 @@ extern crate alloc;
 use alloc::vec;
 
 use anyhow::Context;
-use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
-use miden_protocol::asset::{
-    Asset,
-    AssetAmount,
-    FungibleAsset,
-    NonFungibleAsset,
-    NonFungibleAssetDetails,
-};
+use miden_protocol::account::{Account, AccountId};
+use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::ERR_OUTPUT_NOTE_CALLBACK_ATTACHMENT_LIST_COMMITMENT_WITHOUT_ATTACHMENTS;
@@ -26,7 +19,6 @@ use miden_protocol::note::{Note, NoteAttachment, NoteAttachmentScheme, NoteType}
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Pausable};
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     AllowlistStorage,
     BurnPolicy,
@@ -49,7 +41,7 @@ use miden_testing::{
 };
 use miden_tx::TransactionExecutorError;
 
-use super::assert_default_expiration_limit;
+use super::{assert_default_expiration_limit, fungible_faucet_account, policy_component};
 
 // FAUCET FIXTURES
 // ================================================================================================
@@ -59,16 +51,7 @@ use super::assert_default_expiration_limit;
 ///
 /// Its own asset callbacks are disabled: this faucet is never the issuer under test.
 pub(crate) fn add_faucet_with_wallet(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("OTH")?)
-        .symbol("OTH".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
-    let account_builder = AccountBuilder::new([44u8; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(44)?
         .with_component(BasicWallet)
         .with_component(Authority::AuthControlled)
         .with_components(
@@ -84,16 +67,7 @@ pub(crate) fn add_faucet_with_wallet(builder: &mut MockChainBuilder) -> anyhow::
 /// Builds a fungible faucet with asset callbacks enabled and [`SendPolicy::allow_all`] and
 /// [`ReceivePolicy::allow_all`] active.
 fn add_faucet_with_allow_all_transfer(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("ALL")?)
-        .symbol("ALL".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
-    let account_builder = AccountBuilder::new([45u8; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(45)?
         .with_component(Authority::AuthControlled)
         .with_components(
             TokenPolicyManager::builder()
@@ -113,16 +87,7 @@ fn add_faucet_with_reserved_only_transfer(
     builder: &mut MockChainBuilder,
     pausable: Pausable,
 ) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("RSV")?)
-        .symbol("RSV".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
-    let account_builder = AccountBuilder::new([46u8; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(46)?
         .with_component(Authority::AuthControlled)
         .with_component(pausable)
         .with_components(
@@ -143,16 +108,7 @@ fn add_faucet_with_transfer_policies(
     send_policy: SendPolicy,
     receive_policy: ReceivePolicy,
 ) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("MRG")?)
-        .symbol("MRG".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
-    let account_builder = AccountBuilder::new([48u8; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(48)?
         .with_component(Authority::AuthControlled)
         .with_components(
             TokenPolicyManager::builder()
@@ -190,8 +146,10 @@ impl CustomTransferPolicies {
         let accepts = u8::from(accepts);
         let rejection_error = ERR_CUSTOM_POLICY_REJECTED;
         let error = rejection_error.message();
-        let code = CodeBuilder::default().compile_component_code(
+        let (send_root, component) = policy_component(
             component_name,
+            "check_send_policy",
+            vec![],
             format!(
                 r#"
                 #! Inputs:  [note_idx, pad(15)]
@@ -213,20 +171,13 @@ impl CustomTransferPolicies {
                 "#
             ),
         )?;
-        let component =
-            AccountComponent::new(code, vec![], AccountComponentMetadata::mock(component_name))?;
-        let procedure_root = |name: &str| {
-            component
-                .get_procedure_root_by_path(format!("{component_name}::{name}").as_str())
-                .with_context(|| format!("procedure {name} should exist"))
-        };
+        let receive_root = component
+            .get_procedure_root_by_path(format!("{component_name}::check_receive_policy").as_str())
+            .context("procedure check_receive_policy should exist")?;
 
         Ok(Self {
-            send: SendPolicy::custom(procedure_root("check_send_policy")?, [component.clone()])?,
-            receive: ReceivePolicy::custom(
-                procedure_root("check_receive_policy")?,
-                [component.clone()],
-            )?,
+            send: SendPolicy::custom(send_root, [component.clone()])?,
+            receive: ReceivePolicy::custom(receive_root, [component])?,
         })
     }
 }
@@ -378,9 +329,10 @@ pub(crate) const SEALED_NOTE_IDX: usize = 1;
 /// Builds a custom send policy that returns no attachments together with the provided attachment
 /// list commitment, which the kernel accepts only if it is the empty word.
 fn custom_send_policy(attachment_list_commitment: Word) -> anyhow::Result<SendPolicy> {
-    let component_name = "tests::attachment_send_policy";
-    let policy_code = CodeBuilder::default().compile_component_code(
-        component_name,
+    let (root, component) = policy_component(
+        "tests::attachment_send_policy",
+        "check_send_policy",
+        vec![],
         format!(
             "
             #! Inputs:  [note_idx, pad(15)]
@@ -397,13 +349,8 @@ fn custom_send_policy(attachment_list_commitment: Word) -> anyhow::Result<SendPo
             "
         ),
     )?;
-    let policy_component =
-        AccountComponent::new(policy_code, vec![], AccountComponentMetadata::mock(component_name))?;
-    let policy_root = policy_component
-        .get_procedure_root_by_path(format!("{component_name}::check_send_policy").as_str())
-        .expect("send policy procedure should exist");
 
-    Ok(SendPolicy::custom(policy_root, [policy_component])?)
+    Ok(SendPolicy::custom(root, [component])?)
 }
 
 /// Executes a transaction in which an account holding an asset of a faucet creates and seals an
@@ -423,17 +370,9 @@ async fn execute_note_sealing_tx(
     let mut sender = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let sender_id = sender.id();
 
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("ATT")?)
-        .symbol("ATT".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
     let faucet = builder.add_account_from_builder(
         Auth::IncrNonce,
-        AccountBuilder::new([48u8; 32])
-            .account_type(AccountType::Public)
-            .with_component(faucet)
+        fungible_faucet_account(48)?
             .with_component(Authority::AuthControlled)
             .with_components(
                 TokenPolicyManager::builder()
@@ -681,7 +620,6 @@ async fn send_policy_inspects_the_faucet_assets_of_the_note(
     const ERR_NON_FUNGIBLE_ASSET_REJECTED: MasmError =
         MasmError::from_static_str("send policy rejects non-fungible assets");
 
-    let component_name = "tests::send_policy";
     let composition_check = if reject_non_fungible {
         format!(
             "exec.asset::id_to_composition neq.COMPOSITION_NONE
@@ -691,8 +629,10 @@ async fn send_policy_inspects_the_faucet_assets_of_the_note(
     } else {
         String::from("nop")
     };
-    let policy_code = CodeBuilder::default().compile_component_code(
-        component_name,
+    let (root, component) = policy_component(
+        "tests::send_policy",
+        "check_send_policy",
+        vec![],
         format!(
             r#"
             use miden::protocol::account_id
@@ -741,25 +681,12 @@ async fn send_policy_inspects_the_faucet_assets_of_the_note(
             "#
         ),
     )?;
-    let policy_component =
-        AccountComponent::new(policy_code, vec![], AccountComponentMetadata::mock(component_name))?;
-    let policy_root = policy_component
-        .get_procedure_root_by_path(format!("{component_name}::check_send_policy").as_str())
-        .expect("send policy procedure should exist");
-    let send_policy = SendPolicy::custom(policy_root, [policy_component])?;
+    let send_policy = SendPolicy::custom(root, [component])?;
 
     let mut builder = MockChain::builder();
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("SND")?)
-        .symbol("SND".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
     let faucet = builder.add_account_from_builder(
         Auth::IncrNonce,
-        AccountBuilder::new([47u8; 32])
-            .account_type(AccountType::Public)
-            .with_component(faucet)
+        fungible_faucet_account(47)?
             .with_component(Authority::AuthControlled)
             .with_components(
                 TokenPolicyManager::builder()

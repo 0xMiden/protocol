@@ -5,15 +5,8 @@ use anyhow::Context;
 use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceError;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
-use miden_protocol::asset::{
-    Asset,
-    AssetAmount,
-    FungibleAsset,
-    NonFungibleAsset,
-    NonFungibleAssetDetails,
-};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
+use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
@@ -26,7 +19,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::{ExecutedTransaction, OutputNote, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
-use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
+use miden_standards::account::faucets::{NonFungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BlocklistStorage,
     BurnPolicy,
@@ -53,9 +46,14 @@ use miden_testing::{
 };
 use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 
-use super::assert_default_expiration_limit;
 use super::faucet::{FaucetTestParams, create_mint_body_code};
 use super::transfer_policy::{SEALED_NOTE_IDX, build_mint_note_for};
+use super::{
+    assert_default_expiration_limit,
+    fungible_faucet,
+    fungible_faucet_account,
+    policy_component,
+};
 use crate::consume_note;
 
 // CONSTANTS
@@ -82,16 +80,6 @@ fn issuer_key() -> EncryptedAssetsIssuerKey {
     EncryptedAssetsIssuerKey::new(issuer_secret_key().public_key())
 }
 
-/// Returns the fungible faucet component of the faucets under test.
-fn fungible_faucet() -> anyhow::Result<FungibleFaucet> {
-    Ok(FungibleFaucet::builder()
-        .name(TokenName::new("ENC")?)
-        .symbol("ENC".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?)
-}
-
 /// Returns a token policy manager whose active send policy is `send_policy`.
 fn policy_manager(send_policy: SendPolicy) -> TokenPolicyManager {
     TokenPolicyManager::builder()
@@ -106,9 +94,7 @@ fn add_faucet(
     builder: &mut MockChainBuilder,
     token_policy_manager: TokenPolicyManager,
 ) -> anyhow::Result<Account> {
-    let account_builder = AccountBuilder::new([48; 32])
-        .account_type(AccountType::Public)
-        .with_component(fungible_faucet()?)
+    let account_builder = fungible_faucet_account(48)?
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager);
 
@@ -195,10 +181,10 @@ async fn send_note(
 fn blocklist_with_encrypted_assets_policy(
     blocked_accounts: impl IntoIterator<Item = AccountId>,
 ) -> anyhow::Result<SendPolicy> {
-    const COMPONENT_NAME: &str = "tests::blocklist_with_encrypted_assets";
-
-    let code = CodeBuilder::default().compile_component_code(
-        COMPONENT_NAME,
+    let (root, component) = policy_component(
+        "tests::blocklist_with_encrypted_assets",
+        "check_send_policy",
+        vec![BlocklistStorage::with_blocked_accounts(blocked_accounts).into_slot()],
         "
         use miden::standards::faucets::policies::transfer::basic_blocklist
         use miden::standards::faucets::policies::transfer::encrypted_assets
@@ -212,14 +198,6 @@ fn blocklist_with_encrypted_assets_policy(
         end
         ",
     )?;
-    let component = AccountComponent::new(
-        code,
-        vec![BlocklistStorage::with_blocked_accounts(blocked_accounts).into_slot()],
-        AccountComponentMetadata::mock(COMPONENT_NAME),
-    )?;
-    let root = component
-        .get_procedure_root_by_path(format!("{COMPONENT_NAME}::check_send_policy").as_str())
-        .context("send policy procedure should exist")?;
 
     Ok(SendPolicy::custom(root, [component, issuer_key().into()])?)
 }
@@ -283,9 +261,7 @@ fn set_issuer_key_note(sender: AccountId, public_key: [Felt; 5]) -> anyhow::Resu
 /// Adds an existing faucet owned by `owner`, whose authority gates its setters, with
 /// [`SendPolicy::with_encrypted_assets`] active.
 fn add_owned_faucet(builder: &mut MockChainBuilder, owner: AccountId) -> anyhow::Result<Account> {
-    let account_builder = AccountBuilder::new([50; 32])
-        .account_type(AccountType::Public)
-        .with_component(fungible_faucet()?)
+    let account_builder = fungible_faucet_account(50)?
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
         .with_components(policy_manager(SendPolicy::with_encrypted_assets(issuer_key())));
