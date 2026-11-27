@@ -1913,6 +1913,15 @@ pub enum CodePatchError {
     MastForestMerge(#[source] MastForestError),
 }
 
+// CODE REGISTRY ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum CodeRegistryError {
+    #[error("failed to merge the MAST forest of the code patch into the code registry")]
+    MastForestMerge(#[source] MastForestError),
+}
+
 // AUTH SCHEME ERROR
 // ================================================================================================
 

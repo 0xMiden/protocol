@@ -19,7 +19,7 @@ use miden_protocol::block::{
     ProvenBlock,
     ValidatorConfig,
 };
-use miden_protocol::code::ProcedureRoot;
+use miden_protocol::code::{CodeRegistry, ProcedureRoot};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::note::{Note, NoteHeader, NoteId, NoteInclusionProof, Nullifier};
 use miden_protocol::protocol_config::ProtocolConfig;
@@ -188,6 +188,9 @@ pub struct MockChain {
     /// Tree containing all registered procedure roots.
     code_tree: CodeTree,
 
+    /// The code of all procedure roots in the [`CodeTree`].
+    code_registry: CodeRegistry,
+
     /// Transactions that have been submitted to the chain but have not yet been included in a
     /// block.
     pending_transactions: Vec<ProvenTransaction>,
@@ -239,11 +242,13 @@ impl MockChain {
         MockChainBuilder::new()
     }
 
-    /// Creates a new `MockChain` with the provided genesis block, account tree and code tree.
+    /// Creates a new `MockChain` with the provided genesis block, account tree, code tree and code
+    /// registry.
     pub(super) fn from_genesis_block(
         genesis_block: ProvenBlock,
         account_tree: AccountTree,
         code_tree: CodeTree,
+        code_registry: CodeRegistry,
         account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
         secret_keys: Vec<SigningKey>,
         protocol_config: ProtocolConfig,
@@ -254,6 +259,7 @@ impl MockChain {
             nullifier_tree: NullifierTree::default(),
             account_tree,
             code_tree,
+            code_registry,
             pending_transactions: Vec::new(),
             pending_batches: Vec::new(),
             committed_notes: BTreeMap::new(),
@@ -503,6 +509,11 @@ impl MockChain {
     /// Returns a reference to the [`CodeTree`] of the chain.
     pub fn code_tree(&self) -> &CodeTree {
         &self.code_tree
+    }
+
+    /// Returns a reference to the [`CodeRegistry`] of the chain.
+    pub fn code_registry(&self) -> &CodeRegistry {
+        &self.code_registry
     }
 
     // BATCH APIS
@@ -1060,6 +1071,9 @@ impl MockChain {
             }
         }
 
+        self.code_registry
+            .merge_patch(proven_block.body().code_patch())
+            .context("failed to merge block code patch into code registry")?;
         for procedure_root in proven_block.body().code_patch().created_procedures() {
             self.code_tree
                 .insert(procedure_root)
@@ -1575,6 +1589,7 @@ mod tests {
         assert_eq!(chain.nullifier_tree, restored.nullifier_tree);
         assert_eq!(chain.account_tree, restored.account_tree);
         assert_eq!(chain.code_tree, restored.code_tree);
+        assert_eq!(chain.code_registry, restored.code_registry);
         assert_eq!(chain.pending_transactions, restored.pending_transactions);
         assert_eq!(chain.pending_batches, restored.pending_batches);
         assert_eq!(chain.committed_accounts, restored.committed_accounts);

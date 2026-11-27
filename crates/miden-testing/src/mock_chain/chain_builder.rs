@@ -1,4 +1,5 @@
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
@@ -28,6 +29,7 @@ use miden_protocol::account::{
     AccountUpdateDetails,
     StorageSlot,
 };
+use miden_protocol::assembly::mast::MastForestError;
 use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset, TokenSymbol};
 use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::code_tree::CodeTree;
@@ -46,7 +48,7 @@ use miden_protocol::block::{
     ProvenBlock,
     ValidatorConfig,
 };
-use miden_protocol::code::ProcedureRoot;
+use miden_protocol::code::CodeRegistry;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::crypto::rand::EidosRandomCoin;
@@ -56,7 +58,8 @@ use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
-use miden_protocol::{CoreLibrary, MAX_OUTPUT_NOTES_PER_BATCH, ProtocolLib, Word};
+use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{CoreLibrary, MAX_OUTPUT_NOTES_PER_BATCH, MastForest, ProtocolLib, Word};
 use miden_standards::StandardsLib;
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::auth::{AuthNetworkAccount, SponsorshipPolicy};
@@ -268,7 +271,9 @@ impl MockChainBuilder {
         let chain_commitment = Blockchain::new().commitment();
         let account_root = account_tree.root();
         let nullifier_root = NullifierTree::<Smt>::default().root();
-        let code_tree = default_code_tree()?;
+        let code_registry = default_code_registry()?;
+        let code_tree = CodeTree::with_entries(code_registry.procedure_roots())
+            .context("failed to create genesis code tree")?;
         let note_root = note_tree.root();
         let tx_commitment = body.compute_transactions_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
@@ -312,6 +317,7 @@ impl MockChainBuilder {
             genesis_block,
             account_tree,
             code_tree,
+            code_registry,
             self.account_authenticators,
             validator_secret_keys,
             protocol_config,
@@ -984,27 +990,29 @@ impl Default for MockChainBuilder {
 // HELPERS
 // ================================================================================================
 
-/// Returns the code tree with the procedures of the default libraries that other code can
-/// reference.
+/// The genesis code registry, cached because merging the default libraries is expensive.
+static GENESIS_CODE_REGISTRY: LazyLock<Result<CodeRegistry, MastForestError>> =
+    LazyLock::new(|| {
+        let libraries = [
+            TransactionKernel::package(),
+            CoreLibrary::default().package(),
+            ProtocolLib::default().package(),
+            StandardsLib::default().package(),
+        ];
+        let (mast, _) =
+            MastForest::merge(libraries.iter().map(|library| library.mast_forest().as_ref()))?;
+
+        Ok(CodeRegistry::new(Arc::new(mast)))
+    });
+
+/// Returns the code registry with the default libraries that other code can reference.
 ///
-/// Code references each procedure root of a forest that it reaches, not only the exported ones, so
-/// the tree contains all procedure roots of the libraries.
-fn default_code_tree() -> anyhow::Result<CodeTree> {
-    let exec_kernel_proc = TransactionKernel::package()
-        .get_procedure_root_by_path("$kernel::exec_kernel_proc")
-        .context("transaction kernel should export exec_kernel_proc")?;
-    let libraries = [
-        CoreLibrary::default().package(),
-        ProtocolLib::default().package(),
-        StandardsLib::default().package(),
-    ];
-
-    // Libraries can contain equal procedures, so roots must be deduplicated.
-    let mut procedure_roots = BTreeSet::from([ProcedureRoot::from_raw(exec_kernel_proc)]);
-    for library in libraries {
-        procedure_roots
-            .extend(library.mast_forest().local_procedure_digests().map(ProcedureRoot::from_raw));
-    }
-
-    CodeTree::with_entries(procedure_roots).context("failed to create genesis code tree")
+/// It contains all procedures of the transaction kernel, because code references
+/// `exec_kernel_proc` for each `syscall`. The genesis code tree is derived from its procedure
+/// roots, so the tree also contains all kernel procedures.
+fn default_code_registry() -> anyhow::Result<CodeRegistry> {
+    GENESIS_CODE_REGISTRY
+        .as_ref()
+        .cloned()
+        .map_err(|error| anyhow::anyhow!("failed to merge the default libraries: {error}"))
 }

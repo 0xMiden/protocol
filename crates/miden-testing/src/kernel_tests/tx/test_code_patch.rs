@@ -107,8 +107,8 @@ async fn note_scripts_are_put_into_code_patch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A block inserts the created procedures of its transactions into the code tree, so that the
-/// created code is present for later transactions.
+/// A block inserts the created procedures of its transactions into the code tree and the code
+/// registry, so that the created code is present for later transactions.
 #[tokio::test]
 async fn block_registers_created_procedures() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -137,7 +137,13 @@ async fn block_registers_created_procedures() -> anyhow::Result<()> {
 
     assert_eq!(block.body().code_patch().mast(), executed_tx.code_patch().mast());
     assert!(mock_chain.code_tree().contains(&script_root));
+    assert!(mock_chain.code_registry().procedure_roots().contains(&script_root));
     assert_eq!(block.header().code_tree_root(), mock_chain.code_tree().root());
+
+    // The snapshot derives the code tree from the registry, so both must survive a round trip.
+    let restored_chain = MockChain::try_from_bytes(&mock_chain.to_bytes())?;
+    assert_eq!(restored_chain.code_registry(), mock_chain.code_registry());
+    assert_eq!(restored_chain.code_tree(), mock_chain.code_tree());
 
     Ok(())
 }
