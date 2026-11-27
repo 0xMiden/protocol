@@ -15,11 +15,15 @@ enum Phase {
 }
 
 // Stable IDs let Criterion compare results across runs.
-const SCENARIOS: [(ExecutionBenchmark, &str); 7] = [
+const SCENARIOS: [(ExecutionBenchmark, &str); 8] = [
     (ExecutionBenchmark::ConsumeSingleP2IDFalcon, "falcon/single-p2id-note"),
     (ExecutionBenchmark::ConsumeSingleP2IDEcdsa, "ecdsa/single-p2id-note"),
     (ExecutionBenchmark::ConsumeTwoP2IDFalcon, "falcon/two-p2id-notes"),
     (ExecutionBenchmark::ConsumeTwoP2IDEcdsa, "ecdsa/two-p2id-notes"),
+    (
+        ExecutionBenchmark::CreatePrivateP2IDEncryptedAssetsEcdsa,
+        "ecdsa/private-p2id-note-encrypted-assets",
+    ),
     (ExecutionBenchmark::ConsumeClaimNoteL1ToMiden, "claim-note-l1"),
     (ExecutionBenchmark::ConsumeClaimNoteL2ToMiden, "claim-note-l2"),
     (ExecutionBenchmark::ConsumeB2AggNote, "b2agg-note"),

@@ -20,18 +20,23 @@ use miden_agglayer::{
     UpdateGerNote,
 };
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, StorageMapKey};
+use miden_protocol::account::{Account, AccountBuilder, AccountType, StorageMapKey};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
-use miden_protocol::note::{Note, NoteAssets, NoteScriptRoot, NoteType};
+use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
+use miden_protocol::note::{Note, NoteAssets, NoteScriptRoot, NoteType, PartialNote};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
+use miden_standards::account::access::Authority;
 use miden_standards::account::auth::{AuthNetworkAccount, SponsorshipPolicy};
+use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::policies::{BurnPolicy, MintPolicy, SendPolicy, TokenPolicyManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::interop::eth::EthAddress;
-use miden_standards::note::StandardNote;
-use miden_testing::{Auth, MockChain, MockChainBuilder, MockTransaction};
+use miden_standards::note::{EncryptedAssetsIssuerKey, P2idNote, StandardNote};
+use miden_standards::tx_script::SendNotesTransactionScript;
+use miden_testing::{AccountState, Auth, MockChain, MockChainBuilder, MockTransaction};
 use rand::RngExt;
 
 use crate::cycle_counting_benchmarks::ExecutionBenchmark;
@@ -142,6 +147,9 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
         ExecutionBenchmark::ConsumeTwoP2IDEcdsa => tx_consume_two_p2id_notes_ecdsa(),
         ExecutionBenchmark::CreateSingleP2IDFalcon => tx_create_single_p2id_note_falcon(),
         ExecutionBenchmark::CreateSingleP2IDEcdsa => tx_create_single_p2id_note_ecdsa(),
+        ExecutionBenchmark::CreatePrivateP2IDEncryptedAssetsEcdsa => {
+            tx_create_private_p2id_note_with_encrypted_assets()
+        },
         ExecutionBenchmark::ConsumeClaimNoteL1ToMiden => {
             tx_consume_claim_note(ClaimDataSource::L1ToMiden, false).await
         },
@@ -334,6 +342,62 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockT
         .build_transaction(account.id())
         .expected_output_note(RawOutputNote::Full(output_note))
         .tx_script(tx_script)
+        .build()
+}
+
+/// Returns the mock transaction in which an ECDSA wallet sends a private P2ID note that holds the
+/// asset of a faucet whose active send policy is the encrypted assets policy, so the faucet's
+/// callback encrypts the note's details to the issuer key through FPI.
+pub fn tx_create_private_p2id_note_with_encrypted_assets() -> Result<MockTransaction> {
+    let mut builder = MockChain::builder();
+
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("ENC")?)
+        .symbol("ENC".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+    let issuer_key = EncryptedAssetsIssuerKey::new(SecretKey::from_bytes(&[7; 40])?.public_key());
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::allow_all())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(SendPolicy::with_encrypted_assets(issuer_key))
+        .build();
+    let faucet = builder.add_account_from_builder(
+        Auth::IncrNonce,
+        AccountBuilder::new([48; 32])
+            .account_type(AccountType::Public)
+            .with_component(faucet)
+            .with_component(Authority::AuthControlled)
+            .with_components(token_policy_manager),
+        AccountState::Exists,
+    )?;
+
+    let asset = FungibleAsset::new(faucet.id(), 100)?;
+    let wallet = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak },
+        [asset.into()],
+    )?;
+    let note: Note = P2idNote::builder()
+        .sender(wallet.id())
+        .target(ACCOUNT_ID_SENDER.try_into()?)
+        .assets([asset])
+        .note_type(NoteType::Private)
+        .serial_number(Word::from([1u32; 4]))
+        .build()?
+        .into();
+    let mock_chain = builder.build()?;
+
+    let send_script = SendNotesTransactionScript::new(
+        &wallet.code_interface(),
+        &[PartialNote::from(note.clone())],
+    )?;
+
+    mock_chain
+        .build_transaction(wallet.id())
+        .send_notes_script(&send_script)
+        .foreign_accounts([mock_chain.get_foreign_account_inputs(faucet.id())?])
+        .expected_output_note(RawOutputNote::Full(note))
         .build()
 }
 

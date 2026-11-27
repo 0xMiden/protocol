@@ -548,6 +548,7 @@ mod tests {
             ExecutionBenchmark::ConsumeTwoP2IDEcdsa,
             ExecutionBenchmark::CreateSingleP2IDFalcon,
             ExecutionBenchmark::CreateSingleP2IDEcdsa,
+            ExecutionBenchmark::CreatePrivateP2IDEncryptedAssetsEcdsa,
             ExecutionBenchmark::ConsumeClaimNoteL1ToMiden,
             ExecutionBenchmark::ConsumeClaimNoteL2ToMiden,
             ExecutionBenchmark::ConsumeB2AggNote,
