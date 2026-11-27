@@ -40,14 +40,6 @@ fn note_attachment_scheme_exceeding_max_fails() {
 }
 
 #[test]
-fn note_attachment_header_serde() -> anyhow::Result<()> {
-    let header = NoteAttachmentHeader::new(NoteAttachmentScheme::new(42)?);
-    let deserialized = NoteAttachmentHeader::read_from_bytes(&header.to_bytes())?;
-    assert_eq!(header, deserialized);
-    Ok(())
-}
-
-#[test]
 fn note_attachment_header_absent() {
     let header = NoteAttachmentHeader::absent();
     assert!(header.is_absent());

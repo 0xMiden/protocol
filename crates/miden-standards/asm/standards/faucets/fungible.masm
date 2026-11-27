@@ -1,5 +1,6 @@
 use {TokenSymbol} from miden::standards::faucets
-use {Asset, AssetAmount, Bool, NoteRecipient, NoteTag, NoteType} from miden::protocol::types
+use {Asset, AssetAmount, Bool, NoteRecipient, NoteTag, NoteType, OutputNoteIndex}
+    from miden::protocol::types
 # miden::standards::faucets::fungible
 #
 # Fungible faucet logic: token config slot (supply, max_supply, decimals, symbol) and its
@@ -310,7 +311,7 @@ pub proc mint_and_send(
     tag: NoteTag,
     note_type: NoteType,
     recipient: NoteRecipient
-) -> u16
+) -> OutputNoteIndex
     # save the MINT note's ASSET_ID in a local so it survives the mint policy and supply
     # checks; it is compared against the asset derived for the active faucet before minting
     loc_storew_le.MINT_ASSET_ID_LOCAL dropw

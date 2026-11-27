@@ -11,21 +11,13 @@ mod config;
 use alloc::collections::BTreeMap;
 
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountId,
-    AccountProcedureRoot,
-    AccountType,
-    RoleSymbol,
-};
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::account::{Account, AccountId, AccountProcedureRoot, AccountType, RoleSymbol};
+use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{AccessControl, Authority, Ownable2Step, Pausable};
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BlocklistManager,
     BurnPolicy,
@@ -45,9 +37,9 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
-use super::assert_default_expiration_limit;
 use super::rbac::{build_grant_role_note, role, test_account_id};
 use super::transfer_policy::{add_faucet_with_wallet, assert_minted_note, build_mint_note};
+use super::{assert_default_expiration_limit, fungible_faucet_account};
 use crate::consume_note;
 
 // HELPERS
@@ -78,16 +70,7 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
     initial_blocked: impl IntoIterator<Item = AccountId>,
 ) -> anyhow::Result<Account> {
     let initial_blocked: Vec<AccountId> = initial_blocked.into_iter().collect();
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("SYM")?)
-        .symbol("SYM".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
-    let account_builder = AccountBuilder::new([43u8; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(43)?
         .with_component(Ownable2Step::new(owner_id))
         .with_component(Authority::OwnerControlled)
         .with_components(
@@ -555,16 +538,7 @@ fn add_rbac_faucet_with_blocklist(
     builder: &mut MockChainBuilder,
     admin: AccountId,
 ) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("SYM")?)
-        .symbol("SYM".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
-    let account_builder = AccountBuilder::new([71u8; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(71)?
         .with_components(AccessControl::Rbac {
             admin,
             procedure_roles: blocklister_roles(),

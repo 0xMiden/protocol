@@ -1,4 +1,3 @@
-use alloc::string::ToString;
 use core::fmt;
 
 use super::vault::AssetId;
@@ -6,13 +5,6 @@ use super::{Asset, AssetAmount, AssetComposition, AssetError, Word};
 use crate::Felt;
 use crate::account::{AccountId, AssetCallbackFlag};
 use crate::asset::AssetClass;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // FUNGIBLE ASSET
 // ================================================================================================
@@ -37,13 +29,6 @@ impl FungibleAsset {
     /// This number was chosen so that it can be represented as a positive and negative number in a
     /// field element. See `account_update.masm` for more details on how this number was chosen.
     pub const MAX_AMOUNT: AssetAmount = AssetAmount::MAX;
-
-    /// The serialized size of a [`FungibleAsset`] in bytes.
-    ///
-    /// A composition byte (u8) plus an account ID (15 bytes) plus an amount (u64).
-    pub const SERIALIZED_SIZE: usize = AssetComposition::SERIALIZED_SIZE
-        + AccountId::SERIALIZED_SIZE
-        + core::mem::size_of::<u64>();
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -201,43 +186,6 @@ impl fmt::Display for FungibleAsset {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for FungibleAsset {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        // Serialize the asset ID to version the fungible asset.
-        self.id().write_into(target);
-        target.write(self.amount.as_u64());
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.id().get_size_hint() + self.amount.as_u64().get_size_hint()
-    }
-}
-
-impl Deserializable for FungibleAsset {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let id = AssetId::read_from(source)?;
-
-        if !id.composition().is_fungible() {
-            return Err(DeserializationError::InvalidValue(format!(
-                "expected fungible asset composition but found {:?}",
-                id.composition()
-            )));
-        }
-        debug_assert!(
-            id.asset_class().is_empty(),
-            "asset ID should validate asset class is empty for composition fungible"
-        );
-
-        let amount: u64 = source.read()?;
-
-        FungibleAsset::new(id.faucet_id(), amount)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -247,15 +195,8 @@ mod tests {
 
     use super::*;
     use crate::account::AccountId;
-    use crate::asset::NonFungibleAsset;
     use crate::asset::tests::set_asset_metadata;
-    use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
-    };
+    use crate::testing::account_id::ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET;
 
     #[test]
     fn fungible_asset_from_id_and_value_words_fails_on_invalid_composition() -> anyhow::Result<()> {
@@ -304,41 +245,6 @@ mod tests {
 
         let err = FungibleAsset::from_id_and_value(asset.id(), invalid_value).unwrap_err();
         assert_matches!(err, AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(_));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_fungible_asset_serde() -> anyhow::Result<()> {
-        for fungible_account_id in [
-            ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
-            ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-            ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-            ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
-            ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
-        ] {
-            let account_id = AccountId::try_from(fungible_account_id).unwrap();
-            let fungible_asset = FungibleAsset::new(account_id, 10).unwrap();
-            assert_eq!(
-                fungible_asset,
-                FungibleAsset::read_from_bytes(&fungible_asset.to_bytes()).unwrap()
-            );
-            assert_eq!(fungible_asset.to_bytes().len(), fungible_asset.get_size_hint());
-
-            assert_eq!(
-                fungible_asset,
-                FungibleAsset::from_id_and_value_words(
-                    fungible_asset.to_id_word(),
-                    fungible_asset.to_value_word()
-                )?
-            )
-        }
-
-        let non_fungible_asset = NonFungibleAsset::mock(&[4]);
-        let err = FungibleAsset::read_from_bytes(&non_fungible_asset.to_bytes()).unwrap_err();
-        assert_matches!(err, DeserializationError::InvalidValue(msg) => {
-            assert!(msg.contains("expected fungible asset composition but found None"));
-        });
 
         Ok(())
     }

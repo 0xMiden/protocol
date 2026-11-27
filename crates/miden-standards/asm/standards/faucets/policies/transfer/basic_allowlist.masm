@@ -1,4 +1,5 @@
-use {Asset, NoteAttachmentCount, NoteAttachmentListCommitment} from miden::protocol::types
+use {Asset, NoteAttachmentCount, NoteAttachmentListCommitment, OutputNoteIndex}
+    from miden::protocol::types
 # miden::standards::faucets::policies::transfer::basic_allowlist
 #
 # Basic allowlist transfer policy: rejects transfers whose native account is not allowed on the
@@ -37,7 +38,7 @@ use miden::standards::expiration
 #!
 #! Invocation: call
 @account_procedure
-pub proc check_send_policy(note_idx: u16) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
+pub proc check_send_policy(note_idx: OutputNoteIndex) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
     exec.check_native_account
     # => [note_idx, pad(15)]
 

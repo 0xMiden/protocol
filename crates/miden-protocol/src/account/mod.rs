@@ -1,4 +1,3 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::account::delta::AssetDeltaOperation;
@@ -505,57 +504,6 @@ impl SequentialCommit for Account {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for Account {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let Account { id, vault, storage, code, nonce, seed } = self;
-
-        AccountHeader::VERSION_1.write_into(target);
-        id.write_into(target);
-        vault.write_into(target);
-        storage.write_into(target);
-        code.write_into(target);
-        nonce.write_into(target);
-        seed.write_into(target);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        AccountHeader::VERSION_1.get_size_hint()
-            + self.id.get_size_hint()
-            + self.vault.get_size_hint()
-            + self.storage.get_size_hint()
-            + self.code.get_size_hint()
-            + self.nonce.get_size_hint()
-            + self.seed.get_size_hint()
-    }
-}
-
-impl Deserializable for Account {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let version = u8::read_from(source)?;
-
-        if version != AccountHeader::VERSION_1 {
-            return Err(DeserializationError::InvalidValue(format!(
-                "account version is {} but only version {} is supported",
-                version,
-                AccountHeader::VERSION_1,
-            )));
-        }
-
-        let id = AccountId::read_from(source)?;
-        let vault = AssetVault::read_from(source)?;
-        let storage = AccountStorage::read_from(source)?;
-        let code = AccountCode::read_from(source)?;
-        let nonce = Felt::read_from(source)?;
-        let seed = <Option<Word>>::read_from(source)?;
-
-        Self::new(id, vault, storage, code, nonce, seed)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 // HELPER FUNCTIONS
 // ================================================================================================
 
@@ -614,10 +562,9 @@ mod tests {
     use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
-    use miden_crypto::utils::{Deserializable, DeserializationError, Serializable};
     use miden_crypto::{Felt, Word};
 
-    use super::{AccountCode, AccountDelta, AccountId, AccountStorage, AccountStoragePatch};
+    use super::{AccountCode, AccountId, AccountStorage, AccountStoragePatch};
     use crate::account::{
         Account,
         AccountBuilder,
@@ -625,7 +572,6 @@ mod tests {
         AccountIdVersion,
         AccountPatch,
         AccountType,
-        AccountVaultDelta,
         AccountVaultPatch,
         AssetCallbackFlag,
         PartialAccount,
@@ -643,36 +589,6 @@ mod tests {
     };
     use crate::testing::add_component::AddComponent;
     use crate::testing::noop_auth_component::NoopAuthComponent;
-
-    #[test]
-    fn test_serde_account() {
-        let init_nonce = Felt::from(1_u32);
-        let asset_0 = FungibleAsset::mock(99);
-        let word = Word::from([1, 2, 3, 4u32]);
-        let storage_slot = StorageSlotContent::Value(word);
-        let account = build_account(vec![asset_0], init_nonce, vec![storage_slot]);
-
-        let serialized = account.to_bytes();
-        let deserialized = Account::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, account);
-    }
-
-    #[test]
-    fn test_serde_account_delta() {
-        let nonce_delta = Felt::from(2_u32);
-        let asset_0 = FungibleAsset::mock(15);
-        let asset_1 = NonFungibleAsset::mock(&[5, 5, 5]);
-        let storage_patch = AccountStoragePatch::builder()
-            .update_value(StorageSlotName::mock(0), Word::empty())
-            .update_value(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))
-            .build();
-        let account_delta =
-            build_account_delta(vec![asset_1], vec![asset_0], nonce_delta, storage_patch);
-
-        let serialized = account_delta.to_bytes();
-        let deserialized = AccountDelta::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, account_delta);
-    }
 
     #[test]
     fn account_patch_is_correctly_applied() -> anyhow::Result<()> {
@@ -844,18 +760,6 @@ mod tests {
         Ok(())
     }
 
-    pub fn build_account_delta(
-        added_assets: Vec<Asset>,
-        removed_assets: Vec<Asset>,
-        nonce_delta: Felt,
-        storage_patch: AccountStoragePatch,
-    ) -> AccountDelta {
-        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-        let vault_delta = AccountVaultDelta::from_iters(added_assets, removed_assets);
-        AccountDelta::new(id, storage_patch, vault_delta, AccountCodePatch::default(), nonce_delta)
-            .unwrap()
-    }
-
     pub fn build_account_patch(
         final_nonce: Felt,
         added_assets: Vec<Asset>,
@@ -1001,14 +905,5 @@ mod tests {
         let _partial_account = PartialAccount::from(&account);
 
         Ok(())
-    }
-
-    #[test]
-    fn account_deserialization_rejects_unsupported_version() {
-        let error = Account::read_from_bytes(&[0]).unwrap_err();
-
-        assert_matches!(error, DeserializationError::InvalidValue(message) => {
-            assert!(message.contains("account version is 0"));
-        });
     }
 }

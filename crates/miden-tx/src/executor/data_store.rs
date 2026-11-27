@@ -2,7 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::{FutureMaybeSend, MastForestStore, Word};
+use miden_processor::{FutureMaybeSend, LoadedMastForest, Word};
 use miden_protocol::account::{AccountId, PartialAccount, StorageMapKey, StorageMapWitness};
 use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::asset::{AssetId, AssetWitness};
@@ -20,7 +20,7 @@ use crate::DataStoreError;
 
 /// The [DataStore] trait defines the interface that transaction objects use to fetch data
 /// required for transaction execution.
-pub trait DataStore: MastForestStore {
+pub trait DataStore {
     /// Returns all the data required to execute a transaction against the account with the
     /// specified ID and consuming input notes created in blocks in the input `ref_blocks` set.
     ///
@@ -98,13 +98,24 @@ pub trait DataStore: MastForestStore {
     /// reference to code that the code tree already contains can stay an external node. The data
     /// store leaves out the code that it does not have.
     ///
-    /// Unlike [`MastForestStore::get`], which provides code for execution, this method must only
+    /// Unlike [`Self::get_mast_forest`], which provides code for execution, this method must only
     /// return code that is expected to be published, because the transaction adds it to the public
     /// code registry.
     fn get_code_to_register(
         &self,
         procedure_roots: BTreeSet<ProcedureRoot>,
     ) -> impl FutureMaybeSend<Result<Vec<Arc<MastForest>>, DataStoreError>>;
+
+    /// Returns the MAST forest that contains the procedure with the provided root, or `None` if
+    /// the data store does not have it.
+    ///
+    /// # Errors
+    /// Returns an error if the data store encountered an internal error while attempting to
+    /// retrieve the forest.
+    fn get_mast_forest(
+        &self,
+        procedure_root: ProcedureRoot,
+    ) -> impl FutureMaybeSend<Result<Option<LoadedMastForest>, DataStoreError>>;
 
     /// Returns a note script with the specified root, or `None` if not found.
     ///

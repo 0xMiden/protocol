@@ -1,15 +1,7 @@
-use alloc::string::ToString;
 use core::fmt;
 use core::ops::{Add, Sub};
 
 use super::super::errors::AssetError;
-use super::super::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{Felt, Word};
 
 // ASSET AMOUNT
@@ -31,9 +23,6 @@ impl AssetAmount {
 
     /// The zero amount.
     pub const ZERO: Self = Self(0);
-
-    /// The serialized size of an [`AssetAmount`] in bytes.
-    pub const SERIALIZED_SIZE: usize = core::mem::size_of::<u64>();
 
     /// Returns a new `AssetAmount` if `amount` does not exceed [`Self::MAX`].
     ///
@@ -149,31 +138,13 @@ impl fmt::Display for AssetAmount {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for AssetAmount {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write(self.0);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.0.get_size_hint()
-    }
-}
-
-impl Deserializable for AssetAmount {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let amount: u64 = source.read()?;
-        Self::new(amount).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
+
     use super::*;
 
     #[test]
