@@ -2,9 +2,122 @@ use core::fmt::{Debug, Display};
 
 use miden_crypto_derive::WordWrapper;
 
-use super::{Hasher, ProvenTransaction, Word};
-use crate::Felt;
+use super::{ExecutedTransaction, Felt, Hasher, ProvenTransaction, Word};
 use crate::block::code_tree::CodePatchCommitment;
+use crate::{WORD_SIZE, ZERO};
+
+// TRANSACTION COMMITMENTS
+// ================================================================================================
+
+/// The six commitments that make up the preimage of the corresponding [`TransactionId`].
+#[derive(Clone, Copy)]
+pub struct TransactionCommitments {
+    init_account_commitment: Word,
+    final_account_commitment: Word,
+    input_notes_commitment: Word,
+    output_notes_commitment: Word,
+    logs_commitment: Word,
+    code_patch_commitment: CodePatchCommitment,
+}
+
+impl TransactionCommitments {
+    /// Length of the felt sequence returned by [`Self::elements`].
+    pub const ELEMENTS_LEN: usize = 6 * WORD_SIZE;
+
+    /// Returns a new [`TransactionCommitments`] from the six commitment words.
+    pub fn new(
+        init_account_commitment: Word,
+        final_account_commitment: Word,
+        input_notes_commitment: Word,
+        output_notes_commitment: Word,
+        logs_commitment: Word,
+        code_patch_commitment: CodePatchCommitment,
+    ) -> Self {
+        Self {
+            init_account_commitment,
+            final_account_commitment,
+            input_notes_commitment,
+            output_notes_commitment,
+            logs_commitment,
+            code_patch_commitment,
+        }
+    }
+
+    /// Returns the transaction commitments as a felt sequence.
+    ///
+    /// The layout is:
+    ///   `[INIT[4], FINAL[4], INPUT_NOTES_COMMITMENT[4], OUTPUT_NOTES_COMMITMENT[4],
+    ///   LOGS_COMMITMENT[4], CODE_PATCH_COMMITMENT[4]]`
+    ///
+    /// The batch kernel pipes this same felt sequence from the advice provider to memory and
+    /// asserts the resulting hash matches a previously-verified `tx_id`.
+    pub fn elements(&self) -> [Felt; Self::ELEMENTS_LEN] {
+        let mut elements = [ZERO; Self::ELEMENTS_LEN];
+        elements[..4].copy_from_slice(self.init_account_commitment.as_elements());
+        elements[4..8].copy_from_slice(self.final_account_commitment.as_elements());
+        elements[8..12].copy_from_slice(self.input_notes_commitment.as_elements());
+        elements[12..16].copy_from_slice(self.output_notes_commitment.as_elements());
+        elements[16..20].copy_from_slice(self.logs_commitment.as_elements());
+        elements[20..24].copy_from_slice(self.code_patch_commitment.as_elements());
+        elements
+    }
+
+    /// Returns the initial account commitment.
+    pub fn init_account_commitment(&self) -> Word {
+        self.init_account_commitment
+    }
+
+    /// Returns the final account commitment.
+    pub fn final_account_commitment(&self) -> Word {
+        self.final_account_commitment
+    }
+
+    /// Returns the input notes commitment.
+    pub fn input_notes_commitment(&self) -> Word {
+        self.input_notes_commitment
+    }
+
+    /// Returns the output notes commitment.
+    pub fn output_notes_commitment(&self) -> Word {
+        self.output_notes_commitment
+    }
+
+    /// Returns the transaction logs commitment.
+    pub fn logs_commitment(&self) -> Word {
+        self.logs_commitment
+    }
+
+    /// Returns the code patch commitment.
+    pub fn code_patch_commitment(&self) -> CodePatchCommitment {
+        self.code_patch_commitment
+    }
+}
+
+impl From<&ProvenTransaction> for TransactionCommitments {
+    fn from(tx: &ProvenTransaction) -> Self {
+        Self {
+            init_account_commitment: tx.account_update().initial_state_commitment(),
+            final_account_commitment: tx.account_update().final_state_commitment(),
+            input_notes_commitment: tx.input_notes().commitment(),
+            output_notes_commitment: tx.output_notes().commitment(),
+            logs_commitment: tx.log_details().commitment(),
+            code_patch_commitment: tx.code_patch().commitment(),
+        }
+    }
+}
+
+impl From<&ExecutedTransaction> for TransactionCommitments {
+    fn from(tx: &ExecutedTransaction) -> Self {
+        Self {
+            init_account_commitment: tx.initial_account().initial_commitment(),
+            final_account_commitment: tx.final_account().to_commitment(),
+            input_notes_commitment: tx.input_notes().commitment(),
+            output_notes_commitment: tx.output_notes().commitment(),
+            logs_commitment: tx.logs_commitment(),
+            code_patch_commitment: tx.code_patch().commitment(),
+        }
+    }
+}
 
 // TRANSACTION ID
 // ================================================================================================
@@ -29,23 +142,9 @@ use crate::block::code_tree::CodePatchCommitment;
 pub struct TransactionId(Word);
 
 impl TransactionId {
-    /// Returns a new [TransactionId] instantiated from the provided transaction components.
-    pub fn new(
-        init_account_commitment: Word,
-        final_account_commitment: Word,
-        input_notes_commitment: Word,
-        output_notes_commitment: Word,
-        logs_commitment: Word,
-        code_patch_commitment: CodePatchCommitment,
-    ) -> Self {
-        let mut elements = [Felt::ZERO; 6 * Word::NUM_ELEMENTS];
-        elements[..4].copy_from_slice(init_account_commitment.as_elements());
-        elements[4..8].copy_from_slice(final_account_commitment.as_elements());
-        elements[8..12].copy_from_slice(input_notes_commitment.as_elements());
-        elements[12..16].copy_from_slice(output_notes_commitment.as_elements());
-        elements[16..20].copy_from_slice(logs_commitment.as_elements());
-        elements[20..24].copy_from_slice(code_patch_commitment.as_elements());
-        Self(Hasher::hash_elements(&elements))
+    /// Returns a new [TransactionId] from the given [`TransactionCommitments`].
+    pub fn new(commitments: TransactionCommitments) -> Self {
+        Self(Hasher::hash_elements(&commitments.elements()))
     }
 }
 
@@ -66,13 +165,6 @@ impl Display for TransactionId {
 
 impl From<&ProvenTransaction> for TransactionId {
     fn from(tx: &ProvenTransaction) -> Self {
-        Self::new(
-            tx.account_update().initial_state_commitment(),
-            tx.account_update().final_state_commitment(),
-            tx.input_notes().commitment(),
-            tx.output_notes().commitment(),
-            tx.log_details().commitment(),
-            tx.code_patch().commitment(),
-        )
+        Self::new(TransactionCommitments::from(tx))
     }
 }

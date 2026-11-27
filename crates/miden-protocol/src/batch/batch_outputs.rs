@@ -176,6 +176,19 @@ mod tests {
     }
 
     #[test]
+    fn into_stack_outputs_round_trips_through_parse() {
+        let outputs = BatchOutputs::new(
+            Word::from([Felt::from(1u32), Felt::from(2u32), Felt::from(3u32), Felt::from(4u32)]),
+            Word::from([Felt::from(5u32), Felt::from(6u32), Felt::from(7u32), Felt::from(8u32)]),
+            BlockNumber::from(1234u32),
+        );
+
+        let parsed = BatchOutputs::parse(&outputs.clone().into_stack_outputs()).unwrap();
+
+        assert_eq!(parsed, outputs);
+    }
+
+    #[test]
     fn parse_rejects_non_zero_padding() {
         // A valid 9-element output followed by a non-zero felt in the padding region (>= idx 9).
         let elements = [
