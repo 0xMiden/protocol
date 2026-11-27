@@ -21,12 +21,10 @@ jobs:
     no-std:
         if: >-
             ${{
-                (github.event.pull_request.number != 4285 || github.event.pull_request.draft != true) && (
                 github.event_name != 'pull_request' ||
                 github.event.pull_request.head.repo.full_name != github.repository ||
                 github.event.pull_request.head.ref != 'next' ||
                 github.event.pull_request.base.ref != 'main'
-                )
             }}
         name: build for no-std
         runs-on: ubuntu-latest
@@ -41,6 +39,7 @@ jobs:
                   # Only update the cache on push onto the next branch. This strikes a nice balance between
                   # cache hits and cache evictions (github has a 10GB cache limit).
                   save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
+            - uses: ./.github/actions/prepare-masp
             - name: build
               run: |
                   rustup update --no-self-update
@@ -75,42 +74,19 @@ jobs:
           uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
           with:
             tool: cargo-hack
-        - name: Build MASP packages for the feature checks
+        - uses: ./.github/actions/prepare-masp
           env:
             RUSTFLAGS: -D warnings
-          shell: bash
-          run: |
-            # The testing feature includes the two extra protocol packages used by tests.
-            cargo check --locked --lib -p miden-protocol -p miden-standards -p miden-agglayer -p miden-usdcx \
-              --features miden-protocol/testing --message-format=json-render-diagnostics |
-              jq -r 'select(.reason == "build-script-executed") | .out_dir' > "$RUNNER_TEMP/masp-out-dirs"
-
-            export_masp_dir() {
-              while IFS= read -r out; do
-                if [[ -f "$out/assets/$2.masp" ]]; then
-                  echo "$1=$out" >> "$GITHUB_ENV"
-                  return 0
-                fi
-              done < "$RUNNER_TEMP/masp-out-dirs"
-              echo "Missing $2.masp in Cargo build outputs" >&2
-              return 1
-            }
-            export_masp_dir MIDEN_PROTOCOL_MASP_DIR miden-protocol-utils
-            export_masp_dir MIDEN_STANDARDS_MASP_DIR miden-standards
-            export_masp_dir MIDEN_AGGLAYER_MASP_DIR miden-agglayer
-            export_masp_dir MIDEN_USDCX_MASP_DIR xreserve
         - name: Check all feature combinations
           run: make check-features
 
     build-benches:
       if: >-
         ${{
-          (github.event.pull_request.number != 4285 || github.event.pull_request.draft != true) && (
           github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.full_name != github.repository ||
           github.event.pull_request.head.ref != 'next' ||
           github.event.pull_request.base.ref != 'main'
-          )
         }}
       name: Check benchmarks compilation
       runs-on: ubuntu-latest
@@ -125,5 +101,6 @@ jobs:
             # Only update the cache on push onto the next branch. This strikes a nice balance between
             # cache hits and cache evictions (github has a 10GB cache limit).
             save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
+        - uses: ./.github/actions/prepare-masp
         - name: build benches
           run: cargo build --benches

@@ -23,7 +23,6 @@ permissions:
 
 jobs:
   build-docs:
-    if: github.event.pull_request.number != 4285 || github.event.pull_request.draft != true
     name: Build Documentation
     runs-on: ubuntu-latest
 

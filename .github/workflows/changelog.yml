@@ -12,7 +12,6 @@ permissions:
 
 jobs:
   changelog:
-    if: github.event.pull_request.number != 4285 || github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

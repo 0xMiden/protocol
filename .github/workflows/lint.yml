@@ -19,7 +19,6 @@ permissions:
 
 jobs:
   cargo-deny:
-    if: github.event.pull_request.number != 4285 || github.event.pull_request.draft != true
     name: cargo-deny on ubuntu-latest
     runs-on: ubuntu-latest
     steps:
@@ -33,7 +32,6 @@ jobs:
         run: cargo deny check
 
   cargo-shear:
-    if: github.event.pull_request.number != 4285 || github.event.pull_request.draft != true
     name: check for unused dependencies
     runs-on: ubuntu-latest
     steps:
@@ -48,7 +46,6 @@ jobs:
         run: make shear
 
   workspace-inheritance:
-    if: github.event.pull_request.number != 4285 || github.event.pull_request.draft != true
     name: workspace inheritance on ubuntu-latest
     runs-on: ubuntu-latest
     steps:
@@ -68,7 +65,6 @@ jobs:
         run: cargo workspace-inheritance-check --promotion-threshold 2 --promotion-failure
 
   typos:
-    if: github.event.pull_request.number != 4285 || github.event.pull_request.draft != true
     name: spellcheck
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -82,7 +78,6 @@ jobs:
       - run: make typos-check
 
   hooks-test:
-    if: github.event.pull_request.number != 4285 || github.event.pull_request.draft != true
     name: claude hooks pytest
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -98,7 +93,6 @@ jobs:
       - run: make hooks-test
 
   toml:
-    if: github.event.pull_request.number != 4285 || github.event.pull_request.draft != true
     name: toml formatting
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -123,6 +117,7 @@ jobs:
           # Only update the cache on push onto the next branch. This strikes a nice balance between
           # cache hits and cache evictions (github has a 10GB cache limit). 
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
+      - uses: ./.github/actions/prepare-masp
       - name: Clippy
         run: |
           rustup update --no-self-update
@@ -141,6 +136,7 @@ jobs:
           # Only update the cache on push onto the next branch. This strikes a nice balance between
           # cache hits and cache evictions (github has a 10GB cache limit). 
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
+      - uses: ./.github/actions/prepare-masp
       - name: Clippy no_std
         run: |
           rustup update --no-self-update
@@ -175,6 +171,7 @@ jobs:
           # Only update the cache on push onto the next branch. This strikes a nice balance between
           # cache hits and cache evictions (github has a 10GB cache limit). 
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
+      - uses: ./.github/actions/prepare-masp
       - name: Build docs
         run: |
           rustup update --no-self-update

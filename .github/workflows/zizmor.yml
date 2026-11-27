@@ -20,7 +20,6 @@ permissions: {}
 
 jobs:
   zizmor:
-    if: github.event.pull_request.number != 4285 || github.event.pull_request.draft != true
     name: Run zizmor
     runs-on: ubuntu-latest
     permissions:

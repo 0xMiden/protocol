@@ -21,12 +21,10 @@ jobs:
   test:
     if: >-
       ${{
-        (github.event.pull_request.number != 4285 || github.event.pull_request.draft != true) && (
         github.event_name != 'pull_request' ||
         github.event.pull_request.head.repo.full_name != github.repository ||
         github.event.pull_request.head.ref != 'next' ||
         github.event.pull_request.base.ref != 'main'
-        )
       }}
     name: test
     runs-on: warp-ubuntu-latest-x64-8x
@@ -47,6 +45,7 @@ jobs:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install rust
         run: rustup update --no-self-update
+      - uses: ./.github/actions/prepare-masp
       - name: Build tests
         run: make test-release-build
       - name: test
@@ -57,12 +56,10 @@ jobs:
   doc-tests:
     if: >-
       ${{
-        (github.event.pull_request.number != 4285 || github.event.pull_request.draft != true) && (
         github.event_name != 'pull_request' ||
         github.event.pull_request.head.repo.full_name != github.repository ||
         github.event.pull_request.head.ref != 'next' ||
         github.event.pull_request.base.ref != 'main'
-        )
       }}
     name: doc-tests
     runs-on: warp-ubuntu-latest-x64-8x
@@ -77,5 +74,6 @@ jobs:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install rust
         run: rustup update --no-self-update
+      - uses: ./.github/actions/prepare-masp
       - name: Run doc-tests
         run: make test-docs
