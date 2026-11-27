@@ -1,0 +1,77 @@
+name: Prepare MASP packages
+
+on:
+  workflow_call:
+    outputs:
+      cache-key:
+        description: Cache key for the compiled MASP packages
+        value: ${{ jobs.prepare.outputs.cache-key }}
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: warp-ubuntu-latest-x64-8x
+    # Build, lint, and test all call this workflow. Sharing the group by ref lets one
+    # caller populate a cold cache before the others check it. Keep every caller queued
+    # because each has downstream jobs waiting for its cache key.
+    concurrency:
+      group: masp-${{ github.ref }}
+      queue: max
+    outputs:
+      cache-key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Identify MASP build inputs
+        id: key
+        shell: bash
+        run: |
+          # Project manifests supply metadata embedded in the packages. Hash them with the
+          # MASM sources and assembler version so unrelated Cargo updates can reuse the cache.
+          assembler=$(python3 -c '
+          import tomllib
+          with open("Cargo.lock", "rb") as lock:
+              packages = tomllib.load(lock)["package"]
+          print(next(p["version"] for p in packages if p["name"] == "miden-assembly"))
+          ')
+          sources=$(git ls-files --stage -z -- '*.masm' ':(glob)**/miden-project.toml' | sha256sum)
+          echo "key=masp-$assembler-${sources%% *}" >> "$GITHUB_OUTPUT"
+      - name: Look up compiled packages
+        id: cache
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          key: ${{ steps.key.outputs.key }}
+          path: .ci-masp
+          lookup-only: true
+      - uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
+      - name: Build MASP packages
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          # All features includes the test-only packages. Use Cargo's reported output
+          # directories so new workspace crates can contribute packages automatically.
+          cargo metadata --locked --format-version=1 --no-deps > "$RUNNER_TEMP/workspace.json"
+          cargo check --locked --workspace --all-features --message-format=json-render-diagnostics |
+            jq -r --slurpfile workspace "$RUNNER_TEMP/workspace.json" '
+              select(.reason == "build-script-executed") as $build |
+              $workspace[0].packages[] | select(.id == $build.package_id) |
+              [.name, $build.out_dir] | @tsv' |
+            while IFS=$'\t' read -r crate out; do
+              if [[ -d "$out/assets" && -n "$(find "$out/assets" -name '*.masp' -type f -print -quit)" ]]; then
+                mkdir -p ".ci-masp/$crate"
+                cp -R "$out/assets" ".ci-masp/$crate/"
+              fi
+            done
+      # Publish while this job still holds the concurrency group so the next caller can reuse it.
+      - name: Upload compiled packages
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          key: ${{ steps.key.outputs.key }}
+          path: .ci-masp

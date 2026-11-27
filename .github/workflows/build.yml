@@ -18,14 +18,18 @@ permissions:
     contents: read
 
 jobs:
+    prepare-masp:
+      if: >-
+        ${{
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name != github.repository ||
+          github.event.pull_request.head.ref != 'next' ||
+          github.event.pull_request.base.ref != 'main'
+        }}
+      uses: ./.github/workflows/prepare-masp.yml
+
     no-std:
-        if: >-
-            ${{
-                github.event_name != 'pull_request' ||
-                github.event.pull_request.head.repo.full_name != github.repository ||
-                github.event.pull_request.head.ref != 'next' ||
-                github.event.pull_request.base.ref != 'main'
-            }}
+        needs: prepare-masp
         name: build for no-std
         runs-on: ubuntu-latest
         steps:
@@ -39,7 +43,9 @@ jobs:
                   # Only update the cache on push onto the next branch. This strikes a nice balance between
                   # cache hits and cache evictions (github has a 10GB cache limit).
                   save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
-            - uses: ./.github/actions/prepare-masp
+            - uses: ./.github/actions/restore-masp
+              with:
+                cache-key: ${{ needs.prepare-masp.outputs.cache-key }}
             - name: build
               run: |
                   rustup update --no-self-update
@@ -48,13 +54,7 @@ jobs:
                   make build-no-std-testing
 
     check-features:
-      if: >-
-        ${{
-          github.event_name != 'pull_request' ||
-          github.event.pull_request.head.repo.full_name != github.repository ||
-          github.event.pull_request.head.ref != 'next' ||
-          github.event.pull_request.base.ref != 'main'
-        }}
+      needs: prepare-masp
       name: check all feature combinations
       runs-on: warp-ubuntu-latest-x64-8x
       steps:
@@ -74,20 +74,14 @@ jobs:
           uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
           with:
             tool: cargo-hack
-        - uses: ./.github/actions/prepare-masp
-          env:
-            RUSTFLAGS: -D warnings
+        - uses: ./.github/actions/restore-masp
+          with:
+            cache-key: ${{ needs.prepare-masp.outputs.cache-key }}
         - name: Check all feature combinations
           run: make check-features
 
     build-benches:
-      if: >-
-        ${{
-          github.event_name != 'pull_request' ||
-          github.event.pull_request.head.repo.full_name != github.repository ||
-          github.event.pull_request.head.ref != 'next' ||
-          github.event.pull_request.base.ref != 'main'
-        }}
+      needs: prepare-masp
       name: Check benchmarks compilation
       runs-on: ubuntu-latest
       steps:
@@ -101,6 +95,8 @@ jobs:
             # Only update the cache on push onto the next branch. This strikes a nice balance between
             # cache hits and cache evictions (github has a 10GB cache limit).
             save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
-        - uses: ./.github/actions/prepare-masp
+        - uses: ./.github/actions/restore-masp
+          with:
+            cache-key: ${{ needs.prepare-masp.outputs.cache-key }}
         - name: build benches
           run: cargo build --benches

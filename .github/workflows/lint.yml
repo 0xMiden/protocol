@@ -18,6 +18,9 @@ permissions:
   contents: read
 
 jobs:
+  prepare-masp:
+    uses: ./.github/workflows/prepare-masp.yml
+
   cargo-deny:
     name: cargo-deny on ubuntu-latest
     runs-on: ubuntu-latest
@@ -106,6 +109,7 @@ jobs:
       - run: make toml-check
 
   clippy:
+    needs: prepare-masp
     name: clippy
     runs-on: ubuntu-latest
     steps:
@@ -117,7 +121,9 @@ jobs:
           # Only update the cache on push onto the next branch. This strikes a nice balance between
           # cache hits and cache evictions (github has a 10GB cache limit). 
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
-      - uses: ./.github/actions/prepare-masp
+      - uses: ./.github/actions/restore-masp
+        with:
+          cache-key: ${{ needs.prepare-masp.outputs.cache-key }}
       - name: Clippy
         run: |
           rustup update --no-self-update
@@ -125,6 +131,7 @@ jobs:
           make clippy
 
   clippy-no-std:
+    needs: prepare-masp
     name: clippy no_std
     runs-on: ubuntu-latest
     steps:
@@ -136,7 +143,9 @@ jobs:
           # Only update the cache on push onto the next branch. This strikes a nice balance between
           # cache hits and cache evictions (github has a 10GB cache limit). 
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
-      - uses: ./.github/actions/prepare-masp
+      - uses: ./.github/actions/restore-masp
+        with:
+          cache-key: ${{ needs.prepare-masp.outputs.cache-key }}
       - name: Clippy no_std
         run: |
           rustup update --no-self-update
@@ -158,6 +167,7 @@ jobs:
           make format-check
 
   doc:
+    needs: prepare-masp
     name: doc
     runs-on: ubuntu-latest
     steps:
@@ -171,7 +181,9 @@ jobs:
           # Only update the cache on push onto the next branch. This strikes a nice balance between
           # cache hits and cache evictions (github has a 10GB cache limit). 
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
-      - uses: ./.github/actions/prepare-masp
+      - uses: ./.github/actions/restore-masp
+        with:
+          cache-key: ${{ needs.prepare-masp.outputs.cache-key }}
       - name: Build docs
         run: |
           rustup update --no-self-update
