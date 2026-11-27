@@ -12,7 +12,10 @@ mod account_procedures;
 pub use account_procedures::AccountProcedureIndexMap;
 
 pub(crate) mod note_builder;
-use miden_core_lib::handlers::ecgfp5_eidos::ECGFP5_EIDOS_SEAL_EVENT_NAME;
+use miden_core_lib::handlers::ecgfp5_eidos::{
+    ECGFP5_EIDOS_SEAL_EVENT_NAME,
+    ECGFP5_EIDOS_SEAL_PREPROCESSED_EVENT_NAME,
+};
 use miden_protocol::CoreLibrary;
 use miden_protocol::transaction::{
     TransactionEventId,
@@ -58,7 +61,12 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::crypto::ecdh::ecgfp5::PublicKey;
+use miden_protocol::crypto::ecdh::ecgfp5::{
+    AgreementAdvice,
+    PreparedPublicKey,
+    PublicKey,
+    SecretKey,
+};
 use miden_protocol::note::{NoteAttachment, NoteId, NoteRecipient, PartialNoteMetadata};
 use miden_protocol::transaction::{
     IesSealSeed,
@@ -73,6 +81,7 @@ use miden_protocol::transaction::{
 };
 use miden_protocol::{MAX_IES_SEAL_REQUESTS_PER_TX, Word};
 pub(crate) use tx_event::{
+    IesSealPreprocessedRequest,
     IesSealRequest,
     RecipientData,
     TransactionEvent,
@@ -129,6 +138,10 @@ pub struct TransactionBaseHost<'store, STORE> {
     /// The seed from which the ephemeral secrets of the IES `seal` requests are derived.
     ies_seal_seed: Option<IesSealSeed>,
 
+    /// The prepared public keys of the recipients of the IES `seal_preprocessed` requests, keyed
+    /// by their commitment.
+    ies_prepared_public_keys: BTreeMap<Word, Arc<PreparedPublicKey>>,
+
     /// The number of IES `seal` requests answered so far.
     num_ies_seal_requests: u32,
 }
@@ -142,6 +155,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// # Errors
     ///
     /// Returns an error if the [`AccountUpdateTracker`] cannot be created for the account.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
@@ -150,6 +164,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
         ies_seal_seed: Option<IesSealSeed>,
+        ies_prepared_public_keys: BTreeMap<Word, Arc<PreparedPublicKey>>,
     ) -> Result<Self, TransactionKernelError> {
         let core_lib_handlers = {
             let mut registry = EventHandlerRegistry::new();
@@ -161,10 +176,14 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
                     .expect("There are no duplicates in the core library handlers");
             }
 
-            // The key agreement advice is already provided by `on_ies_seal_requested`.
+            // The key agreement advice is already provided by `on_ies_seal_requested` and
+            // `on_ies_seal_preprocessed_requested`.
             registry
                 .register(ECGFP5_EIDOS_SEAL_EVENT_NAME, Arc::new(NoopEventHandler))
                 .expect("the core library handlers do not handle the IES seal event");
+            registry
+                .register(ECGFP5_EIDOS_SEAL_PREPROCESSED_EVENT_NAME, Arc::new(NoopEventHandler))
+                .expect("the core library handlers do not handle the IES seal preprocessed event");
 
             registry
         };
@@ -181,6 +200,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             block_commitments,
             core_lib_handlers,
             ies_seal_seed,
+            ies_prepared_public_keys,
             num_ies_seal_requests: 0,
         })
     }
@@ -418,26 +438,72 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         &mut self,
         request: IesSealRequest,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        let recipient = PublicKey::from_elements(request.public_key)
+            .map_err(TransactionKernelError::IesPublicKeyInvalid)?;
+        let ephemeral_secret = self.derive_ies_ephemeral_secret(
+            &recipient,
+            request.context_digest,
+            request.plaintext_digest,
+        )?;
+
+        Ok(agreement_advice_mutations(recipient.advise(&ephemeral_secret)))
+    }
+
+    /// Derives the ephemeral secret for the IES `seal_preprocessed` request of
+    /// `miden::protocol::ies::ecgfp5_eidos::seal_preprocessed` in this transaction, like
+    /// [`Self::on_ies_seal_requested`] for the public key of the request's [`PreparedPublicKey`],
+    /// and returns the key agreement advice that the core library's `seal_preprocessed` consumes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the transaction already made [`MAX_IES_SEAL_REQUESTS_PER_TX`] requests.
+    /// - the transaction arguments provide no IES seal seed.
+    /// - the transaction arguments provide no [`PreparedPublicKey`] with the commitment of the
+    ///   request.
+    pub(crate) fn on_ies_seal_preprocessed_requested(
+        &mut self,
+        request: IesSealPreprocessedRequest,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        let prepared_key = self
+            .ies_prepared_public_keys
+            .get(&request.prepared_key_commitment)
+            .cloned()
+            .ok_or(TransactionKernelError::IesPreparedPublicKeyMissing(
+                request.prepared_key_commitment,
+            ))?;
+        let ephemeral_secret = self.derive_ies_ephemeral_secret(
+            &prepared_key.public_key(),
+            request.context_digest,
+            request.plaintext_digest,
+        )?;
+
+        Ok(agreement_advice_mutations(prepared_key.advise(&ephemeral_secret)))
+    }
+
+    /// Returns the ephemeral secret of the next IES seal request of this transaction, which
+    /// encrypts the plaintext with `plaintext_digest` under the context with `context_digest` to
+    /// `recipient`, and counts the request.
+    fn derive_ies_ephemeral_secret(
+        &mut self,
+        recipient: &PublicKey,
+        context_digest: Word,
+        plaintext_digest: Word,
+    ) -> Result<SecretKey, TransactionKernelError> {
         if self.num_ies_seal_requests >= MAX_IES_SEAL_REQUESTS_PER_TX {
             return Err(TransactionKernelError::TooManyIesSealRequests);
         }
         let seed = self.ies_seal_seed.as_ref().ok_or(TransactionKernelError::IesSealSeedMissing)?;
-        let recipient = PublicKey::from_elements(request.public_key)
-            .map_err(TransactionKernelError::IesPublicKeyInvalid)?;
 
         let ephemeral_secret = seed.derive_ephemeral_secret(
             self.num_ies_seal_requests,
-            &recipient,
-            request.context_digest,
-            request.plaintext_digest,
+            recipient,
+            context_digest,
+            plaintext_digest,
         );
         self.num_ies_seal_requests += 1;
 
-        let advice = recipient.advise(&ephemeral_secret);
-        Ok(vec![
-            AdviceMutation::extend_merkle_store(advice.merkle_nodes().iter().cloned()),
-            AdviceMutation::extend_advice_stack_with(advice.elements()),
-        ])
+        Ok(ephemeral_secret)
     }
 
     /// Adds an asset to the output note identified by the note index.
@@ -710,4 +776,15 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub fn scripts_mast_store(&self) -> &ScriptMastForestStore {
         &self.scripts_mast_store
     }
+}
+
+// HELPERS
+// ================================================================================================
+
+/// Returns the advice mutations that provide the key agreement advice to the VM.
+fn agreement_advice_mutations(advice: AgreementAdvice) -> Vec<AdviceMutation> {
+    vec![
+        AdviceMutation::extend_merkle_store(advice.merkle_nodes().iter().cloned()),
+        AdviceMutation::extend_advice_stack_with(advice.elements()),
+    ]
 }

@@ -29,6 +29,8 @@
 //! bond that another account creates to the originator's key, so the originator learns when the
 //! bond leaves its holder and when the next holder takes it.
 
+use std::sync::Arc;
+
 use anyhow::Context;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType, StorageMapKey};
@@ -41,7 +43,7 @@ use miden_protocol::asset::{
     TokenSymbol,
 };
 use miden_protocol::block::account_tree::AccountIdKey;
-use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
+use miden_protocol::crypto::ecdh::ecgfp5::{PreparedPublicKey, SecretKey};
 use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteTag, NoteType, PartialNote};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
@@ -558,13 +560,14 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let issuer_id = AccountId::mock_private(1);
     let issuer_secret_key = SecretKey::with_rng(&mut rand::rng());
+    let issuer_prepared_key = Arc::new(PreparedPublicKey::new(issuer_secret_key.public_key()));
 
     // the holder already holds all stablecoins in circulation
     let stablecoin_faucet = add_stablecoin_faucet(
         &mut builder,
         issuer_id,
         holder_amount,
-        EncryptedAssetsIssuerKey::new(issuer_secret_key.public_key()),
+        EncryptedAssetsIssuerKey::new(&issuer_prepared_key),
     )?;
     let stablecoin_faucet_id = stablecoin_faucet.id();
     let holder_asset = FungibleAsset::new(stablecoin_faucet_id, holder_amount.as_u64())?;
@@ -626,8 +629,14 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
 
     mock_chain.consume_notes_and_commit(stablecoin_faucet_id, [block_note]).await?;
 
-    let result =
-        send_stablecoins(&mock_chain, &holder, stablecoin_faucet_id, SPENDABLE_AMOUNT).await?;
+    let result = send_stablecoins(
+        &mock_chain,
+        &holder,
+        stablecoin_faucet_id,
+        &issuer_prepared_key,
+        SPENDABLE_AMOUNT,
+    )
+    .await?;
     assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_BLOCKED);
 
     // STEP 2: the faucet consumes the confiscate note
@@ -681,15 +690,27 @@ async fn stablecoin_confiscation_and_remint() -> anyhow::Result<()> {
     let holder_account = mock_chain.committed_account(holder.id())?;
     assert_eq!(holder_account.vault().get_balance(stablecoin_asset_id)?, holder_amount);
 
-    let result =
-        send_stablecoins(&mock_chain, &holder, stablecoin_faucet_id, SPENDABLE_AMOUNT + 1).await?;
+    let result = send_stablecoins(
+        &mock_chain,
+        &holder,
+        stablecoin_faucet_id,
+        &issuer_prepared_key,
+        SPENDABLE_AMOUNT + 1,
+    )
+    .await?;
     assert_transaction_executor_error!(
         result,
         ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE
     );
 
-    let send_tx =
-        send_stablecoins(&mock_chain, &holder, stablecoin_faucet_id, SPENDABLE_AMOUNT).await??;
+    let send_tx = send_stablecoins(
+        &mock_chain,
+        &holder,
+        stablecoin_faucet_id,
+        &issuer_prepared_key,
+        SPENDABLE_AMOUNT,
+    )
+    .await??;
     commit(&mut mock_chain, &send_tx)?;
 
     // the issuer decrypts the private note in which the holder sent the spendable amount
@@ -725,6 +746,7 @@ async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
     let repayment_amount = (principal + interest)?;
     let issuer_id = AccountId::mock_private(1);
     let issuer_secret_key = SecretKey::with_rng(&mut rand::rng());
+    let issuer_prepared_key = Arc::new(PreparedPublicKey::new(issuer_secret_key.public_key()));
 
     let mut builder = MockChain::builder();
     // The creditor holds the principal and the borrower holds the interest, which are all
@@ -735,7 +757,7 @@ async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
         &mut builder,
         issuer_id,
         repayment_amount,
-        EncryptedAssetsIssuerKey::new(issuer_secret_key.public_key()),
+        EncryptedAssetsIssuerKey::new(&issuer_prepared_key),
     )?;
     let stablecoin_faucet_id = stablecoin_faucet.id();
     let stablecoin_asset_id = AssetId::new_fungible(stablecoin_faucet_id);
@@ -753,9 +775,14 @@ async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
 
     // the creditor shares the details of the note with the borrower off-chain
-    let loan_note =
-        send_private_stablecoins(&mut mock_chain, &mut creditor, borrower.id(), principal_asset)
-            .await?;
+    let loan_note = send_private_stablecoins(
+        &mut mock_chain,
+        &mut creditor,
+        borrower.id(),
+        principal_asset,
+        &issuer_prepared_key,
+    )
+    .await?;
 
     // STEP 2: the issuer decrypts the loan note in the new block
     // --------------------------------------------------------------------------------------------
@@ -804,9 +831,14 @@ async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
     // STEP 4: the borrower repays the principal plus interest in a private P2ID note
     // --------------------------------------------------------------------------------------------
 
-    let repayment_note =
-        send_private_stablecoins(&mut mock_chain, &mut borrower, creditor.id(), repayment_asset)
-            .await?;
+    let repayment_note = send_private_stablecoins(
+        &mut mock_chain,
+        &mut borrower,
+        creditor.id(),
+        repayment_asset,
+        &issuer_prepared_key,
+    )
+    .await?;
 
     // the issuer decrypts the repayment note like the loan note
     let (repayment_on_chain, repayment_details) =
@@ -849,10 +881,11 @@ async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
 #[tokio::test]
 async fn issuer_tracks_private_bond_transfers() -> anyhow::Result<()> {
     let originator_secret_key = SecretKey::with_rng(&mut rand::rng());
+    let originator_prepared_key =
+        Arc::new(PreparedPublicKey::new(originator_secret_key.public_key()));
     // the faucet encrypts the details of the private notes holding the bond to the originator's key
-    let bond_send_policy = SendPolicy::with_encrypted_assets(EncryptedAssetsIssuerKey::new(
-        originator_secret_key.public_key(),
-    ));
+    let bond_send_policy =
+        SendPolicy::with_encrypted_assets(EncryptedAssetsIssuerKey::new(&originator_prepared_key));
     let (mut mock_chain, mut setup) = TestSetup::new(Some(bond_send_policy)).await?;
     let nft_faucet_id = setup.nft_faucet.id();
     let bond = Asset::from(setup.terms.bond());
@@ -932,13 +965,14 @@ async fn issuer_tracks_private_bond_transfers() -> anyhow::Result<()> {
         &[PartialNote::from(transfer_note.clone())],
     )?;
 
-    // The faucet's send policy encrypts the details of the note, so the transaction provides them
-    // by expecting the note.
+    // The faucet's send policy encrypts the details of the note to the originator's key, so the
+    // transaction provides them by expecting the note, and provides the prepared key.
     let send_transfer_note_tx = mock_chain
         .build_transaction(setup.creditor.clone())
         .send_notes_script(&send_notes_script)
         .expected_output_note(RawOutputNote::Full(transfer_note))
         .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(nft_faucet_id)?])
+        .ies_prepared_public_key(originator_prepared_key)
         .native_fee_auth_args()
         .build()?
         .execute()
@@ -1219,12 +1253,13 @@ fn confiscated_amount(
 
 /// Executes a transaction in which `holder` sends `amount` stablecoins in a private P2ID note.
 ///
-/// The stablecoin faucet's send policy encrypts the details of the note, so the transaction
-/// provides them by expecting the note.
+/// The stablecoin faucet's send policy encrypts the details of the note to the issuer's key, so the
+/// transaction provides them by expecting the note, and provides the issuer's `prepared_key`.
 async fn send_stablecoins(
     mock_chain: &MockChain,
     holder: &Account,
     stablecoin_faucet_id: AccountId,
+    prepared_key: &Arc<PreparedPublicKey>,
     amount: u32,
 ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
     let note: Note = P2idNote::builder()
@@ -1245,6 +1280,7 @@ async fn send_stablecoins(
         .send_notes_script(&script)
         .expected_output_note(RawOutputNote::Full(note))
         .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(stablecoin_faucet_id)?])
+        .ies_prepared_public_key(Arc::clone(prepared_key))
         .build()?
         .execute()
         .await)
@@ -1253,14 +1289,15 @@ async fn send_stablecoins(
 /// Executes a transaction in which the private `sender` sends `asset` to `target_id` in a private
 /// P2ID note, and adds it to the chain.
 ///
-/// The stablecoin faucet's send policy encrypts the details of the note, so the transaction
-/// provides them by expecting the note. Returns the note as the transaction created it, i.e. with
-/// the attachment of the policy.
+/// The stablecoin faucet's send policy encrypts the details of the note to the issuer's key, so the
+/// transaction provides them by expecting the note, and provides the issuer's `prepared_key`.
+/// Returns the note as the transaction created it, i.e. with the attachment of the policy.
 async fn send_private_stablecoins(
     mock_chain: &mut MockChain,
     sender: &mut Account,
     target_id: AccountId,
     asset: FungibleAsset,
+    prepared_key: &Arc<PreparedPublicKey>,
 ) -> anyhow::Result<Note> {
     let note: Note = P2idNote::builder()
         .sender(sender.id())
@@ -1280,6 +1317,7 @@ async fn send_private_stablecoins(
         .send_notes_script(&send_notes_script)
         .expected_output_note(RawOutputNote::Full(note))
         .foreign_accounts([mock_chain.get_foreign_account_inputs(asset.faucet_id())?])
+        .ies_prepared_public_key(Arc::clone(prepared_key))
         .build()?
         .execute()
         .await?;

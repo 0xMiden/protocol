@@ -1,5 +1,6 @@
 //! Tests for the `miden::standards::attachments::encrypted_assets` module.
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
@@ -17,7 +18,7 @@ use miden_protocol::account::{
     StorageSlot,
 };
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, FungibleAsset, NonFungibleAsset};
-use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
+use miden_protocol::crypto::ecdh::ecgfp5::{PreparedPublicKey, SecretKey};
 use miden_protocol::crypto::ies::ecgfp5_eidos;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::protocol::ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH;
@@ -36,6 +37,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::{ExecutedTransaction, OutputNote, RawOutputNote};
 use miden_protocol::utils::FeltSliceExt;
+use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Pausable};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
@@ -180,7 +182,7 @@ async fn public_note_gets_no_encrypted_assets_attachment() -> anyhow::Result<()>
 )]
 #[tokio::test]
 async fn private_note_without_attachment_cannot_be_sealed(
-    #[case] issuer_key_slots: [StorageSlot; 2],
+    #[case] issuer_key_slots: [StorageSlot; 3],
     #[case] recipient_preimage: RecipientPreimage,
     #[case] expected_error: MasmError,
 ) -> anyhow::Result<()> {
@@ -315,9 +317,15 @@ fn issuer_secret_key() -> SecretKey {
     SecretKey::from_bytes(&[7; 40]).expect("bytes should encode a valid secret key")
 }
 
-/// Returns the storage slots that hold the public key of [`issuer_secret_key`].
-fn issuer_key_slots() -> [StorageSlot; 2] {
-    EncryptedAssetsIssuerKey::new(issuer_secret_key().public_key()).into_storage_slots()
+/// The prepared public key of [`issuer_secret_key`], which is built once since that takes over a
+/// second.
+static ISSUER_PREPARED_KEY: LazyLock<Arc<PreparedPublicKey>> =
+    LazyLock::new(|| Arc::new(PreparedPublicKey::new(issuer_secret_key().public_key())));
+
+/// Returns the storage slots that hold the public key of [`issuer_secret_key`] and the commitment
+/// to its preprocessed tables.
+fn issuer_key_slots() -> [StorageSlot; 3] {
+    EncryptedAssetsIssuerKey::new(&ISSUER_PREPARED_KEY).into_storage_slots()
 }
 
 /// Executes a transaction in which a wallet sends a P2ID note of the provided type that holds an
@@ -332,7 +340,7 @@ fn issuer_key_slots() -> [StorageSlot; 2] {
 async fn send_note(
     note_type: NoteType,
     other_assets: Vec<Asset>,
-    issuer_key_slots: [StorageSlot; 2],
+    issuer_key_slots: [StorageSlot; 3],
     recipient_preimage: RecipientPreimage,
 ) -> anyhow::Result<(Note, Result<ExecutedTransaction, TransactionExecutorError>)> {
     send_note_with_attachments(
@@ -351,7 +359,7 @@ async fn send_note_with_attachments(
     note_type: NoteType,
     other_assets: Vec<Asset>,
     creator_attachments: Vec<NoteAttachment>,
-    issuer_key_slots: [StorageSlot; 2],
+    issuer_key_slots: [StorageSlot; 3],
     recipient_preimage: RecipientPreimage,
 ) -> anyhow::Result<(Note, Result<ExecutedTransaction, TransactionExecutorError>)> {
     let mut builder = MockChain::builder();
@@ -382,7 +390,8 @@ async fn send_note_with_attachments(
     let mut tx_builder = mock_chain
         .build_transaction(wallet.id())
         .send_notes_script(&send_script)
-        .foreign_accounts([mock_chain.get_foreign_account_inputs(faucet.id())?]);
+        .foreign_accounts([mock_chain.get_foreign_account_inputs(faucet.id())?])
+        .ies_prepared_public_key(ISSUER_PREPARED_KEY.clone());
     match recipient_preimage {
         RecipientPreimage::Expected => {
             tx_builder = tx_builder.expected_output_note(RawOutputNote::Full(note.clone()));
@@ -423,7 +432,7 @@ fn double_word_elements(first: Word, second: Word) -> Vec<Felt> {
 /// attachment, and which stores `issuer_key_slots`.
 fn add_issuing_faucet(
     builder: &mut MockChainBuilder,
-    issuer_key_slots: [StorageSlot; 2],
+    issuer_key_slots: [StorageSlot; 3],
 ) -> anyhow::Result<Account> {
     let callback_code = CodeBuilder::default()
         .compile_component_code(ISSUER_COMPONENT_NAME, ISSUER_CALLBACK_CODE)?;

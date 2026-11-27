@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::AssetAmount;
-use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
+use miden_protocol::crypto::ecdh::ecgfp5::{PreparedPublicKey, SecretKey};
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
@@ -45,7 +45,9 @@ use crate::into_private_note;
 
 /// Returns an issuer key derived from a secret key with all bytes set to `seed`.
 fn issuer_key(seed: u8) -> anyhow::Result<EncryptedAssetsIssuerKey> {
-    Ok(EncryptedAssetsIssuerKey::new(SecretKey::from_bytes(&[seed; 40])?.public_key()))
+    Ok(EncryptedAssetsIssuerKey::new(&PreparedPublicKey::new(
+        SecretKey::from_bytes(&[seed; 40])?.public_key(),
+    )))
 }
 
 /// Builds a fungible faucet whose active send policy is the encrypted assets policy, gated by

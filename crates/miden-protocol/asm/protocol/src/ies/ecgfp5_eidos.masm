@@ -10,6 +10,12 @@ use miden::core::crypto::ies::ecgfp5_eidos as core_ecgfp5_eidos
 # [PLAINTEXT_DIGEST, CONTEXT_DIGEST, public_key(5), ...] on the stack.
 const IES_ECGFP5_EIDOS_SEAL_EVENT = event("miden::protocol::ies::ecgfp5_eidos::seal")
 
+# Event from which the host derives the ephemeral secret of the encryption, like for
+# IES_ECGFP5_EIDOS_SEAL_EVENT, and pushes the key agreement advice that the core library's
+# `seal_preprocessed` consumes. It is emitted with
+# [PLAINTEXT_DIGEST, CONTEXT_DIGEST, PREPARED_KEY_COMMITMENT, ...] on the stack.
+const IES_ECGFP5_EIDOS_SEAL_PREPROCESSED_EVENT = event("miden::protocol::ies::ecgfp5_eidos::seal_preprocessed")
+
 # Eidos domain tag of EcGFp5 public-key commitments, shared with `ecgfp5::PublicKey::to_commitment`
 # in Rust.
 const ECGFP5_PUBLIC_KEY_DOMAIN = 0x00001001
@@ -94,5 +100,67 @@ pub proc seal(
     #     envelope_ptr]
 
     exec.core_ecgfp5_eidos::seal
+    # => []
+end
+
+#! Encrypts a plaintext to an EcGFp5 public key with the EcGFp5/Eidos integrated encryption scheme,
+#! using the preprocessed multiplication tables of the key.
+#!
+#! Writes the same envelope as `seal`, which the recipient opens in the same way. The key agreement
+#! reads the table entries it needs from the advice provider and authenticates them against
+#! PREPARED_KEY_COMMITMENT, which takes a fraction of the cycles of `seal`. The envelope is
+#! encrypted to the key that the tables encode, so PREPARED_KEY_COMMITMENT must come from the
+#! recipient, e.g. from its account storage.
+#!
+#! The host derives the ephemeral secret like for `seal`, from the recipient's `PreparedPublicKey`
+#! in Rust, which the transaction arguments must provide, see
+#! `TransactionArgs::with_ies_prepared_public_key`.
+#!
+#! Do not call `miden::core::crypto::ies::ecgfp5_eidos::seal_preprocessed` directly in a
+#! transaction, for the same reason as for `seal`.
+#!
+#! Inputs:  [PREPARED_KEY_COMMITMENT, plaintext_ptr, plaintext_len, context_ptr, context_len,
+#!           envelope_ptr]
+#! Outputs: []
+#!
+#! Where:
+#! - PREPARED_KEY_COMMITMENT is the commitment to the preprocessed tables of the recipient's public
+#!   key, Rust's `PreparedPublicKey::to_commitment`.
+#! - plaintext_ptr is the memory address of the plaintext.
+#! - plaintext_len is the number of plaintext elements.
+#! - context_ptr is the memory address of the context.
+#! - context_len is the number of context elements.
+#! - envelope_ptr is the memory address to which the envelope is written.
+#!
+#! Panics if:
+#! - the transaction arguments provide no IES seal seed or no prepared public key with
+#!   PREPARED_KEY_COMMITMENT.
+#! - the transaction already made MAX_IES_SEAL_REQUESTS_PER_TX (512) IES seal requests.
+#! - the pointers or lengths are invalid for
+#!   `miden::core::crypto::ies::ecgfp5_eidos::seal_preprocessed`.
+#!
+#! Invocation: exec
+pub proc seal_preprocessed(
+    prepared_key_commitment: eidos::Digest,
+    plaintext_ptr: ptr<felt>,
+    plaintext_len: u32,
+    context_ptr: ptr<felt>,
+    context_len: u32,
+    envelope_ptr: ptr<felt>,
+)
+    dup.7 dup.7 exec.eidos::hash_elements
+    # => [CONTEXT_DIGEST, PREPARED_KEY_COMMITMENT, plaintext_ptr, plaintext_len, context_ptr,
+    #     context_len, envelope_ptr]
+
+    dup.9 dup.9 exec.eidos::hash_elements
+    # => [PLAINTEXT_DIGEST, CONTEXT_DIGEST, PREPARED_KEY_COMMITMENT, plaintext_ptr, plaintext_len,
+    #     context_ptr, context_len, envelope_ptr]
+
+    emit.IES_ECGFP5_EIDOS_SEAL_PREPROCESSED_EVENT
+    dropw dropw
+    # => [PREPARED_KEY_COMMITMENT, plaintext_ptr, plaintext_len, context_ptr, context_len,
+    #     envelope_ptr]
+
+    exec.core_ecgfp5_eidos::seal_preprocessed
     # => []
 end

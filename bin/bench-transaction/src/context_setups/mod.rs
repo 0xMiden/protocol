@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::sync::{Arc, LazyLock};
 
 use anyhow::Result;
 pub use miden_agglayer::testing::ClaimDataSource;
@@ -22,7 +23,7 @@ use miden_agglayer::{
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountBuilder, AccountType, StorageMapKey};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
-use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
+use miden_protocol::crypto::ecdh::ecgfp5::{PreparedPublicKey, SecretKey};
 use miden_protocol::note::{Note, NoteAssets, NoteScriptRoot, NoteType, PartialNote};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_FEE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
@@ -345,6 +346,13 @@ fn tx_create_single_p2id_note_with_auth(auth_scheme: AuthScheme) -> Result<MockT
         .build()
 }
 
+/// The prepared public key of the issuer of the encrypted assets scenario, which is built once,
+/// like a wallet's client builds it once per issuer and reuses it across sends.
+static ISSUER_PREPARED_KEY: LazyLock<Arc<PreparedPublicKey>> = LazyLock::new(|| {
+    let secret_key = SecretKey::from_bytes(&[7; 40]).expect("bytes should encode a secret key");
+    Arc::new(PreparedPublicKey::new(secret_key.public_key()))
+});
+
 /// Returns the mock transaction in which an ECDSA wallet sends a private P2ID note that holds the
 /// asset of a faucet whose active send policy is the encrypted assets policy, so the faucet's
 /// callback encrypts the note's details to the issuer key through FPI.
@@ -357,7 +365,8 @@ pub fn tx_create_private_p2id_note_with_encrypted_assets() -> Result<MockTransac
         .decimals(8)
         .max_supply(AssetAmount::new(1_000_000)?)
         .build()?;
-    let issuer_key = EncryptedAssetsIssuerKey::new(SecretKey::from_bytes(&[7; 40])?.public_key());
+    let prepared_key = Arc::clone(&ISSUER_PREPARED_KEY);
+    let issuer_key = EncryptedAssetsIssuerKey::new(&prepared_key);
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::allow_all())
@@ -398,6 +407,7 @@ pub fn tx_create_private_p2id_note_with_encrypted_assets() -> Result<MockTransac
         .send_notes_script(&send_script)
         .foreign_accounts([mock_chain.get_foreign_account_inputs(faucet.id())?])
         .expected_output_note(RawOutputNote::Full(note))
+        .ies_prepared_public_key(prepared_key)
         .build()
 }
 

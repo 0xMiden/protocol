@@ -186,6 +186,7 @@ impl LocalTransactionProver {
             script_mast_store,
             account_procedure_index_map,
             tx_args.ies_seal_seed().cloned(),
+            tx_args.ies_prepared_public_keys().clone(),
         )
         .map_err(|err| TransactionProverError::TransactionHostCreationFailed(Box::new(err)))?;
 

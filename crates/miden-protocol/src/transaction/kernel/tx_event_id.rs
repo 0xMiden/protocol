@@ -69,6 +69,7 @@ pub enum TransactionEventId {
     AuthRequest = AUTH_REQUEST_ID,
 
     IesEcgfp5EidosSeal = IES_ECGFP5_EIDOS_SEAL_ID,
+    IesEcgfp5EidosSealPreprocessed = IES_ECGFP5_EIDOS_SEAL_PREPROCESSED_ID,
 
     PrologueStart = PROLOGUE_START_ID,
     PrologueEnd = PROLOGUE_END_ID,
@@ -105,6 +106,7 @@ impl TransactionEventId {
             Self::AuthRequest
                 | Self::InputNoteIndexLookup
                 | Self::IesEcgfp5EidosSeal
+                | Self::IesEcgfp5EidosSealPreprocessed
                 | Self::Unauthorized
         );
         !is_unprivileged
@@ -155,6 +157,7 @@ impl TransactionEventId {
             Self::TxBeforeBlockWitnessLoad => &TX_BEFORE_BLOCK_WITNESS_LOAD_NAME,
             Self::AuthRequest => &AUTH_REQUEST_NAME,
             Self::IesEcgfp5EidosSeal => &IES_ECGFP5_EIDOS_SEAL_NAME,
+            Self::IesEcgfp5EidosSealPreprocessed => &IES_ECGFP5_EIDOS_SEAL_PREPROCESSED_NAME,
             Self::PrologueStart => &PROLOGUE_START_NAME,
             Self::PrologueEnd => &PROLOGUE_END_NAME,
             Self::NotesProcessingStart => &NOTES_PROCESSING_START_NAME,
@@ -262,6 +265,9 @@ impl TryFrom<EventId> for TransactionEventId {
             AUTH_REQUEST_ID => Ok(TransactionEventId::AuthRequest),
 
             IES_ECGFP5_EIDOS_SEAL_ID => Ok(TransactionEventId::IesEcgfp5EidosSeal),
+            IES_ECGFP5_EIDOS_SEAL_PREPROCESSED_ID => {
+                Ok(TransactionEventId::IesEcgfp5EidosSealPreprocessed)
+            },
 
             PROLOGUE_START_ID => Ok(TransactionEventId::PrologueStart),
             PROLOGUE_END_ID => Ok(TransactionEventId::PrologueEnd),

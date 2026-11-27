@@ -26,3 +26,8 @@ type        = "word"
 description = "The tail of the issuer's EcGFp5 public key, its fifth element followed by three zeros"
 name        = "miden::standards::attachments::encrypted_assets::issuer_key_tail"
 type        = "word"
+
+[[package.metadata.account-component.storage.slots]]
+description = "The commitment to the preprocessed multiplication tables of the issuer's EcGFp5 public key"
+name        = "miden::standards::attachments::encrypted_assets::prepared_issuer_key"
+type        = "word"

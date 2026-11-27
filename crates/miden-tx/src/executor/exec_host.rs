@@ -27,6 +27,7 @@ use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::code::ProcedureRoot;
+use miden_protocol::crypto::ecdh::ecgfp5::PreparedPublicKey;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{
@@ -137,6 +138,7 @@ where
         block_commitments: BTreeMap<BlockNumber, Word>,
         source_manager: Arc<dyn SourceManagerSync>,
         ies_seal_seed: Option<IesSealSeed>,
+        ies_prepared_public_keys: BTreeMap<Word, Arc<PreparedPublicKey>>,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
@@ -146,6 +148,7 @@ where
             scripts_mast_store,
             acct_procedure_index_map,
             ies_seal_seed,
+            ies_prepared_public_keys,
         )?;
 
         Ok(Self {
@@ -724,6 +727,10 @@ where
 
                 TransactionEvent::IesEcgfp5EidosSeal(request) => {
                     self.base_host.on_ies_seal_requested(request)
+                },
+
+                TransactionEvent::IesEcgfp5EidosSealPreprocessed(request) => {
+                    self.base_host.on_ies_seal_preprocessed_requested(request)
                 },
 
                 TransactionEvent::LinkMapSet { advice_mutation } => Ok(advice_mutation),

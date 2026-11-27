@@ -8,7 +8,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::Asset;
-use miden_protocol::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
+use miden_protocol::crypto::ecdh::ecgfp5::{PreparedPublicKey, PublicKey, SecretKey};
 use miden_protocol::crypto::ies::ecgfp5_eidos::{self, Envelope};
 use miden_protocol::errors::{AssetError, NoteError};
 use miden_protocol::note::{
@@ -51,12 +51,16 @@ procedure_root!(
     EncryptedAssetsIssuerKey::code()
 );
 
-static ISSUER_KEY_SLOT_NAMES: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
+static ISSUER_KEY_SLOT_NAMES: LazyLock<[StorageSlotName; 3]> = LazyLock::new(|| {
     [
         StorageSlotName::new("miden::standards::attachments::encrypted_assets::issuer_key_head")
             .expect("storage slot name should be valid"),
         StorageSlotName::new("miden::standards::attachments::encrypted_assets::issuer_key_tail")
             .expect("storage slot name should be valid"),
+        StorageSlotName::new(
+            "miden::standards::attachments::encrypted_assets::prepared_issuer_key",
+        )
+        .expect("storage slot name should be valid"),
     ]
 });
 
@@ -271,16 +275,24 @@ impl EncryptedAssetsAttachment {
 /// The public key to which `miden::standards::attachments::encrypted_assets::new` encrypts the
 /// [`EncryptedAssetsAttachment`] of a private note.
 ///
-/// A faucet stores the key in two value slots, its head and its tail:
+/// A faucet stores the key in two value slots, its head and its tail, followed by the commitment to
+/// the key's preprocessed tables, with which the encryption takes far fewer cycles:
 ///
 /// ```text
 /// miden::standards::attachments::encrypted_assets::issuer_key_head:
 ///     [public_key_0, public_key_1, public_key_2, public_key_3]
 /// miden::standards::attachments::encrypted_assets::issuer_key_tail:
 ///     [public_key_4, 0, 0, 0]
+/// miden::standards::attachments::encrypted_assets::prepared_issuer_key:
+///     PREPARED_ISSUER_KEY
 /// ```
 ///
-/// where `public_key_i` are the elements of [`PublicKey::to_elements`].
+/// where `public_key_i` are the elements of [`PublicKey::to_elements`] and `PREPARED_ISSUER_KEY`
+/// is [`PreparedPublicKey::to_commitment`]. The encryption authenticates the table entries it uses
+/// against `PREPARED_ISSUER_KEY`, so the envelope is encrypted to the key that the tables encode.
+/// A sender builds the [`PreparedPublicKey`] from the public key in the faucet's storage and adds
+/// it to the transaction arguments, see
+/// [`TransactionArgs::with_ies_prepared_public_key`](miden_protocol::transaction::TransactionArgs::with_ies_prepared_public_key).
 ///
 /// The key converts into an account component that installs the slots and exports the
 /// `get_issuer_key` accessor and the authority-gated `set_issuer_key`, which rotates the key. The
@@ -291,6 +303,7 @@ impl EncryptedAssetsAttachment {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EncryptedAssetsIssuerKey {
     public_key: PublicKey,
+    prepared_key_commitment: Word,
 }
 
 impl EncryptedAssetsIssuerKey {
@@ -299,9 +312,12 @@ impl EncryptedAssetsIssuerKey {
 
     const SET_ISSUER_KEY_PROC_NAME: &'static str = "set_issuer_key";
 
-    /// Returns a new issuer key from the provided public key.
-    pub fn new(public_key: PublicKey) -> Self {
-        Self { public_key }
+    /// Returns a new issuer key from the preprocessed tables of the issuer's public key.
+    pub fn new(prepared_key: &PreparedPublicKey) -> Self {
+        Self {
+            public_key: prepared_key.public_key(),
+            prepared_key_commitment: prepared_key.to_commitment(),
+        }
     }
 
     /// Returns the [`AccountComponentCode`] of the account component that installs the issuer
@@ -322,9 +338,9 @@ impl EncryptedAssetsIssuerKey {
         *ENCRYPTED_ASSETS_SET_ISSUER_KEY_ROOT
     }
 
-    /// Returns the [`StorageSlotName`]s of the head and the tail slot of the issuer key, in this
-    /// order.
-    pub fn slot_names() -> &'static [StorageSlotName; 2] {
+    /// Returns the [`StorageSlotName`]s of the head and the tail slot of the issuer key and of the
+    /// slot of the commitment to its preprocessed tables, in this order.
+    pub fn slot_names() -> &'static [StorageSlotName; 3] {
         &ISSUER_KEY_SLOT_NAMES
     }
 
@@ -333,10 +349,17 @@ impl EncryptedAssetsIssuerKey {
         self.public_key
     }
 
-    /// Consumes the issuer key and returns its head and tail [`StorageSlot`]s, in this order.
-    pub fn into_storage_slots(self) -> [StorageSlot; 2] {
+    /// Returns the commitment to the preprocessed tables of the public key, see
+    /// [`PreparedPublicKey::to_commitment`].
+    pub fn prepared_key_commitment(&self) -> Word {
+        self.prepared_key_commitment
+    }
+
+    /// Consumes the issuer key and returns its head, tail and prepared key [`StorageSlot`]s, in
+    /// this order.
+    pub fn into_storage_slots(self) -> [StorageSlot; 3] {
         let [e0, e1, e2, e3, e4] = self.public_key.to_elements();
-        let [head_slot_name, tail_slot_name] = Self::slot_names().clone();
+        let [head_slot_name, tail_slot_name, prepared_key_slot_name] = Self::slot_names().clone();
 
         [
             StorageSlot::with_value(head_slot_name, Word::new([e0, e1, e2, e3])),
@@ -344,6 +367,7 @@ impl EncryptedAssetsIssuerKey {
                 tail_slot_name,
                 Word::new([e4, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
             ),
+            StorageSlot::with_value(prepared_key_slot_name, self.prepared_key_commitment),
         ]
     }
 }

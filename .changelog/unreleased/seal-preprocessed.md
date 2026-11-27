@@ -1,0 +1,1 @@
+Added `miden::protocol::ies::ecgfp5_eidos::seal_preprocessed` and `TransactionArgs::with_ies_prepared_public_key`, and used them for encrypted asset attachments, so `EncryptedAssetsIssuerKey::new` takes a `PreparedPublicKey` whose commitment the faucet stores.

@@ -1,5 +1,7 @@
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::fmt;
 
 use miden_crypto::merkle::InnerNodeInfo;
 
@@ -8,6 +10,7 @@ use super::{Felt, IesSealSeed, Word};
 use crate::EMPTY_WORD;
 use crate::account::AccountCodeUpgrade;
 use crate::account::auth::BoundSignature;
+use crate::crypto::ecdh::ecgfp5::PreparedPublicKey;
 use crate::note::{NoteId, NoteRecipient};
 use crate::vm::{AdviceInputs, AdviceMap};
 
@@ -38,6 +41,8 @@ use crate::vm::{AdviceInputs, AdviceMap};
 /// - IES seal seed: the [`IesSealSeed`] from which the host derives the ephemeral secrets of the
 ///   IES `seal` requests. Use a fresh seed for every transaction and reuse it only to re-execute or
 ///   prove that transaction. Executing a transaction that seals without a seed fails.
+/// - IES prepared public keys: the [`PreparedPublicKey`]s of the recipients of the IES
+///   `seal_preprocessed` requests, from which the host answers them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransactionArgs {
     tx_script: Option<TransactionScript>,
@@ -49,6 +54,7 @@ pub struct TransactionArgs {
     auth_args: Word,
     account_code_upgrade: Option<AccountCodeUpgrade>,
     ies_seal_seed: Option<IesSealSeed>,
+    ies_prepared_public_keys: PreparedPublicKeys,
 }
 
 impl TransactionArgs {
@@ -93,6 +99,7 @@ impl TransactionArgs {
             auth_args,
             account_code_upgrade,
             ies_seal_seed,
+            ies_prepared_public_keys: PreparedPublicKeys::default(),
         }
     }
 
@@ -151,6 +158,21 @@ impl TransactionArgs {
     #[must_use]
     pub fn with_ies_seal_seed(mut self, ies_seal_seed: IesSealSeed) -> Self {
         self.ies_seal_seed = Some(ies_seal_seed);
+        self
+    }
+
+    /// Returns new [`TransactionArgs`] with the provided [`PreparedPublicKey`] added, from which
+    /// the host answers the IES `seal_preprocessed` requests to it.
+    ///
+    /// Building a [`PreparedPublicKey`] takes over a second, so build it once per recipient and
+    /// share it across transactions. The prepared public keys are not part of the serialized
+    /// transaction arguments, so a prover that receives serialized transaction inputs cannot prove
+    /// a transaction with IES `seal_preprocessed` requests unless it adds them again.
+    #[must_use]
+    pub fn with_ies_prepared_public_key(mut self, prepared_key: Arc<PreparedPublicKey>) -> Self {
+        self.ies_prepared_public_keys
+            .0
+            .insert(prepared_key.to_commitment(), prepared_key);
         self
     }
 
@@ -219,6 +241,12 @@ impl TransactionArgs {
         self.ies_seal_seed.as_ref()
     }
 
+    /// Returns the [`PreparedPublicKey`]s of the IES `seal_preprocessed` requests, keyed by
+    /// [`PreparedPublicKey::to_commitment`].
+    pub fn ies_prepared_public_keys(&self) -> &BTreeMap<Word, Arc<PreparedPublicKey>> {
+        &self.ies_prepared_public_keys.0
+    }
+
     // STATE MUTATORS
     // --------------------------------------------------------------------------------------------
 
@@ -266,6 +294,28 @@ impl TransactionArgs {
 impl Default for TransactionArgs {
     fn default() -> Self {
         Self::new(AdviceMap::default())
+    }
+}
+
+// PREPARED PUBLIC KEYS
+// ================================================================================================
+
+/// The [`PreparedPublicKey`]s of [`TransactionArgs`], keyed by their commitment.
+#[derive(Clone, Default)]
+struct PreparedPublicKeys(BTreeMap<Word, Arc<PreparedPublicKey>>);
+
+/// Compares the commitments, which bind the tables of the keys.
+impl PartialEq for PreparedPublicKeys {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.keys().eq(other.0.keys())
+    }
+}
+
+impl Eq for PreparedPublicKeys {}
+
+impl fmt::Debug for PreparedPublicKeys {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.0.keys()).finish()
     }
 }
 

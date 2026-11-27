@@ -305,6 +305,10 @@ pub enum TransactionKernelError {
     IesPublicKeyInvalid(#[source] InvalidPublicKey),
     #[error("transaction arguments provide no IES seal seed for an IES seal request")]
     IesSealSeedMissing,
+    #[error(
+        "transaction arguments provide no IES prepared public key with commitment {0} for an IES seal request"
+    )]
+    IesPreparedPublicKeyMissing(Word),
     #[error("transaction makes more than {max} IES seal requests", max = MAX_IES_SEAL_REQUESTS_PER_TX)]
     TooManyIesSealRequests,
     #[error("recipient data `{0:?}` in the advice provider is not well formed")]

@@ -13,7 +13,7 @@ use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::crypto::SequentialCommit;
-use miden_protocol::crypto::ecdh::ecgfp5::{PublicKey, SecretKey};
+use miden_protocol::crypto::ecdh::ecgfp5::{PreparedPublicKey, PublicKey, SecretKey};
 use miden_protocol::crypto::ies::ecgfp5_eidos::{self, Envelope};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
@@ -82,6 +82,45 @@ async fn ies_seal_encrypts_to_recipient_public_key(
 
     // The transaction ID commits to the output notes, which hold the envelope.
     assert_eq!(proven_tx.id(), executed_tx.id());
+
+    Ok(())
+}
+
+/// Tests that `seal_preprocessed` writes the envelope that `seal` writes for the same request,
+/// since the host derives the same ephemeral secret for it, and that proving reproduces the
+/// envelope.
+#[tokio::test]
+async fn ies_seal_preprocessed_writes_the_envelope_of_seal() -> anyhow::Result<()> {
+    let recipient_secret = secret_key(1);
+    let prepared_key = Arc::new(PreparedPublicKey::new(recipient_secret.public_key()));
+
+    let seal_code =
+        format!("{}\n{}", store_inputs(), seal_to_public_key(&recipient_secret.public_key(), 0));
+    let sealed_tx = execute(None, compile_tx_script(&seal_code, 1, None)?).await?;
+
+    let account = mock_account();
+    let mut mock_chain = MockChainBuilder::with_accounts([account.clone()])?.build()?;
+    mock_chain.prove_next_block()?;
+    let preprocessed_code = format!(
+        "{}\n{}",
+        store_inputs(),
+        seal_preprocessed_to_commitment(prepared_key.to_commitment(), 0)
+    );
+    let preprocessed_tx = mock_chain
+        .build_transaction(account)
+        .tx_script(compile_tx_script(&preprocessed_code, 1, None)?)
+        .ies_prepared_public_key(prepared_key)
+        .build()?
+        .execute()
+        .await?;
+
+    let preprocessed_envelope = envelope(&preprocessed_tx, 0)?;
+    assert_eq!(preprocessed_envelope, envelope(&sealed_tx, 0)?);
+    let plaintext = ecgfp5_eidos::open(&recipient_secret, &felts(CONTEXT), &preprocessed_envelope)?;
+    assert_eq!(plaintext, felts(PLAINTEXT));
+
+    let proven_tx = LocalTransactionProver::default().prove(preprocessed_tx.clone())?;
+    assert_eq!(proven_tx.id(), preprocessed_tx.id());
 
     Ok(())
 }
@@ -228,6 +267,16 @@ async fn signed_execution_reproduces_unauthorized_summary() -> anyhow::Result<()
     seal_to_public_key(&secret_key(1).public_key(), 0),
     None,
     |error: &TransactionKernelError| matches!(error, TransactionKernelError::IesSealSeedMissing),
+)]
+#[case::missing_prepared_public_key(
+    // the transaction arguments provide no prepared public key
+    seal_preprocessed_to_commitment(Word::from([1u32; 4]), 0),
+    Some(IesSealSeed::new([1; 32])),
+    |error: &TransactionKernelError| matches!(
+        error,
+        TransactionKernelError::IesPreparedPublicKeyMissing(commitment)
+            if *commitment == Word::from([1u32; 4])
+    ),
 )]
 #[tokio::test]
 async fn ies_seal_rejects_unanswerable_request(
@@ -567,6 +616,16 @@ fn seal_to_public_key(public_key: &PublicKey, envelope_idx: usize) -> String {
         "{}\n{}\nexec.::miden::protocol::ies::ecgfp5_eidos::seal",
         push_seal_arguments(envelope_idx),
         push_public_key(public_key)
+    )
+}
+
+/// Returns MASM that encrypts the plaintext under the context to the public key whose prepared
+/// public key has `commitment` with `miden::protocol::ies::ecgfp5_eidos::seal_preprocessed`,
+/// writing the envelope with index `envelope_idx`.
+fn seal_preprocessed_to_commitment(commitment: Word, envelope_idx: usize) -> String {
+    format!(
+        "{}\npush.{commitment}\nexec.::miden::protocol::ies::ecgfp5_eidos::seal_preprocessed",
+        push_seal_arguments(envelope_idx),
     )
 }
 
