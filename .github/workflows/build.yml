@@ -92,5 +92,5 @@ jobs:
         - uses: ./.github/actions/restore-masp
           with:
             cache-key: ${{ needs.prepare-masp.outputs.cache-key }}
-        - name: build benches
-          run: cargo build --benches
+        - name: Check benchmark targets
+          run: cargo check --benches
