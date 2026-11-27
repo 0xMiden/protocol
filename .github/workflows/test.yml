@@ -46,10 +46,7 @@ jobs:
           tool: cargo-nextest
       - uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
-          # Warm the new test profile on this PR so a rerun measures an exact Rust cache hit.
-          save-if: >-
-            ${{ (github.event_name == 'push' && github.ref == 'refs/heads/next') ||
-                github.event.pull_request.number == 4285 }}
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install rust
         run: rustup update --no-self-update
       - uses: ./.github/actions/restore-masp
@@ -58,6 +55,9 @@ jobs:
       - name: Build tests
         run: make test-release-build
       - name: test
+        # Nextest already runs tests in parallel across the runner's cores.
+        env:
+          RAYON_NUM_THREADS: "1"
         run: make test-release # runs without debug mode
       - name: Test protobuf build support
         run: cargo test -p miden-protobuf --all-features --locked
