@@ -39,8 +39,10 @@ the `claude` and `gh` CLIs (authenticated), and `make` / the Rust toolchain.
 
 Hooks in `settings.json` enforce quality at the commit, push, and PR boundaries:
 
-- `pre_commit_lint` - runs `make lint` before any commit.
-- `pre_push_test` - runs `make test` before any push.
+- `pre_push_lint_test` - runs `make lint` and then `make test` before any
+  push, in the worktree being pushed. Lint runs once per push rather than
+  before every commit because it takes minutes; if it changes files, the
+  push is blocked until those changes are committed.
 - `pre_pr_draft` - every PR must be created with `--draft`; a human promotes
   it to ready-for-review.
 - `pre_pr_review` and `post_commit_review` - run the code-reviewer and
@@ -49,7 +51,7 @@ Hooks in `settings.json` enforce quality at the commit, push, and PR boundaries:
   `post_commit_review` can't undo a commit already made, so it halts the
   agent until the finding is fixed and the commit amended.
 - `post_pr_create_changelog` - classifies the diff and either requires a
-  CHANGELOG entry or applies the `no changelog` label.
+  `.changelog/unreleased/` entry or applies the `no changelog` label.
 
 ## Contents
 

@@ -13,9 +13,11 @@ use miden_protocol::account::{
     AssetCallbackFlag,
 };
 use miden_protocol::batch::BatchAccountUpdate;
+use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::note::{Note, NoteType, PartialNote, PartialNoteMetadata};
 use miden_protocol::testing::dummy_execution_proof;
 use miden_protocol::transaction::{
+    IesSealSeed,
     InputNoteCommitment,
     LogTopic,
     OutputNote,
@@ -58,6 +60,16 @@ fn public_output_note_roundtrips_through_protobuf() {
     assert_eq!(message.decode_fields().unwrap().verify().unwrap(), note);
 }
 
+#[rstest]
+#[case::empty(CodePatch::default())]
+#[case::non_empty(CodePatch::mock())]
+fn code_patch_roundtrips_through_protobuf(#[case] patch: CodePatch) -> anyhow::Result<()> {
+    let bytes = proto::transaction::CodePatch::from(&patch).encode_to_vec();
+    let decoded = proto::transaction::CodePatch::decode(bytes.as_slice())?;
+    assert_eq!(decoded.decode_fields()?.verify()?, patch);
+    Ok(())
+}
+
 #[test]
 fn account_update_roundtrips_through_protobuf_bytes() {
     let update = BatchAccountUpdate::new(
@@ -90,9 +102,12 @@ fn transaction_args_roundtrip_normalizes_note_args_order(
         AdviceInputs::default().with_map([(dummy_word(6), vec![Felt::from(7_u32)])]),
         dummy_word(8),
         account_code_upgrade,
+        Some(IesSealSeed::new([10; 32])),
     );
 
     let message = proto::transaction::TransactionArgs::from(&args);
+    // The debug output of the message leaves the seed out.
+    assert!(!alloc::format!("{message:?}").contains(&alloc::format!("{:?}", [10_u8; 32])));
 
     assert_eq!(
         message
@@ -151,6 +166,7 @@ fn submitted_transaction_logs_and_headers_roundtrip(#[case] account_type: Accoun
         3u32.into(),
         dummy_execution_proof(),
         data,
+        CodePatch::default(),
     )
     .unwrap();
     let bytes = proto::transaction::ProvenTransaction::from(&tx).encode_to_vec();

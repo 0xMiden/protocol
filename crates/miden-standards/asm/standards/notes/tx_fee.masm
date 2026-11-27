@@ -1,4 +1,5 @@
-use {NoteRecipient, NoteSerialNumber, NoteTag, NoteType} from miden::protocol::types
+use {NoteRecipient, NoteSerialNumber, NoteTag, NoteType, OutputNoteIndex}
+    from miden::protocol::types
 use miden::protocol::active_note
 use miden::protocol::note
 use {NOTE_TYPE_PUBLIC} from miden::protocol::note
@@ -92,7 +93,8 @@ end
 #! the account's `create_note` procedure. This lets `tx_fee::create_output_note` be used
 #! from contexts outside the account code, such as note or transaction scripts. Callers that are
 #! already inside an account procedure should instead use `tx_fee::prepare_note` together with
-#! `exec.output_note::create`.
+#! `exec.output_note::create`. The caller must seal the note with `output_note::seal` once its
+#! assets and attachments are final.
 #!
 #! The created note is always public and carries the unique TX_FEE_NOTE_TAG note tag.
 #!
@@ -107,7 +109,7 @@ end
 #! - note_idx is the index of the created note.
 #!
 #! Invocation: exec
-pub proc create_output_note(serial_num: NoteSerialNumber) -> u16
+pub proc create_output_note(serial_num: NoteSerialNumber) -> OutputNoteIndex
     exec.prepare_note
     # => [tag, note_type, RECIPIENT]
 

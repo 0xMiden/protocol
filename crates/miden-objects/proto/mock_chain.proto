@@ -31,12 +31,13 @@ message MockChainV1 {
   repeated AccountAuthenticator account_authenticators = 8;
   repeated account_file.AuthSecretKey validator_secret_keys = 9;
   protocol_config.ProtocolConfig protocol_config = 10;
+  repeated primitives.Word code_tree_procedure_roots = 11;
 }
 
 message ProvenBlock {
   blockchain.BlockHeader header = 1;
   blockchain.BlockBody body = 2;
-  repeated primitives.Signature signatures = 3;
+  repeated blockchain.ValidatorSignature signatures = 3;
   primitives.ExecutionProof proof = 4;
 }
 

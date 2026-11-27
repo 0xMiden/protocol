@@ -7,6 +7,7 @@ use miden_protocol::block::{
     OutputNoteBatch,
     SignedBlock,
     ValidatorConfig,
+    ValidatorSignature,
 };
 use miden_protocol::protocol_config::NextProtocolConfig;
 use miden_protocol::transaction::{OrderedTransactionHeaders, OutputNote, PartialBlockchain};
@@ -50,6 +51,7 @@ impl From<&BlockHeader> for proto::blockchain::BlockHeader {
             chain_commitment: Some(header.chain_commitment().into()),
             account_root: Some(header.account_root().into()),
             nullifier_root: Some(header.nullifier_root().into()),
+            code_tree_root: Some(header.code_tree_root().as_word().into()),
             note_root: Some(header.note_root().into()),
             tx_commitment: Some(header.transactions_commitment().into()),
             validator_config: Some(header.validator_config().into()),
@@ -80,6 +82,7 @@ impl From<&BlockBody> for proto::blockchain::BlockBody {
                 .map(|nullifier| nullifier.as_word().into())
                 .collect(),
             transactions: body.transactions().iter().map(Into::into).collect(),
+            public_logs: Some(body.public_logs().into()),
         }
     }
 }
@@ -132,12 +135,21 @@ impl From<&OrderedTransactionHeaders> for proto::blockchain::BatchTransactions {
 // SIGNED BLOCK
 // ================================================================================================
 
+impl From<&ValidatorSignature> for proto::blockchain::ValidatorSignature {
+    fn from(value: &ValidatorSignature) -> Self {
+        Self {
+            public_key: Some(value.public_key().into()),
+            signature: Some(value.signature().into()),
+        }
+    }
+}
+
 impl From<&SignedBlock> for proto::blockchain::SignedBlock {
     fn from(block: &SignedBlock) -> Self {
         Self {
             header: Some(block.header().into()),
             body: Some(block.body().into()),
-            signatures: block.signatures().as_signatures().iter().map(Into::into).collect(),
+            signatures: block.signatures().as_slice().iter().map(Into::into).collect(),
         }
     }
 }

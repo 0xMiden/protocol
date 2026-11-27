@@ -6,7 +6,9 @@ use {
     AssetValue,
     BlockNumber,
     Bool,
+    InputNoteIndex,
     NoteAssetsCommitment,
+    NoteAttachmentScheme,
     NoteId,
     NoteMetadata,
     NoteRecipient,
@@ -14,6 +16,7 @@ use {
     NoteSerialNumber,
     NoteTag,
     NoteType,
+    OutputNoteIndex,
     StorageSlotId,
     TransactionScriptRoot,
 } from miden::protocol_utils::types
@@ -74,6 +77,9 @@ const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ID_WHILE_NO_NOTE_BEING_PROCESSED =
 const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO =
     "ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called"
 
+const ERR_FOREIGN_ACCOUNT_NOT_ISSUER_OF_NATIVE_VAULT_ASSET =
+    "a foreign account can only read assets it issued from the native account's vault"
+
 # AUTHENTICATION
 # =================================================================================================
 
@@ -99,6 +105,34 @@ proc authenticate_account_origin()
     # assert that the caller is from the user context and conditionally track the call
     exec.account::authenticate_procedure
     # => []
+end
+
+#! Asserts that the active account can read the asset with the provided ID from the native
+#! account's vault, which is the case if it is the native account or the issuer of the asset.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [ASSET_ID]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the asset to read.
+#!
+#! Panics if:
+#! - the active account is not the native account and it is not the issuer of the asset.
+#!
+#! Invocation: exec
+proc assert_can_read_native_vault_asset(asset_id: AssetId) -> AssetId
+    exec.asset::id_to_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_ID]
+
+    exec.memory::get_account_id
+    # => [active_account_id_suffix, active_account_id_prefix, faucet_id_suffix, faucet_id_prefix, ASSET_ID]
+
+    exec.account_id::eq
+    # => [is_issuer, ASSET_ID]
+
+    exec.memory::is_native_account or
+    assert.err=ERR_FOREIGN_ACCOUNT_NOT_ISSUER_OF_NATIVE_VAULT_ASSET
+    # => [ASSET_ID]
 end
 
 #! Asserts that the invocation of a kernel procedure originates from the authentication procedure of
@@ -190,14 +224,13 @@ end
 
 #! Computes the commitment to the native account's delta.
 #!
-#! The commitment to an empty delta is defined as the empty word.
+#! An empty delta commits to the empty hash in the account-delta domain.
 #!
 #! During an account-creating transaction (when the initial nonce is 0), this procedure may not
-#! return the empty word even if the initial storage commitment and the current storage commitment
-#! are identical (storage hasn't changed). This is because the delta for a new account must
-#! represent its entire newly created state, and the initial storage in a transaction is
-#! initialized to the the storage that the account ID commits to, which may be non-empty. This
-#! does not have any consequences other than being inconsistent in this edge case.
+#! return the canonical empty-delta commitment even if the initial storage commitment and the
+#! current storage commitment are identical (storage hasn't changed). This is because the delta for
+#! a new account must represent its entire newly created state, and the initial storage in a
+#! transaction is initialized to the storage that the account ID commits to, which may be non-empty.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [DELTA_COMMITMENT, pad(12)]
@@ -212,10 +245,9 @@ end
 #!
 #! Invocation: dynexec
 pub proc account_compute_delta_commitment(padding: [felt; 16]) -> (Commitment, [felt; 12])
-    # These two checks are strictly redundant here: a non-empty delta requires the nonce to be
-    # incremented, which is already gated to the auth procedure, and an empty delta only ever
-    # commits to the (public) empty word. We keep them for consistency with the other account
-    # procedures and may drop them later.
+    # require the native account context and an account procedure origin, even for an empty delta.
+    # the origin check also records the calling procedure for authentication policy when the
+    # epilogue is not executing the account's authentication procedure.
     exec.memory::assert_native_account
     exec.authenticate_account_origin
 
@@ -225,7 +257,7 @@ pub proc account_compute_delta_commitment(padding: [felt; 16]) -> (Commitment, [
 
     # truncate the stack
     swapw dropw
-    # => [ACCOUNT_COMMITMENT, pad(12)]
+    # => [DELTA_COMMITMENT, pad(12)]
 end
 
 #! Initializes an upgrade of the native account's code, which the epilogue applies after the
@@ -247,6 +279,7 @@ end
 #! - ACCOUNT_PROCEDURE_DATA are the roots of the procedures of the new account code.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the invocation of this procedure does not originate from the account context.
 #! - the current active account is not the native account of the transaction.
 #! - STORAGE_UPGRADE_COMMITMENT is not empty.
@@ -258,6 +291,10 @@ end
 pub proc account_upgrade(new_code_commitment: Commitment, storage_upgrade_commitment: Commitment, padding: [felt; 8]) -> [felt; 16]
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [NEW_CODE_COMMITMENT, STORAGE_UPGRADE_COMMITMENT, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
@@ -383,6 +420,7 @@ end
 #!   also be the final nonce of the account after transaction execution.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the current active account is not the native account of the transaction.
 #! - the invocation of this procedure does not originate from the authentication procedure
 #!   of the account.
@@ -392,6 +430,10 @@ end
 pub proc account_incr_nonce(padding: [felt; 16]) -> (felt, [felt; 15])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [pad(16)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [pad(16)]
 
     # assert that nonce increment originates from the authentication procedure of the account
@@ -523,6 +565,7 @@ end
 #! - OLD_VALUE is the previous value of the item.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the invocation of this procedure does not originate from the account context.
 #! - the current active account is not the native account of the transaction.
@@ -531,6 +574,10 @@ end
 pub proc account_set_item(slot_id: StorageSlotId, value: word, padding: [felt; 10]) -> (word, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 
     # authenticate that the procedure invocation originates from the account context
@@ -650,6 +697,7 @@ end
 #! - KEY is the key of the new item.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
 #! - the invocation of this procedure does not originate from the account context.
@@ -659,6 +707,10 @@ end
 pub proc account_set_map_item(slot_id: StorageSlotId, key: word, new_value: word, padding: [felt; 6]) -> (word, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
 
     # authenticate that the procedure invocation originates from the account context
@@ -744,6 +796,7 @@ end
 #!     after ASSET_VALUE was added to it.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the asset is not valid.
 #! - the total value of the fungible asset is greater than or equal to 2^63 after the new asset was 
 #!   added.
@@ -755,6 +808,10 @@ end
 pub proc account_add_asset(asset: Asset, padding: [felt; 8]) -> (AssetValue, [felt; 12])
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
@@ -777,6 +834,7 @@ end
 #! - FINAL_ASSET_VALUE is the value of the asset remaining in the vault after removal.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the fungible asset is not found in the vault.
 #! - the amount of the fungible asset in the vault is less than the amount to be removed.
 #! - the non-fungible asset is not found in the vault.
@@ -789,6 +847,10 @@ pub proc account_remove_asset(asset: Asset, padding: [felt; 8]) -> (AssetValue, 
     exec.memory::assert_native_account
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
@@ -798,27 +860,46 @@ pub proc account_remove_asset(asset: Asset, padding: [felt; 8]) -> (AssetValue, 
     # => [FINAL_ASSET_VALUE, pad(12)]
 end
 
-#! Returns the asset associated with the provided asset ID in the active account's vault.
+#! Returns the asset associated with the provided asset ID in the vault of the native or the active
+#! account.
 #!
-#! Inputs:  [ASSET_ID, pad(12)]
+#! Inputs:  [is_native, ASSET_ID, pad(11)]
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:
+#! - is_native is a boolean flag that indicates whether the asset was requested from the vault of
+#!   the native or the active account.
 #! - ASSET_ID is the asset ID of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
 #!   present.
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
+#! - is_native is 1, the active account is not the native account and it is not the issuer of the
+#!   asset.
 #!
 #! Invocation: dynexec
-pub proc account_get_asset(asset_id: AssetId, padding: [felt; 12]) -> (AssetValue, [felt; 12])
+pub proc account_get_asset(
+    is_native: Bool,
+    asset_id: AssetId,
+    padding: [felt; 11]
+) -> (AssetValue, [felt; 12])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET_ID, pad(12)]
+    # => [is_native, ASSET_ID, pad(11)]
 
-    exec.asset::validate_id
-    # => [ASSET_ID, pad(12)]
+    movdn.4 exec.asset::validate_id
+    # => [ASSET_ID, is_native, pad(11)]
+
+    # check that the active account can read the asset if the native account's vault is requested
+    dup.4
+    if.true
+        exec.assert_can_read_native_vault_asset
+    end
+    # => [ASSET_ID, is_native, pad(11)]
+
+    movup.4
+    # => [is_native, ASSET_ID, pad(11)]
 
     exec.account::get_asset
     # => [ASSET_VALUE, pad(12)]
@@ -836,18 +917,19 @@ end
 #!
 #! Panics if:
 #! - the invocation of this procedure does not originate from the account context.
-#! - the current active account is not the native account of the transaction.
+#! - the active account is not the native account and it is not the issuer of the asset.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_asset(asset_id: AssetId, padding: [felt; 12]) -> (AssetValue, [felt; 12])
-    # check that this procedure was executed against the native account
-    exec.memory::assert_native_account
-
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [ASSET_ID, pad(12)]
 
     exec.asset::validate_id
+    # => [ASSET_ID, pad(12)]
+
+    # check that the active account can read the asset from the native account's vault
+    exec.assert_can_read_native_vault_asset
     # => [ASSET_ID, pad(12)]
 
     exec.account::get_initial_asset
@@ -1001,6 +1083,7 @@ end
 #! - ASSET_VALUE is the value of the asset to mint.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the invocation of this procedure does not originate from the account context.
 #! - the current active account is not the native account of the transaction.
 #! - the asset issuer is not the faucet the transaction is being executed against.
@@ -1010,6 +1093,10 @@ end
 pub proc faucet_mint_asset(asset: Asset, padding: [felt; 8]) -> [felt; 16]
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
@@ -1031,6 +1118,7 @@ end
 #! - ASSET_VALUE is the value of the asset to burn.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the invocation of this procedure does not originate from the account context.
 #! - the current active account is not the native account of the transaction.
 #! - the asset issuer is not the faucet the transaction is being executed against.
@@ -1045,6 +1133,10 @@ end
 pub proc faucet_burn_asset(asset: Asset, padding: [felt; 8]) -> [felt; 16]
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [ASSET_ID, ASSET_VALUE, pad(8)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
@@ -1064,13 +1156,13 @@ end
 #! The returned commitment and number of assets are the ones the note was created with; they do
 #! not change when assets are removed from the note during transaction execution.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [ASSETS_COMMITMENT, num_assets, pad(11)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the assets data from
 #!   the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose assets info should be returned.
+#! - note_idx is the index of the input note whose assets info should be returned.
 #! - ASSETS_COMMITMENT is a sequential hash of the assets the specified input note was created
 #!   with.
 #! - num_assets is the number of assets the specified input note was created with.
@@ -1081,7 +1173,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_initial_assets_info(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteAssetsCommitment, u8, [felt; 11])
+pub proc input_note_get_initial_assets_info(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (NoteAssetsCommitment, u8, [felt; 11])
     # get the input note pointer depending on whether the requested note is the active one or if it
     # was requested by index.
     exec.get_requested_note_ptr
@@ -1106,14 +1198,14 @@ end
 #! The asset is returned as it currently is: if it was removed from the note, the returned
 #! ASSET_ID and ASSET_VALUE are both the EMPTY_WORD.
 #!
-#! Inputs:  [is_active_note, asset_index, note_index, pad(13)]
+#! Inputs:  [is_active_note, asset_index, note_idx, pad(13)]
 #! Outputs: [ASSET_ID, ASSET_VALUE, pad(8)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the asset from the
 #!   active note or from the note with the specified index.
 #! - asset_index is the index of the asset to return.
-#! - note_index is the index of the input note whose asset should be returned.
+#! - note_idx is the index of the input note whose asset should be returned.
 #! - ASSET_ID is the asset ID of the asset at the specified index.
 #! - ASSET_VALUE is the value of the asset at the specified index.
 #!
@@ -1124,10 +1216,10 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_asset(is_active_note: Bool, asset_index: u8, note_index: u16, padding: [felt; 13]) -> (Asset, [felt; 8])
-    # bring note_index directly above is_active_note so the note pointer can be resolved
+pub proc input_note_get_asset(is_active_note: Bool, asset_index: u8, note_idx: InputNoteIndex, padding: [felt; 13]) -> (Asset, [felt; 8])
+    # bring note_idx directly above is_active_note so the note pointer can be resolved
     movup.2 swap
-    # => [is_active_note, note_index, asset_index, pad(13)]
+    # => [is_active_note, note_idx, asset_index, pad(13)]
 
     # get the input note pointer depending on whether the requested note is the active one or if it
     # was requested by index.
@@ -1156,7 +1248,7 @@ end
 #! If the entire asset value is removed, the asset's slot in the note is cleared, i.e. set to
 #! (EMPTY_WORD, EMPTY_WORD). This is always the case for non-composable assets.
 #!
-#! Inputs:  [is_active_note, ASSET_ID, ASSET_VALUE, note_index, pad(6)]
+#! Inputs:  [is_active_note, ASSET_ID, ASSET_VALUE, note_idx, pad(6)]
 #! Outputs: [FINAL_ASSET_VALUE, pad(12)]
 #!
 #! Where:
@@ -1164,11 +1256,12 @@ end
 #!   active note or from the note with the specified index.
 #! - ASSET_ID is the asset ID of the asset to remove from the note.
 #! - ASSET_VALUE is the value of the asset to remove from the note.
-#! - note_index is the index of the input note from which the asset should be removed.
+#! - note_idx is the index of the input note from which the asset should be removed.
 #! - FINAL_ASSET_VALUE is the value of the asset remaining in the note after removal, which is
 #!   the EMPTY_WORD if the entire asset was removed.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the note index is greater or equal to the total number of input notes.
 #! - is_active_note is false and the active account is not the native account.
 #! - is_active_note is false and the invocation does not originate from the account context.
@@ -1181,13 +1274,17 @@ end
 #! - the amount of the fungible asset in the note is less than the amount to be removed.
 #!
 #! Invocation: dynexec
-pub proc input_note_remove_asset(is_active_note: Bool, asset: Asset, note_index: u16, padding: [felt; 6]) -> (AssetValue, [felt; 12])
-    # bring note_index directly above is_active_note so the note pointer can be resolved
+pub proc input_note_remove_asset(is_active_note: Bool, asset: Asset, note_idx: InputNoteIndex, padding: [felt; 6]) -> (AssetValue, [felt; 12])
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
+    # => [is_active_note, ASSET_ID, ASSET_VALUE, note_idx, pad(6)]
+
+    # bring note_idx directly above is_active_note so the note pointer can be resolved
     movup.9 swap
-    # => [is_active_note, note_index, ASSET_ID, ASSET_VALUE, pad(6)]
+    # => [is_active_note, note_idx, ASSET_ID, ASSET_VALUE, pad(6)]
 
     exec.authenticate_indexed_input_note_asset_removal
-    # => [is_active_note, note_index, ASSET_ID, ASSET_VALUE, pad(6)]
+    # => [is_active_note, note_idx, ASSET_ID, ASSET_VALUE, pad(6)]
 
     # get the input note pointer depending on whether the requested note is the active one or if it
     # was requested by index.
@@ -1215,22 +1312,23 @@ end
 #! Returns a commitment to the removed assets and stores them in the advice map under that
 #! commitment so that they can be retrieved by the caller. The commitment is a sequential hash of
 #! the assets that remained in the note at the time of the call, i.e. excluding assets that were
-#! already removed. If no assets remain, the commitment is the EMPTY_WORD.
+#! already removed. If no assets remain, the commitment is the empty hash.
 #!
 #! The note's initial assets info (see input_note_get_initial_assets_info) is not affected by this
 #! procedure.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [ASSETS_COMMITMENT, num_assets, pad(11)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether the assets should be removed from the
 #!   active note or from the note with the specified index.
-#! - note_index is the index of the input note from which the assets should be removed.
+#! - note_idx is the index of the input note from which the assets should be removed.
 #! - ASSETS_COMMITMENT is a sequential hash of the assets removed by this procedure.
 #! - num_assets is the number of assets removed by this procedure.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the note index is greater or equal to the total number of input notes.
 #! - is_active_note is false and the active account is not the native account.
 #! - is_active_note is false and the invocation does not originate from the account context.
@@ -1238,9 +1336,13 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_remove_all_assets(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteAssetsCommitment, u8, [felt; 11])
+pub proc input_note_remove_all_assets(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (NoteAssetsCommitment, u8, [felt; 11])
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
+    # => [is_active_note, note_idx, pad(14)]
+
     exec.authenticate_indexed_input_note_asset_removal
-    # => [is_active_note, note_index, pad(14)]
+    # => [is_active_note, note_idx, pad(14)]
 
     # get the input note pointer depending on whether the requested note is the active one or if it
     # was requested by index.
@@ -1263,14 +1365,14 @@ end
 
 #! Returns the recipient of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [RECIPIENT, pad(12)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the assets data from
 #!   the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose assets info should be returned. Notice that if
-#!   is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose assets info should be returned. Notice that if
+#!   is_active_note is 1, note_idx is ignored.
 #! - RECIPIENT is the commitment to the input note's script, storage, the serial number.
 #!
 #! Panics if:
@@ -1279,7 +1381,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_recipient(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteRecipient, [felt; 12])
+pub proc input_note_get_recipient(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (NoteRecipient, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1301,14 +1403,14 @@ end
 
 #! Returns the metadata of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [METADATA, pad(12)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the metadata from
 #!   the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose metadata should be returned. Notice that if
-#!   is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose metadata should be returned. Notice that if
+#!   is_active_note is 1, note_idx is ignored.
 #! - METADATA is the metadata of the specified input note.
 #!
 #! Panics if:
@@ -1317,7 +1419,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_metadata(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteMetadata, [felt; 12])
+pub proc input_note_get_metadata(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (NoteMetadata, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1343,14 +1445,14 @@ end
 
 #! Returns the serial number of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [SERIAL_NUMBER, pad(12)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the serial number
 #!   of the active note or of the note with the specified index.
-#! - note_index is the index of the input note whose serial number should be returned. Notice that 
-#!   if is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose serial number should be returned. Notice that 
+#!   if is_active_note is 1, note_idx is ignored.
 #! - SERIAL_NUMBER is the serial number of the specified input note.
 #!
 #! Panics if:
@@ -1359,7 +1461,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_serial_number(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteSerialNumber, [felt; 12])
+pub proc input_note_get_serial_number(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (NoteSerialNumber, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1383,14 +1485,14 @@ end
 
 #! Returns the note ID of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [NOTE_ID, pad(12)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the note ID of the
 #!   active note or of the note with the specified index.
-#! - note_index is the index of the input note whose ID should be returned. Notice that if
-#!   is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose ID should be returned. Notice that if
+#!   is_active_note is 1, note_idx is ignored.
 #! - NOTE_ID is the ID of the specified input note, cached by the transaction prologue.
 #!
 #! Panics if:
@@ -1399,7 +1501,7 @@ end
 #!   from an incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_note_id(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteId, [felt; 12])
+pub proc input_note_get_note_id(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (NoteId, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1423,14 +1525,14 @@ end
 
 #! Returns the storage commitment and length of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [NOTE_STORAGE_COMMITMENT, num_storage_items, pad(11)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the storage commitment 
 #!   and length from the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose data should be returned. Notice that if
-#!   is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose data should be returned. Notice that if
+#!   is_active_note is 1, note_idx is ignored.
 #! - NOTE_STORAGE_COMMITMENT is the storage commitment of the specified input note.
 #! - num_storage_items is the number of storage items of the specified input note.
 #!
@@ -1440,7 +1542,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_storage_info(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (Commitment, u16, [felt; 11])
+pub proc input_note_get_storage_info(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (Commitment, u16, [felt; 11])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1468,14 +1570,14 @@ end
 
 #! Returns the script root of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [SCRIPT_ROOT, pad(12)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the storage commitment 
 #!   and length from the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose data should be returned. Notice that if
-#!   is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose data should be returned. Notice that if
+#!   is_active_note is 1, note_idx is ignored.
 #! - SCRIPT_ROOT is the script root of the specified input note.
 #!
 #! Panics if:
@@ -1484,7 +1586,7 @@ end
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_script_root(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (NoteScriptRoot, [felt; 12])
+pub proc input_note_get_script_root(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (NoteScriptRoot, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1508,14 +1610,14 @@ end
 
 #! Returns the attachments commitment of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Inputs:  [is_active_note, note_idx, pad(14)]
 #! Outputs: [ATTACHMENTS_COMMITMENT, pad(12)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the attachments
 #!   commitment from the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose attachments commitment should be returned.
-#!   Notice that if is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose attachments commitment should be returned.
+#!   Notice that if is_active_note is 1, note_idx is ignored.
 #! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the specified input note.
 #!
 #! Panics if:
@@ -1524,7 +1626,7 @@ end
 #!   attachments from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_attachments_commitment(is_active_note: Bool, note_index: u16, padding: [felt; 14]) -> (Commitment, [felt; 12])
+pub proc input_note_get_attachments_commitment(is_active_note: Bool, note_idx: InputNoteIndex, padding: [felt; 14]) -> (Commitment, [felt; 12])
     # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
@@ -1561,17 +1663,22 @@ end
 #! - note_idx is the index of the created note.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the invocation of this procedure does not originate from the account context.
 #! - the active account is not the native account.
 #!
 #! Invocation: dynexec
-pub proc output_note_create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient, padding: [felt; 10]) -> (u16, [felt; 15])
+pub proc output_note_create(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient, padding: [felt; 10]) -> (OutputNoteIndex, [felt; 15])
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
     # => [tag, note_type, RECIPIENT, pad(10)]
 
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [tag, note_type, RECIPIENT, pad(10)]
 
     exec.output_note::create
@@ -1589,14 +1696,19 @@ end
 #! - ASSET_VALUE is the value of the asset to add.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
 #! - the output note is sealed.
 #!
 #! Invocation: dynexec
-pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) -> [felt; 16]
+pub proc output_note_add_asset(asset: Asset, note_idx: OutputNoteIndex, padding: [felt; 7]) -> [felt; 16]
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
     # => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
     dup.8 exec.output_note::assert_note_index_in_bounds drop
@@ -1606,26 +1718,32 @@ pub proc output_note_add_asset(asset: Asset, note_idx: u16, padding: [felt; 7]) 
     # => [pad(16)]
 end
 
-#! Prevents further changes to the specified output note's assets and attachments.
-#! Sealing is idempotent.
+#! Invokes the `on_before_note_sealed` callback of each distinct faucet with the asset callback flag
+#! enabled among the specified output note's assets, appends the attachments each callback returns
+#! to the note, and then prevents further changes to the note's assets and attachments.
+#!
+#! Sealing is idempotent: sealing an already sealed note invokes no callback.
 #!
 #! Inputs:  [note_idx, pad(15)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the active account is not the native account.
 #! - the note index points to a non-existent output note.
+#! - a callback procedure root is not part of its faucet's account code.
+#! - an invoked callback panics.
+#! - a callback returns an invalid attachment list, or attachments that are invalid or exceed the
+#!   note's attachment limits.
 #!
 #! Invocation: dynexec
-pub proc output_note_seal(note_idx: u16, padding: [felt; 15]) -> [felt; 16]
+pub proc output_note_seal(note_idx: OutputNoteIndex, padding: [felt; 15]) -> [felt; 16]
     exec.memory::assert_native_account
+    exec.memory::assert_not_in_asset_callback
     exec.output_note::assert_note_index_in_bounds
     # => [note_idx, pad(15)]
 
-    exec.memory::get_output_note_ptr
-    # => [note_ptr, pad(15)]
-
-    exec.memory::seal_output_note
+    exec.output_note::seal
     # => [pad(16)]
 end
 
@@ -1638,7 +1756,7 @@ end
 #! - the note index points to a non-existent output note.
 #!
 #! Invocation: dynexec
-pub proc output_note_is_sealed(note_idx: u16, padding: [felt; 15]) -> (Bool, [felt; 15])
+pub proc output_note_is_sealed(note_idx: OutputNoteIndex, padding: [felt; 15]) -> (Bool, [felt; 15])
     exec.output_note::assert_note_index_in_bounds
     # => [note_idx, pad(15)]
 
@@ -1660,6 +1778,7 @@ end
 #! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
 #! - the output note is sealed.
@@ -1668,7 +1787,7 @@ end
 #! - the note already has 4 attachments.
 #!
 #! Invocation: dynexec
-pub proc output_note_add_attachment(attachment_scheme: u16, attachment: word, note_idx: u16, padding: [felt; 10]) -> [felt; 16]
+pub proc output_note_add_attachment(attachment_scheme: NoteAttachmentScheme, attachment: word, note_idx: OutputNoteIndex, padding: [felt; 10]) -> [felt; 16]
     # assert that the provided note index is less than the total number of output notes
     dup.5 exec.output_note::assert_note_index_in_bounds drop
     # => [attachment_scheme, ATTACHMENT, note_idx, pad(10)]
@@ -1677,17 +1796,21 @@ pub proc output_note_add_attachment(attachment_scheme: u16, attachment: word, no
     exec.memory::assert_native_account
     # => [attachment_scheme, ATTACHMENT, note_idx, pad(10)]
 
+    # check that this procedure was not invoked by an asset callback
+    exec.memory::assert_not_in_asset_callback
+    # => [attachment_scheme, ATTACHMENT, note_idx, pad(10)]
+
     exec.output_note::add_attachment
     # => [pad(16)]
 end
 
 #! Returns the information about assets in the output note with the specified index.
 #!
-#! Inputs:  [note_index, pad(15)]
+#! Inputs:  [note_idx, pad(15)]
 #! Outputs: [ASSETS_COMMITMENT, num_assets, pad(11)]
 #!
 #! Where:
-#! - note_index is the index of the output note whose assets info should be returned.
+#! - note_idx is the index of the output note whose assets info should be returned.
 #! - num_assets is the number of assets in the specified note.
 #! - ASSETS_COMMITMENT is a sequential hash of the assets in the specified note.
 #!
@@ -1695,10 +1818,10 @@ end
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: dynexec
-pub proc output_note_get_assets_info(note_index: u16, padding: [felt; 15]) -> (NoteAssetsCommitment, u8, [felt; 11])
+pub proc output_note_get_assets_info(note_idx: OutputNoteIndex, padding: [felt; 15]) -> (NoteAssetsCommitment, u8, [felt; 11])
     # assert that the provided note index is less than the total number of output notes
     exec.output_note::assert_note_index_in_bounds
-    # => [note_index, pad(15)]
+    # => [note_idx, pad(15)]
 
     # get the assets info
     exec.output_note::get_assets_info
@@ -1713,21 +1836,21 @@ end
 
 #! Returns the commitment over all attachments.
 #!
-#! Inputs:  [note_index, pad(15)]
+#! Inputs:  [note_idx, pad(15)]
 #! Outputs: [ATTACHMENTS_COMMITMENT, pad(12)]
 #!
 #! Where:
-#! - note_index is the index of the output note whose attachments commitment should be returned.
+#! - note_idx is the index of the output note whose attachments commitment should be returned.
 #! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: dynexec
-pub proc output_note_get_attachments_commitment(note_index: u16, padding: [felt; 15]) -> (Commitment, [felt; 12])
+pub proc output_note_get_attachments_commitment(note_idx: OutputNoteIndex, padding: [felt; 15]) -> (Commitment, [felt; 12])
     # assert that the provided note index is less than the total number of output notes
     exec.output_note::assert_note_index_in_bounds
-    # => [note_index, pad(15)]
+    # => [note_idx, pad(15)]
 
     # get the attachments commitment
     exec.output_note::get_attachments_commitment
@@ -1740,21 +1863,21 @@ end
 
 #! Returns the recipient of the output note with the specified index.
 #!
-#! Inputs:  [note_index, pad(15)]
+#! Inputs:  [note_idx, pad(15)]
 #! Outputs: [RECIPIENT, pad(12)]
 #!
 #! Where:
-#! - note_index is the index of the output note whose recipient should be returned.
+#! - note_idx is the index of the output note whose recipient should be returned.
 #! - RECIPIENT is the commitment to the output note's script, storage, the serial number.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: dynexec
-pub proc output_note_get_recipient(note_index: u16, padding: [felt; 15]) -> (NoteRecipient, [felt; 12])
+pub proc output_note_get_recipient(note_idx: OutputNoteIndex, padding: [felt; 15]) -> (NoteRecipient, [felt; 12])
     # assert that the provided note index is less than the total number of output notes
     exec.output_note::assert_note_index_in_bounds
-    # => [note_index, pad(15)]
+    # => [note_idx, pad(15)]
 
     # get the note data pointer by the provided index
     exec.memory::get_output_note_ptr
@@ -1771,21 +1894,21 @@ end
 
 #! Returns the metadata of the output note with the specified index.
 #!
-#! Inputs:  [note_index, pad(15)]
+#! Inputs:  [note_idx, pad(15)]
 #! Outputs: [METADATA, pad(12)]
 #!
 #! Where:
-#! - note_index is the index of the output note whose metadata should be returned.
+#! - note_idx is the index of the output note whose metadata should be returned.
 #! - METADATA is the metadata of the specified output note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
 #!
 #! Invocation: dynexec
-pub proc output_note_get_metadata(note_index: u16, padding: [felt; 15]) -> (NoteMetadata, [felt; 12])
+pub proc output_note_get_metadata(note_idx: OutputNoteIndex, padding: [felt; 15]) -> (NoteMetadata, [felt; 12])
     # assert that the provided note index is less than the total number of output notes
     exec.output_note::assert_note_index_in_bounds
-    # => [note_index, pad(15)]
+    # => [note_idx, pad(15)]
 
     # get the note data pointer by the provided index
     exec.memory::get_output_note_ptr
@@ -1914,7 +2037,8 @@ end
 #! - num_extra_cycles is the number of cycles that should be added to the current number of cycles
 #!   before computing the fee.
 #! - EXCLUDE_NOTES_COMMITMENT is a commitment to a list of output note indices that should be
-#!   excluded from the fee computation, or the empty word if no notes are excluded.
+#!   excluded from the fee computation. EMPTY_WORD is an absence sentinel indicating that no
+#!   exclusion preimage was supplied.
 #! - fee_amount is the computed fee amount of the transaction in the fee asset.
 #!
 #! Invocation: dynexec
@@ -2189,19 +2313,19 @@ end
 #! If the pointer to the active note was requested, but no note is being executed, 0 
 #! is returned.
 #!
-#! Inputs:  [is_active_note, note_index]
+#! Inputs:  [is_active_note, note_idx]
 #! Outputs: [input_note_ptr]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return requested data from
 #!   the active note or from the note with the specified index.
-#! - note_index is the index of the input note whose data should be returned. Notice that if
-#!   is_active_note is 1, note_index is ignored.
+#! - note_idx is the index of the input note whose data should be returned. Notice that if
+#!   is_active_note is 1, note_idx is ignored.
 #! - input_note_ptr is the pointer to the correct input note. 
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-proc get_requested_note_ptr(is_active_note: Bool, note_index: u16) -> ptr<InputNoteData>
+proc get_requested_note_ptr(is_active_note: Bool, note_idx: InputNoteIndex) -> ptr<InputNoteData>
     # get the memory pointer to the note with the specified index and verify it is valid
     swap exec.input_note::get_input_note_ptr swap
     # => [is_active_note, indexed_input_note_ptr]

@@ -1,0 +1,1 @@
+[BREAKING] Blocks are valid once a quorum of the parent's validators has signed: `ValidatorConfig` accepts a quorum below the validator count, and `BlockSignatures` holds one `ValidatorSignature` per signing validator and no longer implements `Serializable` and `Deserializable`.

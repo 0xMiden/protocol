@@ -13,7 +13,6 @@ use anyhow::Result;
 use miden_protocol::Word;
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
@@ -32,6 +31,7 @@ use miden_standards::note::{
     SwapNote,
 };
 use miden_testing::{Auth, MockTransaction};
+use rand::RngExt;
 
 /// The number of assets carried by the asset-count-heavy benchmark scenarios: the per-note
 /// asset cap ([`miden_protocol::MAX_ASSETS_PER_NOTE`]).
@@ -239,7 +239,7 @@ pub fn tx_consume_pswap_note_network(full_fill: bool) -> Result<MockTransaction>
     let pswap = PswapNote::builder()
         .sender(creator_account.id())
         .storage(storage)
-        .serial_number(builder.rng_mut().draw_word())
+        .serial_number(builder.rng_mut().random())
         .note_type(NoteType::Public)
         .offered_asset(offered_asset)
         .build()?;

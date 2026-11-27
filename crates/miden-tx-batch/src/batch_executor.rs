@@ -44,7 +44,7 @@ impl BatchExecutor {
 
     /// Returns the [`ExecutionOptions`] this executor uses.
     pub fn execution_options(&self) -> ExecutionOptions {
-        self.execution_options
+        self.execution_options.clone()
     }
 
     /// Runs the batch kernel over the [`ProposedBatch`], returning an [`ExecutedBatch`] that can be
@@ -103,7 +103,7 @@ impl BatchExecutor {
         let processor = FastProcessor::new_with_options(
             stack_inputs,
             batch_advice_inputs,
-            self.execution_options,
+            self.execution_options.clone(),
         )
         .map_err(ExecutionError::advice_error_no_context)
         .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;

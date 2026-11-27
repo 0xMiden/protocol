@@ -14,10 +14,10 @@
 use std::collections::BTreeSet;
 
 use anyhow::{Context, Result};
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountComponent, AccountId, RoleSymbol, StorageMapKey};
 use miden_protocol::asset::AssetAmount;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
@@ -253,8 +253,8 @@ pub fn serial(seed: u32) -> Word {
 }
 
 /// A deterministic note rng for the factories that draw their own serial.
-pub fn note_rng(seed: u64) -> RandomCoin {
-    RandomCoin::new(Word::from([
+pub fn note_rng(seed: u64) -> EidosRandomCoin {
+    EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(23u32),
@@ -296,7 +296,7 @@ pub fn freeze_note(sender: AccountId, seed: u64) -> Result<Note> {
         .context("linking the authority component into the freeze note script")?
         .compile_note_script(src)
         .map_err(|e| anyhow::anyhow!("the freeze note script failed to compile: {e}"))?;
-    let mut rng = RandomCoin::new(Word::from([
+    let mut rng = EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(17u32),
@@ -444,7 +444,7 @@ pub fn stock_min_burn_note(
     new_min: u64,
     seed: u64,
 ) -> Result<Note> {
-    let mut rng = RandomCoin::new(config_note_serial(seed));
+    let mut rng = EidosRandomCoin::new(config_note_serial(seed));
     let new_min = AssetAmount::new(new_min)
         .map_err(|e| anyhow::anyhow!("min-burn amount out of range: {e}"))?;
     XReserveMinBurnAmountNote::builder()

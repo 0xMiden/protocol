@@ -27,8 +27,9 @@ use super::ProcedurePolicy;
 use super::config::DelayedExecutionPolicy;
 use super::spending_limits::SpendingLimitsPolicy;
 use crate::account::account_component_package;
+use crate::account::auth::approver::key_set_slots;
 use crate::account::auth::{Approver, ApproverSet};
-use crate::{StandardsDomainRegistry, procedure_root};
+use crate::{MULTISIG_SMART_CANCEL_PROPOSAL_DOMAIN, procedure_root};
 
 account_component_package!(MULTISIG_SMART_PACKAGE, "miden-standards-auth-multisig-smart.masp");
 
@@ -281,6 +282,22 @@ fn validate_proc_policies(
 /// The transaction's auth args are the commitment to
 /// [`MultisigAuthArgs`](crate::account::auth::MultisigAuthArgs).
 ///
+/// # Fees
+///
+/// The transaction fee is paid as described for
+/// [`AuthMultisig`](crate::account::auth::AuthMultisig): after the signatures are verified, within
+/// the max fee the summary binds. A proposal for the delayed path is keyed by the target
+/// transaction's summary commitment, which includes its max fee, so the proposer fixes the max fee
+/// when it obtains the commitment (see
+/// [`MultisigAuthArgs::with_estimated_max_fee`](crate::account::auth::MultisigAuthArgs::with_estimated_max_fee))
+/// and the execution passes it back.
+///
+/// A propose or cancel transaction pays a fee too, and that fee is checked against the max fee in
+/// its own summary. Its signatures are over the proposed commitment, not over its own summary, so
+/// whoever submits it picks that max fee freely and the check does not limit what the account
+/// pays. The fee of such a transaction is limited only by the kernel's fee formula, which caps it
+/// at the fee for the maximum cycle count.
+///
 /// # Security
 ///
 /// A [`ProcedurePolicy`] threshold below the default acts like a lowered per-procedure override of
@@ -326,6 +343,22 @@ fn validate_proc_policies(
 ///   commitment, never force a fully signed transaction through the timelock or make an
 ///   immediate-only procedure unexecutable.
 ///
+/// - A delay action approves nothing but itself. `propose_transaction` and
+///   `cancel_transaction_proposal` verify signatures over the proposed commitment (or its cancel
+///   message), never over the summary of the transaction that calls them, so the auth procedure
+///   requires such a transaction to call no other procedure and to consume no notes, so that notes
+///   can only be consumed in transactions that do not change delay proposals. Creating a note takes
+///   an account procedure, which the first requirement already rules out.
+///
+/// - The first proposal fixes a commitment's record: its reference block sets the unlock block, its
+///   signatures set the cancellation quorum, and a later proposal of the same commitment is
+///   rejected. Anyone holding an approver signature over the commitment, a signer or the
+///   coordinator who collected the signatures, can therefore propose it from a late reference block
+///   or with a single signature, pushing the unlock block out or leaving the quorum at the floor.
+///   Approvers who care about either submit the proposal themselves, with every signature they
+///   collected and a current reference block, and re-sign a badly proposed commitment with a new
+///   salt.
+///
 /// A policy protects a procedure only while the procedures that can weaken it are protected at
 /// least as strongly. `update_delayed_execution_policy` shortens the timelock,
 /// `set_procedure_policy` rewrites any policy, and `update_signers_and_threshold` replaces the
@@ -338,6 +371,14 @@ fn validate_proc_policies(
 /// strongest policy they can weaken, so that lowering a protection with fewer keys has to go
 /// through a proposal and wait out the current timelock, during which the other approvers can
 /// cancel it.
+///
+/// Policies are keyed by procedure root and outlive the code they were set for. A code upgrade
+/// neither validates nor clears the policies of the roots it removes, `set_procedure_policy`
+/// cannot clear a policy whose root the current code lacks, and `update_signers_and_threshold`
+/// checks only the policies of the current procedures when the signer set shrinks. A policy left
+/// behind by an upgrade can thus end up with a threshold above the approver count, and it applies
+/// again, unreachable, if a later upgrade restores its root. Lower such policies before shrinking
+/// the signer set, or re-check the policies of every restored root after an upgrade.
 ///
 /// The spending limit configured through [`SpendingLimitsPolicy`] is only as strong as the
 /// policies on the procedures that can weaken it. `update_spending_limits_policy` shortens the
@@ -481,12 +522,12 @@ impl AuthMultisigSmart {
     ///
     /// Mirrors `cancel_signing_message` in the MASM component: the proposal stays keyed by the raw
     /// commitment, but cancellation signatures are over its hash under
-    /// [`StandardsDomainRegistry::MultisigSmartCancelProposal`], so that proposal signatures (which
+    /// [`MULTISIG_SMART_CANCEL_PROPOSAL_DOMAIN`], so that proposal signatures (which
     /// are over the commitment itself and also authorize execution) cannot be replayed to cancel.
     pub fn cancel_signing_message(tx_summary_commitment: Word) -> Word {
-        Hasher::merge_in_domain(
+        Hasher::hash_double_word_in_domain(
             &[tx_summary_commitment, Word::empty()],
-            StandardsDomainRegistry::MultisigSmartCancelProposal.as_felt(),
+            MULTISIG_SMART_CANCEL_PROPOSAL_DOMAIN,
         )
     }
 
@@ -551,26 +592,11 @@ impl From<AuthMultisigSmart> for AccountComponent {
             Word::from([multisig.config.default_threshold(), num_approvers, 0, 0]),
         ));
 
-        // Approver public keys slot (map)
-        let map_entries = multisig.config.approvers().iter().enumerate().map(|(i, approver)| {
-            (StorageMapKey::from_index(i as u32), Word::from(approver.pub_key()))
-        });
-        storage_slots.push(StorageSlot::with_map(
-            AuthMultisigSmart::approver_public_keys_slot().clone(),
-            StorageMap::with_entries(map_entries).unwrap(),
-        ));
-
-        // Approver scheme IDs slot
-        let scheme_id_entries =
-            multisig.config.approvers().iter().enumerate().map(|(i, approver)| {
-                (
-                    StorageMapKey::from_index(i as u32),
-                    Word::from([approver.auth_scheme() as u32, 0, 0, 0]),
-                )
-            });
-        storage_slots.push(StorageSlot::with_map(
-            AuthMultisigSmart::approver_scheme_ids_slot().clone(),
-            StorageMap::with_entries(scheme_id_entries).unwrap(),
+        // Approver public key and scheme id slots (maps keyed by the approver index)
+        storage_slots.extend(key_set_slots(
+            AuthMultisigSmart::approver_public_keys_slot(),
+            AuthMultisigSmart::approver_scheme_ids_slot(),
+            multisig.config.approvers(),
         ));
 
         // Executed transactions slot (map)

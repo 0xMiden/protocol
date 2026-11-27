@@ -1,4 +1,5 @@
 use miden_processor::ExecutionOptions;
+use miden_verifier::HashFunction;
 
 /// Depth of the account database tree.
 pub const ACCOUNT_TREE_DEPTH: u8 = 64;
@@ -23,8 +24,18 @@ pub const MAX_INPUT_NOTES_PER_TX: usize = 1024;
 /// The maximum number of new notes created by a single transaction.
 pub const MAX_OUTPUT_NOTES_PER_TX: usize = MAX_INPUT_NOTES_PER_TX;
 
+/// The maximum number of IES `seal` requests a single transaction can make.
+///
+/// This bounds the host work of code that emits the request events directly, which costs only a few
+/// cycles per request. The limit is low enough that such code reaches it before the advice of the
+/// requests exceeds the default advice size budget of the VM.
+pub const MAX_IES_SEAL_REQUESTS_PER_TX: u32 = 512;
+
 /// The minimum proof security level used by the Miden prover & verifier.
 pub const MIN_PROOF_SECURITY_LEVEL: u32 = 96;
+
+/// The transcript hash required for transaction, batch, block, and deferred-precompile proofs.
+pub const PROTOCOL_PROOF_HASH: HashFunction = HashFunction::Eidos;
 
 /// The maximum number of VM cycles a transaction is allowed to take.
 pub const MAX_TX_EXECUTION_CYCLES: u32 = ExecutionOptions::MAX_CYCLES;

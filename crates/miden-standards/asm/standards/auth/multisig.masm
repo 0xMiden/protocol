@@ -1,5 +1,5 @@
 use {Approver} from miden::standards::auth::signature
-use {AccountProcedureRoot, BlockNumber} from miden::protocol::types
+use {AccountProcedureRoot, AssetAmount, BlockNumber} from miden::protocol::types
 # The MASM code of the Multi-Signature Authentication Component.
 #
 # See the `AuthMultisig` Rust type's documentation for more details.
@@ -9,8 +9,12 @@ use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
 use miden::protocol::tx
 use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol::tx
+use {FUNGIBLE_ASSET_MAX_AMOUNT} from miden::protocol::asset
 use miden::standards::auth
+use miden::standards::auth::key_set
 use miden::standards::auth::signature
+use miden::standards::assets::fungible_asset
+use miden::standards::fee
 use {ConversionInfo} from miden::standards::fee
 use miden::core::mem
 use miden::core::word
@@ -29,17 +33,15 @@ pub type ThresholdConfig = struct {
 }
 
 # Local Memory Addresses
-const IS_SIGNER_FOUND_LOC=0
-const CURRENT_SIGNER_INDEX_LOC=1
 
 # resolve_auth_args locals: the three words of the auth args preimage in hashing order.
-const AUTH_ARGS_BLOCK_LOC=0
+const AUTH_ARGS_BOUND_BLOCK_LOC=0
 const AUTH_ARGS_APPROVAL_EXPIRATION_LOC=1
+const AUTH_ARGS_MAX_FEE_LOC=2
 const AUTH_ARGS_SALT_LOC=4
 const AUTH_ARGS_CONVERSION_INFO_LOC=8
 
 const NEW_NUM_OF_APPROVERS_LOC=0
-const INIT_NUM_OF_APPROVERS_LOC=1
 
 const DEFAULT_THRESHOLD_LOC=0
 
@@ -100,6 +102,13 @@ pub const MAX_NUM_APPROVERS = 64
 # Number of words in the auth args preimage.
 const AUTH_ARGS_NUM_WORDS = 3
 
+# Estimated upper bound on the number of cycles a multisig authentication flow spends after
+# pay_fee returns: the max fee check, the replay-protection recording (a storage map write) and
+# the approval expiration update. The multisig components pass it as the num_extra_cycles of
+# fee::pay_bounded_fee and estimate_max_fee charges it. Overestimation is cheap: the fee grows
+# with ilog2 of the cycle count, so a <2x overshoot costs at most one verification_base_fee unit.
+pub const MULTISIG_POST_FEE_CYCLES = 4096
+
 # ERRORS
 # =================================================================================================
 
@@ -108,8 +117,6 @@ const ERR_TX_ALREADY_EXECUTED = "failed to approve multisig transaction as it wa
 const ERR_MALFORMED_MULTISIG_CONFIG = "number of approvers must be equal to or greater than threshold"
 
 const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not be zero"
-
-const ERR_APPROVER_COUNTS_NOT_U32 = "initial and new number of approvers must be u32"
 
 const ERR_NUM_APPROVERS_OR_SIGNER_INDEX_NOT_U32 = "number of approvers and signer index must be u32"
 
@@ -130,6 +137,8 @@ const ERR_TOO_MANY_APPROVERS = "number of approvers exceeds the maximum supporte
 const ERR_AUTH_ARGS_PREIMAGE_MISSING = "the advice map holds no preimage for the multisig auth args"
 
 const ERR_AUTH_ARGS_BLOCK_NUMBERS_NOT_U32 = "the block numbers in the multisig auth args must be u32 values"
+
+const ERR_AUTH_ARGS_MAX_FEE_NOT_ASSET_AMOUNT = "the max fee in the multisig auth args must be a valid fungible asset amount"
 
 const ERR_MULTISIG_APPROVAL_EXPIRED = "the multisig approval expired at or before the transaction reference block"
 
@@ -177,17 +186,15 @@ const ERR_PUBLIC_KEY_IS_APPROVER = "public key must not be an approver public ke
 #!
 #! Locals:
 #! 0: new_num_of_approvers
-#! 1: init_num_of_approvers
 #!
 #! Invocation: call
-@locals(2)
+@locals(1)
 @account_procedure
 pub proc update_signers_and_threshold(multisig_config_hash: word)
     # The signer configuration is read from the advice provider without an inline hash check. Every
-    # value written below via set_map_item is folded into ACCOUNT_DELTA_COMMITMENT, which is part of
-    # the TX_SUMMARY_COMMITMENT the current signers sign, so a substituted configuration produces a
-    # different delta commitment and thus a summary the current signers never signed. The same
-    # applies to the per-signer loads in the loop below.
+    # value written below via set_item and by key_set::replace_from_advice is folded into
+    # ACCOUNT_DELTA_COMMITMENT, which is part of the TX_SUMMARY_COMMITMENT the current signers sign,
+    # so a substituted configuration produces an unauthorized summary.
     adv.push_mapval
     # => [MULTISIG_CONFIG_HASH, pad(12)]
 
@@ -230,77 +237,24 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
     exec.native_account::set_item
     # => [OLD_THRESHOLD_CONFIG, pad(12)]
 
-    # store init_num_of_approvers for later
-    drop loc_store.INIT_NUM_OF_APPROVERS_LOC drop drop
-    # => [pad(12)]
+    # the replaced config carries the initial number of approvers
+    drop movdn.2 drop drop
+    # => [init_num_of_approvers, pad(12)]
 
-    loc_load.NEW_NUM_OF_APPROVERS_LOC
-    # => [num_approvers]
+    loc_load.NEW_NUM_OF_APPROVERS_LOC swap
+    # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
 
-    # num_approvers was already asserted non-zero above, so enter the loop unconditionally
-    push.1
-    while.true
-        sub.1
-        # => [i-1, pad(12)]
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2] push.APPROVER_SCHEME_ID_SLOT[0..2]
+    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, init_num_of_approvers, new_num_of_approvers, pad(12)]
 
-        dup exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, i-1, pad(12)]
-
-        padw adv_loadw
-        # => [PUB_KEY, APPROVER_MAP_KEY, i-1, pad(12)]
-
-        swapw
-        # => [APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
-
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, pad(12)]
-
-        # override OLD_VALUE with SCHEME_ID_WORD
-        adv_loadw
-        # => [SCHEME_ID_WORD, i-1, pad(12)]
-
-        # validate the scheme id word is in a correct form
-        exec.auth::signature::assert_supported_scheme_word
-        # => [SCHEME_ID_WORD, i-1, pad(12)]
-
-        dup.4 exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
-
-        push.APPROVER_SCHEME_ID_SLOT[0..2]
-        # => [scheme_id_slot_id_suffix, scheme_id_slot_id_prefix, APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, pad(12)]
-
-        dropw
-        # => [i-1, pad(12)]
-
-        dup neq.0
-        # => [is_non_zero, i-1, pad(12)]
-    end
-    # => [pad(13)]
-
-    drop
+    exec.key_set::replace_from_advice
     # => [pad(12)]
 
     # assert all approver public keys are unique.
     loc_load.NEW_NUM_OF_APPROVERS_LOC
     exec.assert_unique_approver_public_keys
     # => [pad(12)]
-
-    # compare initial vs current multisig config
-
-    # load init_num_of_approvers & new_num_of_approvers
-    loc_load.NEW_NUM_OF_APPROVERS_LOC loc_load.INIT_NUM_OF_APPROVERS_LOC
-    # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
-
-    exec.cleanup_pubkey_and_scheme_id_mapping
-    # => [pad(12)]
 end
-
 #! Returns the current threshold and num_approvers from `THRESHOLD_CONFIG_SLOT`.
 #!
 #! Inputs:  [pad(16)]
@@ -405,31 +359,10 @@ pub proc get_signer_at(index: u32) -> Approver
     u32lt assert.err=ERR_SIGNER_INDEX_OUT_OF_BOUNDS
     # => [index]
 
-    dup
-    # => [index, index]
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2] push.APPROVER_SCHEME_ID_SLOT[0..2]
+    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, index, pad(15)]
 
-    exec.signature::create_approver_map_key
-    # => [APPROVER_MAP_KEY, index]
-
-    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-    # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, index]
-
-    exec.native_account::get_initial_map_item
-    # => [PUB_KEY, index]
-
-    movup.4
-    # => [index, PUB_KEY]
-
-    exec.signature::create_approver_map_key
-    # => [APPROVER_MAP_KEY, PUB_KEY]
-
-    push.APPROVER_SCHEME_ID_SLOT[0..2]
-    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, APPROVER_MAP_KEY, PUB_KEY]
-
-    exec.native_account::get_initial_map_item
-    # => [[scheme_id, 0, 0, 0], PUB_KEY]
-
-    movdn.7 drop drop drop
+    exec.key_set::get_key_at
     # => [PUB_KEY, scheme_id, pad(15)]
 
     # truncate the stack
@@ -437,161 +370,8 @@ pub proc get_signer_at(index: u32) -> Approver
     # => [PUB_KEY, scheme_id, pad(11)]
 end
 
-#! Returns 1 if PUB_KEY is a signer, else 0.
-#!
-#! Reads the initial account state: the result reflects the approver set at the start of the
-#! transaction, not any updates made earlier in the same transaction.
-#!
-#! Inputs:  [PUB_KEY, pad(12)]
-#! Outputs: [is_signer, pad(15)]
-#! Locals:
-#! 0: is_signer_found
-#! 1: current_signer_index
-#!
-#! Invocation: call
-@locals(2)
-@account_procedure
-pub proc is_signer(pub_key: word) -> felt
-    # initialize is_signer_found = false
-    push.0 loc_store.IS_SIGNER_FOUND_LOC
-    # => [PUB_KEY]
-
-    exec.get_initial_threshold_and_num_approvers
-    # => [threshold, num_approvers, PUB_KEY]
-
-    drop
-    # => [num_approvers, PUB_KEY]
-
-    dup neq.0
-    # => [has_remaining_signers, num_approvers, PUB_KEY]
-
-    while.true
-        # => [i, PUB_KEY]
-
-        sub.1
-        # => [i-1, PUB_KEY]
-
-        # store i-1 for this loop iteration before map lookup
-        dup loc_store.CURRENT_SIGNER_INDEX_LOC
-        # => [i-1, PUB_KEY]
-
-        exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, PUB_KEY]
-
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, PUB_KEY]
-
-        exec.native_account::get_initial_map_item
-        # => [CURRENT_PUB_KEY, PUB_KEY]
-
-        dupw.1 exec.word::eq
-        # => [is_pub_key_match, PUB_KEY]
-
-        loc_store.IS_SIGNER_FOUND_LOC
-        # => [PUB_KEY]
-
-        loc_load.CURRENT_SIGNER_INDEX_LOC
-        # => [i-1, PUB_KEY]
-
-        dup neq.0
-        # => [has_remaining_signers, i-1, PUB_KEY]
-
-        loc_load.IS_SIGNER_FOUND_LOC not
-        # => [!is_signer_found, has_remaining_signers, i-1, PUB_KEY]
-
-        and
-        # => [should_loop, i-1, PUB_KEY]
-    end
-
-    drop dropw
-    # => [pad(16)]
-
-    loc_load.IS_SIGNER_FOUND_LOC
-    # => [is_signer, pad(16)]
-
-    # truncate the stack
-    swap drop
-    # => [is_signer, pad(15)]
-end
-
 # PUBLIC HELPERS
 # =================================================================================================
-
-#! Remove old approver public keys and the corresponding scheme ids from the approver public key and
-#! scheme id mappings.
-#!
-#! This procedure clears the approver entries in the range [new_num_of_approvers,
-#! init_num_of_approvers) from APPROVER_PUBLIC_KEYS_SLOT and APPROVER_SCHEME_ID_SLOT. It does not
-#! touch THRESHOLD_CONFIG_SLOT or PROC_THRESHOLD_ROOTS_SLOT.
-#!
-#! Caller contract: before calling this, the caller must have already updated THRESHOLD_CONFIG_SLOT
-#! so that the threshold is still reachable with the reduced signer set, i.e. threshold <=
-#! new_num_of_approvers. Otherwise the account is left with a threshold that no remaining quorum can
-#! reach, making it permanently unable to authenticate. In-tree this is guaranteed by
-#! `update_signers_and_threshold`, which calls `assert_threshold_is_reachable` before this procedure.
-#!
-#! Inputs: [init_num_of_approvers, new_num_of_approvers]
-#! Outputs: []
-#!
-#! Where:
-#! - init_num_of_approvers is the original number of approvers before the update
-#! - new_num_of_approvers is the new number of approvers after the update
-#!
-#! Panics if:
-#! - init_num_of_approvers or new_num_of_approvers is not a u32 value.
-#!
-#! Invocation: exec
-pub proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of_approvers: u32)
-    dup.1 dup.1
-    u32assert2.err=ERR_APPROVER_COUNTS_NOT_U32
-    u32lt
-    # => [should_loop, i = init_num_of_approvers, new_num_of_approvers]
-
-    while.true
-        # => [i, new_num_of_approvers]
-
-        sub.1
-        # => [i-1, new_num_of_approvers]
-
-        # clear scheme id at APPROVER_MAP_KEY(i-1)
-        dup exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, i-1, new_num_of_approvers]
-
-        padw swapw
-        # => [APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
-
-        push.APPROVER_SCHEME_ID_SLOT[0..2]
-        # => [scheme_id_slot_suffix, scheme_id_slot_prefix, APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, new_num_of_approvers]
-
-        dropw
-        # => [i-1, new_num_of_approvers]
-
-        # clear public key at APPROVER_MAP_KEY(i-1)
-        dup exec.signature::create_approver_map_key
-        # => [APPROVER_MAP_KEY, i-1, new_num_of_approvers]
-
-        padw swapw
-        # => [APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
-
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, new_num_of_approvers]
-
-        dropw
-        # => [i-1, new_num_of_approvers]
-
-        dup.1 dup.1
-        u32lt
-        # => [should_loop, i-1, new_num_of_approvers]
-    end
-
-    drop drop
-end
 
 #! Asserts the threshold is reachable with the given number of approvers, i.e. threshold is not
 #! greater than num_approvers.
@@ -711,41 +491,16 @@ end
 #!
 #! Invocation: exec
 pub proc assert_not_approver_public_key(pub_key: word)
-    exec.get_current_threshold_and_num_approvers
-    # => [default_threshold, num_approvers, PUB_KEY]
+    exec.get_current_threshold_and_num_approvers drop
+    # => [num_approvers, PUB_KEY]
 
-    drop
-    # => [i = num_approvers, PUB_KEY]
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_approvers, PUB_KEY]
 
-    dup neq.0
-    # => [should_loop, i, PUB_KEY]
+    exec.key_set::contains_key
+    # => [is_approver]
 
-    while.true
-        sub.1
-        # => [i, PUB_KEY]
-
-        # keep the loop index below PUB_KEY while the map key is built from its copy
-        dup movdn.5
-        # => [i, PUB_KEY, i]
-
-        exec.get_approver_pub_key
-        # => [APPROVER_PUBLIC_KEY, PUB_KEY, i]
-
-        dupw.1 exec.word::eq
-        # => [is_match, PUB_KEY, i]
-
-        assertz.err=ERR_PUBLIC_KEY_IS_APPROVER
-        # => [PUB_KEY, i]
-
-        movup.4
-        # => [i, PUB_KEY]
-
-        dup neq.0
-        # => [should_loop, i, PUB_KEY]
-    end
-    # => [0, PUB_KEY]
-
-    drop dropw
+    assertz.err=ERR_PUBLIC_KEY_IS_APPROVER
     # => []
 end
 
@@ -825,17 +580,21 @@ end
 #!
 #! Inputs:
 #!   Operand stack: [AUTH_ARGS]
-#!   Advice map: { AUTH_ARGS: [BLOCK_WORD, SALT, CONVERSION_INFO] }
+#!   Advice map: {
+#!     AUTH_ARGS: [[bound_block_num, approval_expiration_block_num, max_fee, 0], SALT, CONVERSION_INFO]
+#!   }
 #! Outputs:
-#!   Operand stack: [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT]
+#!   Operand stack: [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT]
 #!
 #! Where:
 #! - AUTH_ARGS is the sequential hash of the three preimage words.
-#! - BLOCK_WORD is [bound_block_num, approval_expiration_block_num, 0, 0].
 #! - bound_block_num is the number of the block the transaction summary binds.
 #! - approval_expiration_block_num is the first reference block at which the approvers'
 #!   signatures are no longer valid, or 0 if the approval does not expire. See
 #!   `assert_approval_not_expired`.
+#! - max_fee is the maximum fee the transaction may pay, in the native fee asset. It is bound
+#!   into the transaction summary (see `auth_tx`), so the approvers sign a fee cap rather than
+#!   the exact fee. Zero asks the fee-paying components to estimate it, see `estimate_max_fee`.
 #! - SALT is a unique nonce bound into the transaction summary for replay protection.
 #! - CONVERSION_INFO tells miden::standards::fee::pay_fee which asset to pay the transaction fee
 #!   in; pay_fee accepts only the reference block's fee asset at rate 1/1. It is the empty word
@@ -845,19 +604,20 @@ end
 #! - the advice map holds no preimage for the auth args.
 #! - the preimage does not hash to the auth args.
 #! - bound_block_num or approval_expiration_block_num is not a u32.
+#! - max_fee is not a valid fungible asset amount.
 #!
 #! Invocation: exec
 @locals(12)
 pub proc resolve_auth_args(auth_args: word)
-    -> (ConversionInfo, BlockNumber, BlockNumber, word)
+    -> (ConversionInfo, BlockNumber, BlockNumber, AssetAmount, word)
     adv.has_mapkey adv_push assert.err=ERR_AUTH_ARGS_PREIMAGE_MISSING
     # => [AUTH_ARGS]
 
     adv.push_mapval
     # OS => [AUTH_ARGS]
-    # AS => [BLOCK_WORD, SALT, CONVERSION_INFO]
+    # AS => [[bound_block_num, approval_expiration_block_num, max_fee, 0], SALT, CONVERSION_INFO]
 
-    locaddr.AUTH_ARGS_BLOCK_LOC push.AUTH_ARGS_NUM_WORDS
+    locaddr.AUTH_ARGS_BOUND_BLOCK_LOC push.AUTH_ARGS_NUM_WORDS
     # => [num_words, write_ptr, AUTH_ARGS]
 
     exec.mem::pipe_preimage_to_memory drop
@@ -866,14 +626,20 @@ pub proc resolve_auth_args(auth_args: word)
     padw loc_loadw_le.AUTH_ARGS_SALT_LOC
     # => [SALT]
 
-    loc_load.AUTH_ARGS_APPROVAL_EXPIRATION_LOC loc_load.AUTH_ARGS_BLOCK_LOC
-    # => [bound_block_num, approval_expiration_block_num, SALT]
+    loc_load.AUTH_ARGS_MAX_FEE_LOC
+    # => [max_fee, SALT]
+
+    dup lte.FUNGIBLE_ASSET_MAX_AMOUNT assert.err=ERR_AUTH_ARGS_MAX_FEE_NOT_ASSET_AMOUNT
+    # => [max_fee, SALT]
+
+    loc_load.AUTH_ARGS_APPROVAL_EXPIRATION_LOC loc_load.AUTH_ARGS_BOUND_BLOCK_LOC
+    # => [bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
     u32assert2.err=ERR_AUTH_ARGS_BLOCK_NUMBERS_NOT_U32
-    # => [bound_block_num, approval_expiration_block_num, SALT]
+    # => [bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
     padw loc_loadw_le.AUTH_ARGS_CONVERSION_INFO_LOC
-    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, SALT]
+    # => [CONVERSION_INFO, bound_block_num, approval_expiration_block_num, max_fee, SALT]
 end
 
 #! Asserts that the multisig approval has not expired and returns the expiration delta to apply.
@@ -964,12 +730,55 @@ pub proc apply_approval_expiration(approval_expiration_delta: u16)
     end
 end
 
+#! Estimates the max fee to bind into the transaction summary when the auth args carry none.
+#!
+#! Estimates the fee a pay_fee flow run after the authentication would pay, without creating any
+#! note (see `miden::standards::fee::estimate_fee`), charging the cycles the authentication flow
+#! spends on up to num_of_signers signatures and the cycles spent after the fee is paid. An
+#! unsigned execution sets the result as the max fee of the summary; the signed execution passes
+#! it back through the auth args, so the summary stays unchanged. Any margin on top of the
+#! estimate is applied off-chain before the signed execution.
+#!
+#! Callers run this on every execution, not only when they need the estimate: pricing the network
+#! output notes reads their targets through FPI, which caps the transaction's expiration, and the
+#! summary binds that expiration. Skipping the estimate on the signed execution would change the
+#! summary.
+#!
+#! Inputs:  [num_extra_cycles, num_of_signers]
+#! Outputs: [max_fee]
+#!
+#! Where:
+#! - num_extra_cycles is the estimated number of cycles the caller's authentication flow spends
+#!   beyond the multisig flow `signature::estimate_multisig_authentication_cycles` covers, e.g. for
+#!   evaluating procedure policies; zero for the plain multisig flow.
+#! - num_of_signers is the maximum number of signature verifications the authentication flow can
+#!   perform.
+#! - max_fee is the estimated fee and sponsored fees, in the native fee asset.
+#!
+#! Panics if:
+#! - the fee estimate fails (propagates the panics of `miden::standards::fee::estimate_fee`).
+#!
+#! Invocation: exec
+pub proc estimate_max_fee(num_extra_cycles: u32, num_of_signers: u8) -> AssetAmount
+    swap exec.signature::estimate_multisig_authentication_cycles add.MULTISIG_POST_FEE_CYCLES
+    # => [num_multisig_cycles, num_extra_cycles]
+
+    add
+    # => [num_extra_cycles]
+
+    exec.fee::estimate_fee
+    # => [fee_amount, total_sponsored_fee_amount]
+
+    exec.fungible_asset::saturating_add_amount
+    # => [max_fee]
+end
+
 #! Authenticate a transaction using the signature scheme specified by scheme_id
 #! with multi-signature support
 #!
 #! Supported schemes:
 #! - 1 => ecdsa_k256_keccak
-#! - 2 => falcon512_poseidon2
+#! - 2 => falcon512_eidos
 #!
 #! This procedure implements multi-signature authentication by:
 #! 1. Computing the transaction summary message that needs to be signed
@@ -980,7 +789,7 @@ end
 #!
 #! ```text
 #! [
-#!     [version, expiration_delta << 32 || bound_block_num, approval_expiration_block_num, 0],
+#!     [version, expiration_delta << 32 || bound_block_num, approval_expiration_block_num, max_fee],
 #!     SALT,
 #!     ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
 #!     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT
@@ -993,7 +802,7 @@ end
 #! `assert_approval_not_expired`.
 #!
 #! Inputs:
-#!   Operand stack: [bound_block_num, approval_expiration_block_num, SALT]
+#!   Operand stack: [bound_block_num, approval_expiration_block_num, max_fee, SALT]
 #!   Advice map: {
 #!     h(SIG_0, MSG): SIG_0,
 #!     h(SIG_1, MSG): SIG_1,
@@ -1006,6 +815,9 @@ end
 #! - bound_block_num is the number of the block the transaction summary binds.
 #! - approval_expiration_block_num is the first reference block at which the approvers'
 #!   signatures are no longer valid, or 0 if the approval does not expire.
+#! - max_fee is the maximum fee the transaction may pay, bound as the summary's second user
+#!   parameter so the approvers sign a fee cap rather than the exact fee. The fee-paying
+#!   components enforce it after the signatures are verified.
 #! - SALT is a unique nonce bound into the transaction summary for replay protection.
 #! - SIG_i is the signature from the i-th signer.
 #! - MSG is the transaction message being signed.
@@ -1018,15 +830,13 @@ end
 pub proc auth_tx(
     bound_block_num: BlockNumber,
     approval_expiration_block_num: BlockNumber,
+    max_fee: AssetAmount,
     salt: word
 )
     exec.native_account::incr_nonce drop
-    # => [bound_block_num, approval_expiration_block_num, SALT]
+    # => [bound_block_num, approval_expiration_block_num, max_fee, SALT]
 
     # ------ Computing transaction summary ------
-
-    push.0 movdn.2
-    # => [bound_block_num, approval_expiration_block_num, 0, SALT]
 
     exec.auth::get_tx_summary_commitment
     # => [TX_SUMMARY_COMMITMENT]
@@ -1083,13 +893,10 @@ end
 #!
 #! Invocation: exec
 proc get_approver_pub_key(index: u32) -> word
-    exec.signature::create_approver_map_key
-    # => [APPROVER_MAP_KEY]
-
     push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-    # => [pub_keys_slot_suffix, pub_keys_slot_prefix, APPROVER_MAP_KEY]
+    # => [pub_keys_slot_suffix, pub_keys_slot_prefix, index]
 
-    exec.active_account::get_map_item
+    exec.key_set::get_pub_key_at
     # => [APPROVER_PUBLIC_KEY]
 end
 

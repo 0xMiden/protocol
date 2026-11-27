@@ -4,13 +4,13 @@
 #
 # A state guardian can help coordinate state availability for private accounts.
 
+use {PublicKeyCommitment, SignatureScheme} from miden::standards::auth::signature
 use {Bool} from miden::protocol::types
-use miden::protocol::active_account
 use {AUTH_UNAUTHORIZED_EVENT} from miden::protocol::auth
 use miden::protocol::native_account
+use miden::standards::auth::key_set
 use miden::standards::auth::tx_policy
 use miden::standards::auth::signature
-use {ZERO_WORD} from miden::standards::utils
 
 # IMPORTANT SECURITY NOTES
 # --------------------------------------------------------------------------------
@@ -18,8 +18,8 @@ use {ZERO_WORD} from miden::standards::utils
 # - If `update_guardian_public_key` is the only non-auth account procedure called in the current
 #   transaction, `verify_signature` skips the guardian signature check so key rotation can proceed
 #   without the old guardian signer. `assert_rotation_policy` enforces that condition.
-# - `update_guardian_public_key` rotates the guardian public key and corresponding
-#   scheme id using the fixed map key `GUARDIAN_MAP_KEY`.
+# - `update_guardian_public_key` rotates the guardian public key and corresponding scheme id,
+#   which are kept as a single-entry key set (see `miden::standards::auth::key_set`).
 
 
 # CONSTANTS
@@ -27,26 +27,25 @@ use {ZERO_WORD} from miden::standards::utils
 
 # Storage Slots
 #
-# This authentication component uses named storage slots.
+# This authentication component uses named storage slots. The guardian key is a single-entry key
+# set, so both maps hold their entry at index GUARDIAN_KEY_INDEX.
 # - GUARDIAN_PUBLIC_KEYS_SLOT (map):
-#   GUARDIAN_MAP_KEY => GUARDIAN_PUBLIC_KEY
-#   where: GUARDIAN_MAP_KEY = [0, 0, 0, 0]
+#   [0, 0, 0, 0] => GUARDIAN_PUBLIC_KEY
 #
 # - GUARDIAN_SCHEME_ID_SLOT (map):
-#   GUARDIAN_MAP_KEY => [scheme_id, 0, 0, 0]
-#   where: GUARDIAN_MAP_KEY = [0, 0, 0, 0]
+#   [0, 0, 0, 0] => [scheme_id, 0, 0, 0]
 
 # The slot in this component's storage layout where the guardian public key map is stored.
-# Map entries: [GUARDIAN_MAP_KEY] => [GUARDIAN_PUBLIC_KEY]
+# Map entries: [0, 0, 0, 0] => [GUARDIAN_PUBLIC_KEY]
 const GUARDIAN_PUBLIC_KEYS_SLOT = word("miden::standards::auth::guardian::pub_key")
 
 # The slot in this component's storage layout where the scheme id for the corresponding guardian
 # public key map is stored.
-# Map entries: [GUARDIAN_MAP_KEY] => [scheme_id, 0, 0, 0]
+# Map entries: [0, 0, 0, 0] => [scheme_id, 0, 0, 0]
 const GUARDIAN_SCHEME_ID_SLOT = word("miden::standards::auth::guardian::scheme")
 
-# Single-entry storage map key where guardian signer data is stored.
-const GUARDIAN_MAP_KEY = ZERO_WORD
+# The index of the guardian key in its single-entry key set.
+const GUARDIAN_KEY_INDEX = 0
 
 # ERRORS
 # =================================================================================================
@@ -66,48 +65,24 @@ const ERR_INVALID_GUARDIAN_SIGNATURE = "invalid guardian signature"
 #! - `verify_signature` skips guardian verification only when this is the only non-auth account
 #!   procedure called in the transaction, see `assert_rotation_policy`.
 #!
+#! Panics if:
+#! - new_guardian_scheme_id is not a supported scheme.
+#!
 #! Invocation: call
-@locals(1)
 @account_procedure
-pub proc update_guardian_public_key(new_guardian_scheme_id: felt, new_guardian_public_key: word)
-    # Validate supported signature scheme before committing it to storage.
-    dup exec.signature::assert_supported_scheme
-    # => [new_guardian_scheme_id, NEW_GUARDIAN_PUBLIC_KEY]
+pub proc update_guardian_public_key(
+    new_guardian_scheme_id: SignatureScheme,
+    new_guardian_public_key: PublicKeyCommitment
+)
+    push.GUARDIAN_KEY_INDEX
+    # => [guardian_key_index, new_guardian_scheme_id, NEW_GUARDIAN_PUBLIC_KEY]
 
-    loc_store.0
-    # => [NEW_GUARDIAN_PUBLIC_KEY]
+    push.GUARDIAN_PUBLIC_KEYS_SLOT[0..2] push.GUARDIAN_SCHEME_ID_SLOT[0..2]
+    # => [guardian_scheme_slot_suffix, guardian_scheme_slot_prefix, guardian_pubkeys_slot_suffix,
+    #     guardian_pubkeys_slot_prefix, guardian_key_index, new_guardian_scheme_id,
+    #     NEW_GUARDIAN_PUBLIC_KEY]
 
-    push.GUARDIAN_MAP_KEY
-    # => [GUARDIAN_MAP_KEY, NEW_GUARDIAN_PUBLIC_KEY]
-
-    push.GUARDIAN_PUBLIC_KEYS_SLOT[0..2]
-    # => [guardian_pubkeys_slot_suffix, guardian_pubkeys_slot_prefix,
-    #     GUARDIAN_MAP_KEY, NEW_GUARDIAN_PUBLIC_KEY]
-
-    exec.native_account::set_map_item
-    # => [OLD_GUARDIAN_PUBLIC_KEY]
-
-    dropw
-    # => []
-
-    # Store new scheme id as [scheme_id, 0, 0, 0] in the single-entry map.
-    loc_load.0
-    # => [scheme_id]
-
-    push.0.0.0 movup.3
-    # => [NEW_GUARDIAN_SCHEME_ID_WORD]
-
-    push.GUARDIAN_MAP_KEY
-    # => [GUARDIAN_MAP_KEY, NEW_GUARDIAN_SCHEME_ID_WORD]
-
-    push.GUARDIAN_SCHEME_ID_SLOT[0..2]
-    # => [guardian_scheme_slot_suffix, guardian_scheme_slot_prefix,
-    #     GUARDIAN_MAP_KEY, NEW_GUARDIAN_SCHEME_ID_WORD]
-
-    exec.native_account::set_map_item
-    # => [OLD_GUARDIAN_SCHEME_ID_WORD]
-
-    dropw
+    exec.key_set::set_key_at
     # => []
 end
 
@@ -123,14 +98,14 @@ end
 #! Outputs: [GUARDIAN_PUBLIC_KEY]
 #!
 #! Invocation: exec
-pub proc get_guardian_public_key() -> word
-    push.GUARDIAN_MAP_KEY
-    # => [GUARDIAN_MAP_KEY]
+pub proc get_guardian_public_key() -> PublicKeyCommitment
+    push.GUARDIAN_KEY_INDEX
+    # => [guardian_key_index]
 
     push.GUARDIAN_PUBLIC_KEYS_SLOT[0..2]
-    # => [guardian_pubkeys_slot_suffix, guardian_pubkeys_slot_prefix, GUARDIAN_MAP_KEY]
+    # => [guardian_pubkeys_slot_suffix, guardian_pubkeys_slot_prefix, guardian_key_index]
 
-    exec.active_account::get_map_item
+    exec.key_set::get_pub_key_at
     # => [GUARDIAN_PUBLIC_KEY]
 end
 

@@ -34,6 +34,7 @@ use crate::note::config::{
     AuthorityConfigNote,
     BlocklistConfigNote,
     ConstantFeePolicyConfigNote,
+    EncryptedAssetsIssuerKeyConfigNote,
     FaucetMetadataConfigNote,
     FaucetPolicyConfigNote,
     MinBurnAmountConfigNote,
@@ -41,6 +42,7 @@ use crate::note::config::{
     OwnerConfigNote,
     PauseConfigNote,
     RbacConfigNote,
+    SupplyRestrictionConfigNote,
 };
 use crate::note::{
     BurnNote,
@@ -134,11 +136,17 @@ impl StandardNote {
                 Some(NoteCost::of::<FaucetMetadataConfigNote>())
             },
             StandardNote::MIN_BURN_AMOUNT_CONFIG => Some(NoteCost::of::<MinBurnAmountConfigNote>()),
+            StandardNote::ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG => {
+                Some(NoteCost::of::<EncryptedAssetsIssuerKeyConfigNote>())
+            },
             StandardNote::ALLOWLIST_CONFIG => Some(NoteCost::of::<AllowlistConfigNote>()),
             StandardNote::BLOCKLIST_CONFIG => Some(NoteCost::of::<BlocklistConfigNote>()),
             StandardNote::PAUSE_CONFIG => Some(NoteCost::of::<PauseConfigNote>()),
             StandardNote::OWNER_CONFIG => Some(NoteCost::of::<OwnerConfigNote>()),
             StandardNote::RBAC_CONFIG => Some(NoteCost::of::<RbacConfigNote>()),
+            StandardNote::SUPPLY_RESTRICTION_CONFIG => {
+                Some(NoteCost::of::<SupplyRestrictionConfigNote>())
+            },
             StandardNote::AUTHORITY_CONFIG => Some(NoteCost::of::<AuthorityConfigNote>()),
             StandardNote::NETWORK_ACCOUNT_CONFIG => {
                 Some(NoteCost::of::<NetworkAccountConfigNote>())
@@ -183,11 +191,19 @@ mod tests {
                 MinBurnAmountConfigNote::script_root(),
                 MIN_BURN_AMOUNT_CONFIG_CONSUMPTION_CYCLES,
             ),
+            (
+                EncryptedAssetsIssuerKeyConfigNote::script_root(),
+                ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG_CONSUMPTION_CYCLES,
+            ),
             (AllowlistConfigNote::script_root(), ALLOWLIST_CONFIG_CONSUMPTION_CYCLES),
             (BlocklistConfigNote::script_root(), BLOCKLIST_CONFIG_CONSUMPTION_CYCLES),
             (PauseConfigNote::script_root(), PAUSE_CONFIG_CONSUMPTION_CYCLES),
             (OwnerConfigNote::script_root(), OWNER_CONFIG_CONSUMPTION_CYCLES),
             (RbacConfigNote::script_root(), RBAC_CONFIG_CONSUMPTION_CYCLES),
+            (
+                SupplyRestrictionConfigNote::script_root(),
+                SUPPLY_RESTRICTION_CONFIG_CONSUMPTION_CYCLES,
+            ),
             (AuthorityConfigNote::script_root(), AUTHORITY_CONFIG_CONSUMPTION_CYCLES),
             (
                 NetworkAccountConfigNote::script_root(),

@@ -2,6 +2,7 @@ use {
     Asset,
     AssetValue,
     Bool,
+    InputNoteIndex,
     NoteAssetsCommitment,
     NoteAttachmentsCommitment,
     NoteId,
@@ -33,12 +34,12 @@ use miden::protocol::note_internal
 #! `active_note::get_initial_assets`. See `input_note::get_initial_assets` for details on the
 #! memory requirements and layout at `dest_ptr`.
 #!
-#! Inputs:  [is_active_note, note_index, dest_ptr]
+#! Inputs:  [is_active_note, note_idx, dest_ptr]
 #! Outputs: [num_assets]
 #!
 #! Where:
 #! - is_active_note is 0 for indexed access, 1 for the currently active note.
-#! - note_index is the index of the input note.
+#! - note_idx is the index of the input note.
 #! - dest_ptr is the memory address to write the assets.
 #! - num_assets is the number of assets the note was created with.
 #!
@@ -46,7 +47,7 @@ use miden::protocol::note_internal
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_initial_assets_raw(is_active_note: Bool, note_index: u16, dest_ptr: ptr<Asset>) -> u8
+pub proc get_initial_assets_raw(is_active_note: Bool, note_idx: InputNoteIndex, dest_ptr: ptr<Asset>) -> u8
     exec.get_initial_assets_info_raw
     # => [ASSETS_COMMITMENT, num_assets, dest_ptr]
 
@@ -65,12 +66,12 @@ end
 #! This is the shared implementation used by both `input_note::get_initial_assets_info` and
 #! `active_note::get_initial_assets_info`.
 #!
-#! Inputs:  [is_active_note, note_index]
+#! Inputs:  [is_active_note, note_idx]
 #! Outputs: [ASSETS_COMMITMENT, num_assets]
 #!
 #! Where:
 #! - is_active_note is 0 for indexed access, 1 for the currently active note.
-#! - note_index is the index of the input note.
+#! - note_idx is the index of the input note.
 #! - num_assets is the number of assets the note was created with.
 #! - ASSETS_COMMITMENT is a sequential hash of the assets the note was created with.
 #!
@@ -80,17 +81,17 @@ end
 #! Invocation: exec
 pub proc get_initial_assets_info_raw(
     is_active_note: Bool,
-    note_index: u16
+    note_idx: InputNoteIndex
 ) -> (NoteAssetsCommitment, u8)
     push.0 movdn.2
-    # => [is_active_note, note_index, 0]
+    # => [is_active_note, note_idx, 0]
 
     push.INPUT_NOTE_GET_INITIAL_ASSETS_INFO_OFFSET
-    # => [offset, is_active_note, note_index, 0]
+    # => [offset, is_active_note, note_idx, 0]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, is_active_note, note_index, pad(13)]
+    # => [offset, is_active_note, note_idx, pad(13)]
 
     syscall.exec_kernel_proc
     # => [ASSETS_COMMITMENT, num_assets, pad(11)]
@@ -109,13 +110,13 @@ end
 #! This is the shared implementation used by both `input_note::get_asset` and
 #! `active_note::get_asset`.
 #!
-#! Inputs:  [is_active_note, asset_index, note_index]
+#! Inputs:  [is_active_note, asset_index, note_idx]
 #! Outputs: [ASSET_ID, ASSET_VALUE]
 #!
 #! Where:
 #! - is_active_note is 0 for indexed access, 1 for the currently active note.
 #! - asset_index is the index of the asset to return.
-#! - note_index is the index of the input note.
+#! - note_idx is the index of the input note.
 #! - ASSET_ID is the asset ID of the asset at the specified index.
 #! - ASSET_VALUE is the value of the asset at the specified index.
 #!
@@ -124,13 +125,13 @@ end
 #! - the asset index is greater or equal to the number of assets in the note.
 #!
 #! Invocation: exec
-pub proc get_asset_raw(is_active_note: Bool, asset_index: u16, note_index: u16) -> Asset
+pub proc get_asset_raw(is_active_note: Bool, asset_index: u16, note_idx: InputNoteIndex) -> Asset
     push.INPUT_NOTE_GET_ASSET_OFFSET
-    # => [offset, is_active_note, asset_index, note_index]
+    # => [offset, is_active_note, asset_index, note_idx]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, is_active_note, asset_index, note_index, pad(12)]
+    # => [offset, is_active_note, asset_index, note_idx, pad(12)]
 
     syscall.exec_kernel_proc
     # => [ASSET_ID, ASSET_VALUE, pad(8)]
@@ -146,18 +147,19 @@ end
 #! This is the shared implementation used by both `input_note::remove_asset` and
 #! `active_note::remove_asset`.
 #!
-#! Inputs:  [is_active_note, ASSET_ID, ASSET_VALUE, note_index]
+#! Inputs:  [is_active_note, ASSET_ID, ASSET_VALUE, note_idx]
 #! Outputs: [FINAL_ASSET_VALUE]
 #!
 #! Where:
 #! - is_active_note is 0 for indexed access, 1 for the currently active note.
 #! - ASSET_ID is the asset ID of the asset to remove from the note.
 #! - ASSET_VALUE is the value of the asset to remove from the note.
-#! - note_index is the index of the input note.
+#! - note_idx is the index of the input note.
 #! - FINAL_ASSET_VALUE is the value of the asset remaining in the note after removal, which is
 #!   the EMPTY_WORD if the entire asset was removed.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - is_active_note is false and the active account is not the native account.
 #! - is_active_note is false and the invocation does not originate from the account context.
 #! - the note index is greater or equal to the total number of input notes.
@@ -171,16 +173,16 @@ end
 pub proc remove_asset_raw(
     is_active_note: Bool,
     asset: Asset,
-    note_index: u16
+    note_idx: InputNoteIndex
 ) -> AssetValue
     push.INPUT_NOTE_REMOVE_ASSET_OFFSET
-    # => [offset, is_active_note, ASSET_ID, ASSET_VALUE, note_index]
+    # => [offset, is_active_note, ASSET_ID, ASSET_VALUE, note_idx]
 
     # pad the stack
     repeat.5
         push.0 movdn.11
     end
-    # => [offset, is_active_note, ASSET_ID, ASSET_VALUE, note_index, pad(5)]
+    # => [offset, is_active_note, ASSET_ID, ASSET_VALUE, note_idx, pad(5)]
 
     syscall.exec_kernel_proc
     # => [FINAL_ASSET_VALUE, pad(12)]
@@ -197,31 +199,32 @@ end
 #! `active_note::remove_all_assets`. See `input_note::remove_all_assets` for details on the
 #! memory requirements and layout at `dest_ptr`.
 #!
-#! Inputs:  [is_active_note, note_index, dest_ptr]
+#! Inputs:  [is_active_note, note_idx, dest_ptr]
 #! Outputs: [num_assets]
 #!
 #! Where:
 #! - is_active_note is 0 for indexed access, 1 for the currently active note.
-#! - note_index is the index of the input note.
+#! - note_idx is the index of the input note.
 #! - dest_ptr is the memory address to write the assets.
 #! - num_assets is the number of assets removed by this procedure.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - is_active_note is false and the active account is not the native account.
 #! - is_active_note is false and the invocation does not originate from the account context.
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc remove_all_assets_raw(is_active_note: Bool, note_index: u16, dest_ptr: ptr<Asset>) -> u8
+pub proc remove_all_assets_raw(is_active_note: Bool, note_idx: InputNoteIndex, dest_ptr: ptr<Asset>) -> u8
     push.0 movdn.2
-    # => [is_active_note, note_index, 0, dest_ptr]
+    # => [is_active_note, note_idx, 0, dest_ptr]
 
     push.INPUT_NOTE_REMOVE_ALL_ASSETS_OFFSET
-    # => [offset, is_active_note, note_index, 0, dest_ptr]
+    # => [offset, is_active_note, note_idx, 0, dest_ptr]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, is_active_note, note_index, pad(13), dest_ptr]
+    # => [offset, is_active_note, note_idx, pad(13), dest_ptr]
 
     syscall.exec_kernel_proc
     # => [ASSETS_COMMITMENT, num_assets, pad(11), dest_ptr]
@@ -251,28 +254,28 @@ end
 #! This is the shared implementation used by both `input_note::get_recipient` and
 #! `active_note::get_recipient`.
 #!
-#! Inputs:  [is_active_note, note_index]
+#! Inputs:  [is_active_note, note_idx]
 #! Outputs: [RECIPIENT]
 #!
 #! Where:
 #! - is_active_note is 0 for indexed access, 1 for the currently active note.
-#! - note_index is the index of the input note.
+#! - note_idx is the index of the input note.
 #! - RECIPIENT is the commitment to the input note's script, storage, the serial number.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_recipient_raw(is_active_note: Bool, note_index: u16) -> NoteRecipient
+pub proc get_recipient_raw(is_active_note: Bool, note_idx: InputNoteIndex) -> NoteRecipient
     push.0 movdn.2
-    # => [is_active_note, note_index, 0]
+    # => [is_active_note, note_idx, 0]
 
     push.INPUT_NOTE_GET_RECIPIENT_OFFSET
-    # => [offset, is_active_note, note_index, 0]
+    # => [offset, is_active_note, note_idx, 0]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, is_active_note, note_index, pad(13)]
+    # => [offset, is_active_note, note_idx, pad(13)]
 
     syscall.exec_kernel_proc
     # => [RECIPIENT, pad(12)]
@@ -288,28 +291,28 @@ end
 #! This is the shared implementation used by both `input_note::get_metadata` and
 #! `active_note::get_metadata`.
 #!
-#! Inputs:  [is_active_note, note_index]
+#! Inputs:  [is_active_note, note_idx]
 #! Outputs: [METADATA]
 #!
 #! Where:
 #! - is_active_note is 0 for indexed access, 1 for the currently active note.
-#! - note_index is the index of the input note.
+#! - note_idx is the index of the input note.
 #! - METADATA is the metadata of the specified input note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_metadata_raw(is_active_note: Bool, note_index: u16) -> NoteMetadata
+pub proc get_metadata_raw(is_active_note: Bool, note_idx: InputNoteIndex) -> NoteMetadata
     push.0 movdn.2
-    # => [is_active_note, note_index, 0]
+    # => [is_active_note, note_idx, 0]
 
     push.INPUT_NOTE_GET_METADATA_OFFSET
-    # => [offset, is_active_note, note_index, 0]
+    # => [offset, is_active_note, note_idx, 0]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, is_active_note, note_index, pad(13)]
+    # => [offset, is_active_note, note_idx, pad(13)]
 
     syscall.exec_kernel_proc
     # => [METADATA, pad(12)]
@@ -325,12 +328,12 @@ end
 #! This is the shared implementation used by both `input_note::get_storage_info` and
 #! `active_note::get_storage`.
 #!
-#! Inputs:  [is_active_note, note_index]
+#! Inputs:  [is_active_note, note_idx]
 #! Outputs: [NOTE_STORAGE_COMMITMENT, num_storage_items]
 #!
 #! Where:
 #! - is_active_note is 0 for indexed access, 1 for the currently active note.
-#! - note_index is the index of the input note.
+#! - note_idx is the index of the input note.
 #! - NOTE_STORAGE_COMMITMENT is the inputs commitment of the specified input note.
 #! - num_storage_items is the number of input values of the specified input note.
 #!
@@ -338,16 +341,16 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_storage_info_raw(is_active_note: Bool, note_index: u16) -> (NoteStorageCommitment, u16)
+pub proc get_storage_info_raw(is_active_note: Bool, note_idx: InputNoteIndex) -> (NoteStorageCommitment, u16)
     push.0 movdn.2
-    # => [is_active_note, note_index, 0]
+    # => [is_active_note, note_idx, 0]
 
     push.INPUT_NOTE_GET_STORAGE_INFO_OFFSET
-    # => [offset, is_active_note, note_index, 0]
+    # => [offset, is_active_note, note_idx, 0]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, is_active_note, note_index, pad(13)]
+    # => [offset, is_active_note, note_idx, pad(13)]
 
     syscall.exec_kernel_proc
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, pad(11)]
@@ -366,28 +369,28 @@ end
 #! This is the shared implementation used by both `input_note::get_script_root` and
 #! `active_note::get_script_root`.
 #!
-#! Inputs:  [is_active_note, note_index]
+#! Inputs:  [is_active_note, note_idx]
 #! Outputs: [SCRIPT_ROOT]
 #!
 #! Where:
 #! - is_active_note is 0 for indexed access, 1 for the currently active note.
-#! - note_index is the index of the input note.
+#! - note_idx is the index of the input note.
 #! - SCRIPT_ROOT is the script root of the specified input note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_script_root_raw(is_active_note: Bool, note_index: u16) -> NoteScriptRoot
+pub proc get_script_root_raw(is_active_note: Bool, note_idx: InputNoteIndex) -> NoteScriptRoot
     push.0 movdn.2
-    # => [is_active_note, note_index, 0]
+    # => [is_active_note, note_idx, 0]
 
     push.INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET
-    # => [offset, is_active_note, note_index, 0]
+    # => [offset, is_active_note, note_idx, 0]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, is_active_note, note_index, pad(13)]
+    # => [offset, is_active_note, note_idx, pad(13)]
 
     syscall.exec_kernel_proc
     # => [SCRIPT_ROOT, pad(12)]
@@ -403,28 +406,28 @@ end
 #! This is the shared implementation used by both `input_note::get_serial_number` and
 #! `active_note::get_serial_number`.
 #!
-#! Inputs:  [is_active_note, note_index]
+#! Inputs:  [is_active_note, note_idx]
 #! Outputs: [SERIAL_NUMBER]
 #!
 #! Where:
 #! - is_active_note is 0 for indexed access, 1 for the currently active note.
-#! - note_index is the index of the input note.
+#! - note_idx is the index of the input note.
 #! - SERIAL_NUMBER is the serial number of the specified input note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_serial_number_raw(is_active_note: Bool, note_index: u16) -> NoteSerialNumber
+pub proc get_serial_number_raw(is_active_note: Bool, note_idx: InputNoteIndex) -> NoteSerialNumber
     push.0 movdn.2
-    # => [is_active_note, note_index, 0]
+    # => [is_active_note, note_idx, 0]
 
     push.INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET
-    # => [offset, is_active_note, note_index, 0]
+    # => [offset, is_active_note, note_idx, 0]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, is_active_note, note_index, pad(13)]
+    # => [offset, is_active_note, note_idx, pad(13)]
 
     syscall.exec_kernel_proc
     # => [SERIAL_NUMBER, pad(12)]
@@ -440,28 +443,28 @@ end
 #! This is the shared implementation used by both `input_note::get_note_id` and
 #! `active_note::get_note_id`.
 #!
-#! Inputs:  [is_active_note, note_index]
+#! Inputs:  [is_active_note, note_idx]
 #! Outputs: [NOTE_ID]
 #!
 #! Where:
 #! - is_active_note is 0 for indexed access, 1 for the currently active note.
-#! - note_index is the index of the input note.
+#! - note_idx is the index of the input note.
 #! - NOTE_ID is the ID of the specified input note, cached by the transaction prologue.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_note_id_raw(is_active_note: Bool, note_index: u16) -> NoteId
+pub proc get_note_id_raw(is_active_note: Bool, note_idx: InputNoteIndex) -> NoteId
     push.0 movdn.2
-    # => [is_active_note, note_index, 0]
+    # => [is_active_note, note_idx, 0]
 
     push.INPUT_NOTE_GET_NOTE_ID_OFFSET
-    # => [offset, is_active_note, note_index, 0]
+    # => [offset, is_active_note, note_idx, 0]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, is_active_note, note_index, pad(13)]
+    # => [offset, is_active_note, note_idx, pad(13)]
 
     syscall.exec_kernel_proc
     # => [NOTE_ID, pad(12)]
@@ -480,14 +483,14 @@ end
 #! This is the shared implementation used by both `input_note::get_attachments_commitment` and
 #! `active_note::get_attachments_commitment`.
 #!
-#! Inputs:  [is_active_note, note_index]
+#! Inputs:  [is_active_note, note_idx]
 #! Outputs: [ATTACHMENTS_COMMITMENT]
 #!
 #! Where:
 #! - is_active_note is 0 for indexed access, 1 for the currently active note.
-#! - note_index is the index of the input note.
-#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note, or the EMPTY_WORD if
-#!   the note does not have any attachments.
+#! - note_idx is the index of the input note.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note. A note without
+#!   attachments uses the empty hash.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
@@ -495,16 +498,16 @@ end
 #! Invocation: exec
 pub proc get_attachments_commitment_raw(
     is_active_note: Bool,
-    note_index: u16
+    note_idx: InputNoteIndex
 ) -> NoteAttachmentsCommitment
     push.0 movdn.2
-    # => [is_active_note, note_index, 0]
+    # => [is_active_note, note_idx, 0]
 
     push.INPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET
-    # => [offset, is_active_note, note_index, 0]
+    # => [offset, is_active_note, note_idx, 0]
 
     padw swapw padw padw swapdw
-    # => [offset, is_active_note, note_index, pad(13)]
+    # => [offset, is_active_note, note_idx, pad(13)]
 
     syscall.exec_kernel_proc
     # => [ATTACHMENTS_COMMITMENT, pad(12)]

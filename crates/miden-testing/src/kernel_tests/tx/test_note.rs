@@ -1,18 +1,21 @@
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::sync::Arc;
 
 use anyhow::Context;
-use miden_processor::ExecutionOutput;
+use miden_processor::advice::{AdviceError, AdviceInputs};
+use miden_processor::{ExecutionError, ExecutionOutput};
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountBuilder, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
-use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
+use miden_protocol::crypto::dsa::falcon512_eidos::SecretKey;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::protocol::{
     ERR_NOTE_METADATA_NON_ZERO_RESERVED_BIT,
     ERR_NOTE_METADATA_UNSUPPORTED_VERSION,
+    ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH,
 };
 use miden_protocol::note::{
     Note,
@@ -35,11 +38,12 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::memory::ACTIVE_INPUT_NOTE_PTR;
 use miden_protocol::transaction::{RawOutputNote, TransactionArgs};
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::note::P2idNote;
 use miden_standards::testing::note::NoteBuilder;
-use rand::SeedableRng;
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use crate::executor::CodeExecutor;
@@ -58,9 +62,8 @@ use crate::{
 async fn test_note_setup() -> anyhow::Result<()> {
     let mock_tx = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        })?;
+        let account = builder
+            .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -103,9 +106,8 @@ async fn test_note_setup() -> anyhow::Result<()> {
 async fn test_note_script_and_note_args() -> anyhow::Result<()> {
     let mut mock_tx = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        })?;
+        let account = builder
+            .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -200,9 +202,8 @@ fn note_setup_memory_assertions(exec_output: &ExecutionOutput) {
 #[tokio::test]
 async fn active_note_id_is_reported_for_every_executed_note() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let p2id_note_1 = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into().unwrap(),
         account.id(),
@@ -378,10 +379,9 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
             # => [HASH_15, HASH_8, HASH_5]
 
             push.0.{base_addr}
-            # check that calling `compute_storage_commitment` procedure with 0 elements will result in an
-            # empty word
+            # compute the canonical Eidos commitment for empty note storage
             exec.note::compute_storage_commitment
-            # => [0, 0, 0, 0, HASH_15, HASH_8, HASH_5]
+            # => [HASH_EMPTY, HASH_15, HASH_8, HASH_5]
 
             # truncate the stack
             exec.sys::truncate_stack
@@ -413,10 +413,61 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
     inputs_15.extend_from_slice(&word_4[0..3]);
     let note_storage_15_hash = NoteStorage::new(inputs_15)?.commitment();
 
-    assert_eq!(exec_output.get_stack_word(0), Word::empty());
+    assert_eq!(exec_output.get_stack_word(0), NoteStorage::default().commitment());
     assert_eq!(exec_output.get_stack_word(4), note_storage_15_hash);
     assert_eq!(exec_output.get_stack_word(8), note_storage_8_hash);
     assert_eq!(exec_output.get_stack_word(12), note_storage_5_hash);
+
+    Ok(())
+}
+
+/// Empty hashing must preserve its documented stack effect even at the VM's minimum depth.
+#[rstest::rstest]
+#[case::note_storage("miden::protocol::note", "compute_storage_commitment", "0.4000", 2)]
+#[case::advice_preimage(
+    "miden::protocol_utils::mem",
+    "pipe_elements_preimage_to_memory",
+    "4000.0",
+    2
+)]
+#[case::attachments("miden::tx_kernel_core::note", "compute_attachments_commitment", "4000", 1)]
+#[tokio::test]
+async fn empty_hash_helpers_preserve_minimum_stack_depth(
+    #[case] module: &str,
+    #[case] procedure: &str,
+    #[case] arguments: &str,
+    #[case] num_arguments: usize,
+) -> anyhow::Result<()> {
+    let num_extra_outputs = Word::NUM_ELEMENTS - num_arguments;
+    let remove_input_padding = if num_arguments == 1 {
+        "swap drop".into()
+    } else {
+        format!("repeat.{num_arguments} movup.{num_arguments} drop end")
+    };
+    let code = format!(
+        "
+        use {module} as helpers
+
+        proc hash_empty
+            push.{arguments}
+            {remove_input_padding}
+            # => [arguments, pad(16 - num_arguments)]
+
+            exec.helpers::{procedure}
+            # => [COMMITMENT, pad(16 - num_arguments)]
+
+            repeat.{num_extra_outputs} movup.4 drop end
+            # => [COMMITMENT, pad(12)]
+        end
+
+        begin
+            call.hash_empty
+        end
+        "
+    );
+
+    let output = CodeExecutor::with_default_host().run(&code).await?;
+    assert_eq!(output.get_stack_word(0), miden_protocol::Hasher::hash_elements::<Felt>(&[]));
 
     Ok(())
 }
@@ -505,7 +556,7 @@ pub async fn test_timelock() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    let lock_timestamp = 2_000_000_000;
+    let lock_timestamp = MockChain::TIMESTAMP_START_SECS + 1_000;
     let source_manager = Arc::new(DefaultSourceManager::default());
     let timelock_note = NoteBuilder::new(account.id(), &mut rand::rng())
         .note_storage([Felt::from(lock_timestamp)])?
@@ -576,7 +627,7 @@ async fn test_public_key_as_note_input() -> anyhow::Result<()> {
         AccountState::Exists,
     )?;
 
-    let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
+    let serial_num = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32])).random();
     let tag = NoteTag::with_account_target(target_account.id());
     let metadata = PartialNoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![])?;
@@ -827,4 +878,95 @@ async fn test_validate_note_metadata(
     }
 
     Ok(())
+}
+
+/// Tests that `get_recipient_preimage` returns the serial number, script root and storage
+/// commitment of a recipient whose preimage is in the advice map.
+#[tokio::test]
+async fn get_recipient_preimage_returns_the_recipient_preimage() -> anyhow::Result<()> {
+    let recipient = p2id_recipient()?;
+
+    let exec_output = CodeExecutor::with_default_host()
+        .extend_advice_inputs(AdviceInputs::default().with_map(recipient.to_advice_map_entries()))
+        .run(&get_recipient_preimage_code(recipient.digest()))
+        .await?;
+
+    assert_eq!(exec_output.get_stack_word(0), recipient.serial_num());
+    assert_eq!(exec_output.get_stack_word(4), recipient.script().root().as_word());
+    assert_eq!(exec_output.get_stack_word(8), recipient.storage().commitment());
+
+    Ok(())
+}
+
+/// Tests that `get_recipient_preimage` fails if the advice map has no preimage for the recipient.
+#[tokio::test]
+async fn get_recipient_preimage_fails_without_preimage() -> anyhow::Result<()> {
+    let recipient = p2id_recipient()?;
+
+    let result = CodeExecutor::with_default_host()
+        .run(&get_recipient_preimage_code(recipient.digest()))
+        .await;
+
+    assert_execution_error!(
+        result,
+        matches ExecutionError::AdviceError { err: AdviceError::MapKeyNotFound { key }, .. }
+            if key == recipient.digest()
+    );
+
+    Ok(())
+}
+
+/// Tests that `get_recipient_preimage` fails if the advice map opens the serial commitment of the
+/// recipient to another serial number, or to its serial number with a non-empty padding word.
+#[rstest::rstest]
+#[case::other_serial_num(Word::from([5, 6, 7, 8u32]), Word::empty())]
+#[case::non_empty_padding(Word::from([1, 2, 3, 4u32]), Word::from([1, 0, 0, 0u32]))]
+#[tokio::test]
+async fn get_recipient_preimage_rejects_forged_serial_num(
+    #[case] serial_num: Word,
+    #[case] padding: Word,
+) -> anyhow::Result<()> {
+    let recipient = p2id_recipient()?;
+    let serial_commitment = Hasher::hash_double_word(&[recipient.serial_num(), Word::empty()]);
+    let advice_map = recipient.to_advice_map_entries().map(|(key, value)| {
+        if key == serial_commitment {
+            (key, serial_num.into_iter().chain(padding).collect())
+        } else {
+            (key, value)
+        }
+    });
+
+    let result = CodeExecutor::with_default_host()
+        .extend_advice_inputs(AdviceInputs::default().with_map(advice_map))
+        .run(&get_recipient_preimage_code(recipient.digest()))
+        .await;
+
+    assert_execution_error!(result, ERR_NOTE_RECIPIENT_PREIMAGE_MISMATCH);
+
+    Ok(())
+}
+
+/// Returns a P2ID-script recipient with serial number `[1, 2, 3, 4]` and two storage items.
+fn p2id_recipient() -> anyhow::Result<NoteRecipient> {
+    let storage = NoteStorage::new(vec![Felt::from(9u32), Felt::from(10u32)])?;
+
+    Ok(NoteRecipient::new(Word::from([1, 2, 3, 4u32]), P2idNote::script(), storage))
+}
+
+/// Returns the code of a program that calls `get_recipient_preimage` on the provided recipient.
+fn get_recipient_preimage_code(recipient: Word) -> String {
+    format!(
+        "
+        use miden::core::sys
+        use miden::protocol::note
+
+        begin
+            push.{recipient}
+            exec.note::get_recipient_preimage
+            # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, pad(16)]
+
+            exec.sys::truncate_stack
+        end
+        "
+    )
 }

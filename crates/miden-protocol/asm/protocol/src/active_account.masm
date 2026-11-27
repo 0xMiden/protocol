@@ -88,15 +88,6 @@ end
 #! commitment doesn't change during transaction execution: commitment returned by this procedure
 #! could be used as both the initial and the current.
 #!
-#! The commitment to an empty delta is defined as the empty word.
-#!
-#! During an account-creating transaction (when the initial nonce is 0), this procedure will not
-#! return the empty word even if the initial storage commitment and the current storage commitment
-#! are identical (storage hasn't changed). This is because the delta for a new account must
-#! represent its entire newly created state, and the initial storage in a transaction is
-#! initialized to the the storage that the account ID commits to, which may be non-empty. This
-#! does not have any consequences other than being inconsistent in this edge case.
-#!
 #! Inputs:  []
 #! Outputs: [CODE_COMMITMENT]
 #!
@@ -302,13 +293,17 @@ end
 #!
 #! Invocation: exec
 pub proc get_asset(asset_id: AssetId) -> AssetValue
+    # request the asset of the active account
+    push.0
+    # => [is_native = 0, ASSET_ID]
+
     push.ACCOUNT_GET_ASSET_OFFSET
-    # => [offset, ASSET_ID]
+    # => [offset, is_native = 0, ASSET_ID]
 
     # pad the stack
-    push.0 movdn.5 push.0 movdn.5 push.0 movdn.5
+    push.0 movdn.6 push.0 movdn.6
     padw padw swapdw
-    # => [offset, ASSET_ID, pad(11)]
+    # => [offset, is_native = 0, ASSET_ID, pad(10)]
 
     syscall.exec_kernel_proc
     # => [ASSET_VALUE, pad(12)]

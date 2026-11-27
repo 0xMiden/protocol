@@ -3,7 +3,7 @@ use {Commitment} from miden::tx_kernel_core::types
 use miden::tx_kernel_core::account
 use miden::tx_kernel_core::memory
 use miden::core::collections::mmr
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::core::mem as core_mem
 use miden::core::word
 use miden::protocol_utils::mem
@@ -20,9 +20,9 @@ use {MAX_EXPIRATION_BLOCK_DELTA} from miden::protocol_utils::constants
 # CONSTANTS
 # =================================================================================================
 
-# Hash domains shared with TransactionLog and TransactionLogs in Rust.
-const LOG_DOMAIN = 0x020004
-const LOGS_DOMAIN = 0x020003
+# Eidos domain tags shared with TransactionLog and TransactionLogs in Rust.
+const LOG_DOMAIN = 0x02000401
+const LOGS_DOMAIN = 0x02000301
 
 # add_log locals: two topic elements, two padding elements, then the content words.
 const TOPIC_SUFFIX_LOC = 0
@@ -321,8 +321,9 @@ end
 #! - num_extra_cycles is the number of cycles that should be added to the current number of cycles
 #!   before computing the fee.
 #! - EXCLUDE_NOTES_COMMITMENT is a commitment to a list of output note indices that should be
-#!   excluded from the fee computation, or the empty word if no notes are excluded. Excluding notes
-#!   does not affect the fee yet, since notes are not part of the fee.
+#!   excluded from the fee computation. EMPTY_WORD is an absence sentinel indicating that no
+#!   exclusion preimage was supplied. Excluding notes does not affect the fee yet, since notes are
+#!   not part of the fee.
 #! - fee_amount is the computed fee amount of the transaction in the fee asset.
 #!
 #! Panics if:
@@ -416,7 +417,7 @@ pub proc add_log(topic_suffix: felt, topic_prefix: felt, content_commitment: wor
     emit.TX_LOG_ADDED_EVENT
     # => [emitter_suffix, emitter_prefix, topic_suffix, topic_prefix, CONTENT_COMMITMENT]
 
-    push.LOG_DOMAIN exec.poseidon2::merge_in_domain
+    push.LOG_DOMAIN exec.eidos::hash_double_word_in_domain
     # => [LOG_COMMITMENT]
 
     exec.memory::push_tx_log_commitment
@@ -502,7 +503,8 @@ end
 #!
 #! Where:
 #! - EXCLUDE_NOTES_COMMITMENT is a commitment to the list of output note indices to exclude from the
-#!   fee computation, or the empty word if no notes are excluded.
+#!   fee computation. EMPTY_WORD is an absence sentinel indicating that no exclusion preimage was
+#!   supplied.
 #!
 #! Panics if:
 #! - the number of committed indices exceeds the maximum number of output notes per transaction.
@@ -510,7 +512,7 @@ end
 #!
 #! Invocation: exec
 proc write_exclude_notes(exclude_notes_commitment: Commitment, exclude_notes_ptr: ptr<u16>) -> u16
-    # an empty commitment means there are no notes to exclude
+    # the EMPTY_WORD absence sentinel means there is no exclusion preimage to load
     exec.word::testz
     # => [is_empty, EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
 
@@ -520,8 +522,8 @@ proc write_exclude_notes(exclude_notes_commitment: Commitment, exclude_notes_ptr
         # => [num_excluded_notes = 0]
     else
         # load the committed indices from the advice map onto the advice stack, padded to the next
-        # multiple of 8 so they can be written with `pipe_elements_preimage_to_memory`. The padding
-        # zeros do not affect the commitment.
+        # multiple of 8 so they can be written with `pipe_elements_preimage_to_memory`. The helper
+        # binds the exact number of indices, so these zeros only fill the final physical block.
         adv.push_mapvaln.8
         # OS => [EXCLUDE_NOTES_COMMITMENT, exclude_notes_ptr]
         # AS => [num_excluded_notes, [INDICES]]
@@ -629,9 +631,9 @@ end
 #! Inputs:  []
 #! Outputs: [LOGS_COMMITMENT]
 proc compute_logs_commitment() -> word
-    push.LOGS_DOMAIN exec.memory::get_num_tx_logs mul.WORD_NUM_ELEMENTS push.LOG_COMMITMENTS_PTR
-    # => [LOG_COMMITMENTS_PTR, num_log_commitment_elements, LOGS_DOMAIN]
+    exec.memory::get_num_tx_logs mul.WORD_NUM_ELEMENTS push.LOG_COMMITMENTS_PTR push.LOGS_DOMAIN
+    # => [logs_domain, log_commitments_ptr, num_log_commitment_elements]
 
-    exec.poseidon2::hash_elements_in_domain
+    exec.eidos::hash_elements_in_domain
     # => [LOGS_COMMITMENT]
 end

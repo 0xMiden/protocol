@@ -1,4 +1,5 @@
 use miden_protobuf::unwrap_infallible;
+use miden_protocol::block::code_tree::PartialCodeTree;
 use proto::transaction::auth_signature::DecodedSignature;
 
 use crate::decoded::VerificationError;
@@ -25,8 +26,8 @@ impl Verify for AuthSignature {
     type Error = core::convert::Infallible;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         Ok(match self.signature {
-            DecodedSignature::Falcon512Poseidon2(signature) => {
-                Self::Verified::Falcon512Poseidon2(signature.into_inner())
+            DecodedSignature::Falcon512Eidos(signature) => {
+                Self::Verified::Falcon512Eidos(signature.into_inner())
             },
             DecodedSignature::EcdsaK256Keccak(signature) => {
                 Self::Verified::EcdsaK256Keccak(signature.into_inner())
@@ -67,6 +68,7 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
         let foreign_accounts = self.foreign_accounts.verify()?;
         let note_scripts = self.note_scripts.verify()?;
         let signatures = self.signatures.verify()?;
+        let code_tree = PartialCodeTree::from_partial_smt(self.code_tree.verify()?)?;
         Ok(Self::Output::builder()
             .account(account)
             .block_header(header)
@@ -77,6 +79,7 @@ impl crate::BuildUnchecked for TransactionInputsV1 {
             .foreign_accounts(foreign_accounts)
             .note_scripts(note_scripts)
             .signatures(signatures)
+            .code_tree(code_tree)
             .build()?)
     }
 }

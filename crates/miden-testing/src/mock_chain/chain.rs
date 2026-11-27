@@ -7,6 +7,7 @@ use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, AccountUpdateDetails, PartialAccount};
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::block::account_tree::{AccountTree, AccountWitness};
+use miden_protocol::block::code_tree::CodeTree;
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{
     BlockHeader,
@@ -30,8 +31,8 @@ use miden_protocol::transaction::{
     ProvenTransaction,
     TransactionInputs,
 };
-use miden_tx::LocalTransactionProver;
 use miden_tx::auth::BasicAuthenticator;
+use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 use miden_tx_batch::LocalBatchProver;
 
 use super::note::MockChainNote;
@@ -78,10 +79,9 @@ mod snapshot;
 /// let mut builder = MockChain::builder();
 ///
 /// // Add a recipient wallet with basic authentication.
-/// // Use either ECDSA K256 Keccak (scheme_id: 1) or Falcon512Poseidon2 (scheme_id: 2) auth scheme.
-/// let receiver = builder.add_existing_wallet(Auth::BasicAuth {
-///     auth_scheme: AuthScheme::Falcon512Poseidon2,
-/// })?;
+/// // Use either ECDSA K256 Keccak (scheme_id: 1) or Falcon512Eidos (scheme_id: 2) auth scheme.
+/// let receiver =
+///     builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 ///
 /// // Add a wallet with assets.
 /// let sender = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -145,20 +145,16 @@ mod snapshot;
 /// let mut builder = MockChain::builder();
 ///
 /// let faucet = builder.create_new_faucet(
-///     Auth::BasicAuth {
-///         auth_scheme: AuthScheme::Falcon512Poseidon2,
-///     },
+///     Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
 ///     "USDT",
 ///     100_000,
 /// )?;
 /// let asset = Asset::from(FungibleAsset::new(faucet.id(), 10)?);
 ///
-/// let sender = builder.create_new_wallet(Auth::BasicAuth {
-///     auth_scheme: AuthScheme::Falcon512Poseidon2,
-/// })?;
-/// let target = builder.create_new_wallet(Auth::BasicAuth {
-///     auth_scheme: AuthScheme::Falcon512Poseidon2,
-/// })?;
+/// let sender =
+///     builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
+/// let target =
+///     builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 ///
 /// let note = builder.add_p2id_note(faucet.id(), target.id(), &[asset], NoteType::Public)?;
 ///
@@ -187,6 +183,9 @@ pub struct MockChain {
 
     /// Tree containing the state commitments of all accounts.
     account_tree: AccountTree,
+
+    /// Tree containing all registered procedure roots.
+    code_tree: CodeTree,
 
     /// Transactions that have been submitted to the chain but have not yet been included in a
     /// block.
@@ -239,10 +238,11 @@ impl MockChain {
         MockChainBuilder::new()
     }
 
-    /// Creates a new `MockChain` with the provided genesis block and account tree.
+    /// Creates a new `MockChain` with the provided genesis block, account tree and code tree.
     pub(super) fn from_genesis_block(
         genesis_block: ProvenBlock,
         account_tree: AccountTree,
+        code_tree: CodeTree,
         account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
         secret_keys: Vec<SigningKey>,
         protocol_config: ProtocolConfig,
@@ -252,6 +252,7 @@ impl MockChain {
             blocks: vec![],
             nullifier_tree: NullifierTree::default(),
             account_tree,
+            code_tree,
             pending_transactions: Vec::new(),
             pending_batches: Vec::new(),
             committed_notes: BTreeMap::new(),
@@ -409,23 +410,9 @@ impl MockChain {
         ValidatorConfig::from_signers(&self.validator_secret_keys)
     }
 
-    /// Signs `commitment` with every validator secret key, ordering the resulting signatures to
-    /// align positionally with [`Self::validator_config`].
+    /// Signs `commitment` with every validator secret key.
     fn sign_block(&self, commitment: Word) -> BlockSignatures {
-        let signatures = self
-            .validator_config()
-            .keys()
-            .iter()
-            .map(|key| {
-                let signer = self
-                    .validator_secret_keys
-                    .iter()
-                    .find(|sk| &sk.public_key() == key)
-                    .expect("a signer should exist for every validator key");
-                signer.sign(commitment)
-            })
-            .collect();
-        BlockSignatures::new(signatures).expect("signature count same as validator key count")
+        BlockSignatures::sign(&self.validator_secret_keys, commitment)
     }
 
     /// Returns the latest [`ProvenBlock`] in the chain.
@@ -510,6 +497,11 @@ impl MockChain {
     /// Returns a reference to the [`AccountTree`] of the chain.
     pub fn account_tree(&self) -> &AccountTree {
         &self.account_tree
+    }
+
+    /// Returns a reference to the [`CodeTree`] of the chain.
+    pub fn code_tree(&self) -> &CodeTree {
+        &self.code_tree
     }
 
     // BATCH APIS
@@ -622,6 +614,45 @@ impl MockChain {
         input: impl Into<MockTransactionInput>,
     ) -> MockTransactionBuilder<'_> {
         MockTransactionBuilder::new(self, input)
+    }
+
+    /// Executes a transaction of the account with the given ID consuming `notes` as
+    /// unauthenticated input notes.
+    ///
+    /// The transaction is not added to the chain. The outer result holds errors from building
+    /// the transaction, the inner result holds the outcome of its execution, so a test can assert
+    /// on an expected execution error.
+    pub async fn consume_notes(
+        &self,
+        account_id: AccountId,
+        notes: impl IntoIterator<Item = Note>,
+    ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
+        Ok(self
+            .build_transaction(account_id)
+            .unauthenticated_input_notes(notes)
+            .build()?
+            .execute()
+            .await)
+    }
+
+    /// Executes a transaction of the account with the given ID consuming `notes` as
+    /// authenticated input notes, then adds it to the chain and proves the next block.
+    ///
+    /// The notes must already be committed to the chain.
+    pub async fn consume_notes_and_commit(
+        &mut self,
+        account_id: AccountId,
+        notes: impl IntoIterator<Item = Note>,
+    ) -> anyhow::Result<ExecutedTransaction> {
+        let executed = self
+            .build_transaction(account_id)
+            .authenticated_input_notes(notes)
+            .build()?
+            .execute()
+            .await?;
+        self.add_pending_executed_transaction(&executed)?;
+        self.prove_next_block()?;
+        Ok(executed)
     }
 
     /// Resolves the account referenced by `input` into a concrete [`Account`].
@@ -1354,7 +1385,7 @@ mod tests {
     #[case::maximum(ValidatorConfig::MAX_VALIDATORS)]
     fn supplied_validator_signing_keys(#[case] key_count: usize) -> anyhow::Result<()> {
         let mut keys: Vec<SigningKey> = (0..key_count).map(|_| random_secret_key()).collect();
-        // Reverse canonical order to exercise positional signature ordering.
+        // Reverse canonical order to check the config does not depend on the input order.
         keys.sort_by_key(|key| core::cmp::Reverse(key.public_key().to_bytes()));
         let expected_config = ValidatorConfig::from_signers(&keys);
         let mut chain = MockChain::builder().validator_signing_keys(keys.clone()).build()?;
@@ -1520,6 +1551,7 @@ mod tests {
         assert_eq!(chain.blocks, restored.blocks);
         assert_eq!(chain.nullifier_tree, restored.nullifier_tree);
         assert_eq!(chain.account_tree, restored.account_tree);
+        assert_eq!(chain.code_tree, restored.code_tree);
         assert_eq!(chain.pending_transactions, restored.pending_transactions);
         assert_eq!(chain.pending_batches, restored.pending_batches);
         assert_eq!(chain.committed_accounts, restored.committed_accounts);

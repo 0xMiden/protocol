@@ -11,6 +11,7 @@ use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::asset::{Asset, AssetId};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::transaction::{
     AccountInputs,
     ExecutedTransaction,
@@ -38,10 +39,12 @@ pub use data_store::DataStore;
 mod notes_checker;
 pub use notes_checker::{
     FailedNote,
+    FeeError,
     MAX_NUM_CHECKER_NOTES,
     NoteConsumptionChecker,
     NoteConsumptionInfo,
     NoteFailure,
+    SponsorshipRejectionError,
     SuccessfulNote,
 };
 
@@ -203,7 +206,7 @@ where
         // sections. This enables package-owned debug info for dynamically loaded scripts.
         let program = TransactionKernel::main();
         let kernel_debug_info = TransactionKernel::main_debug_info();
-        let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options)
+        let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options.clone())
             .map_err(ExecutionError::advice_error_no_context)
             .map_err(map_execution_error)?
             .with_debug_info(kernel_debug_info.as_deref().cloned().unwrap_or_default())
@@ -248,7 +251,7 @@ where
         let program = TransactionKernel::tx_script_main();
         let kernel_debug_info = TransactionKernel::tx_script_main_debug_info();
         let processor =
-            EXEC::new(stack_inputs, advice_inputs, self.exec_options)
+            EXEC::new(stack_inputs, advice_inputs, self.exec_options.clone())
                 .map_err(ExecutionError::advice_error_no_context)
                 .map_err(TransactionExecutorError::TransactionProgramExecutionFailed)?
                 .with_debug_info(kernel_debug_info.as_deref().cloned().unwrap_or_default())
@@ -358,6 +361,7 @@ where
             tx_inputs.block_header().block_num(),
             tx_inputs.collect_block_commitments(),
             self.source_manager.clone(),
+            tx_inputs.tx_args().ies_seal_seed().cloned(),
         )
         .map_err(|err| TransactionExecutorError::TransactionHostCreationFailed(Box::new(err)))?;
 
@@ -385,6 +389,8 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
         &final_advice_inputs,
         output_notes,
         logs,
+        // TODO(#4006): take the code patch from the host once the transaction kernel builds it.
+        CodePatch::default(),
     )
     .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
 

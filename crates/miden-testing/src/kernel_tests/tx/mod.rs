@@ -28,10 +28,12 @@ mod test_epilogue;
 mod test_faucet;
 mod test_fee;
 mod test_fpi;
+mod test_ies;
 mod test_input_note;
 mod test_lazy_loading;
 mod test_link_map;
 mod test_logs;
+mod test_mem;
 mod test_note;
 mod test_output_note;
 mod test_prologue;
@@ -140,9 +142,7 @@ fn setup_test() -> anyhow::Result<TestSetup> {
     );
 
     let account = builder.add_existing_wallet_with_assets(
-        crate::Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [fungible_asset_0_double_amount, fungible_asset_1],
     )?;
 

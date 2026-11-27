@@ -1,10 +1,14 @@
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::{FutureMaybeSend, MastForestStore, Word};
 use miden_protocol::account::{AccountId, PartialAccount, StorageMapKey, StorageMapWitness};
+use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::asset::{AssetId, AssetWitness};
+use miden_protocol::block::code_tree::{CodeTreeRoot, CodeWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::{AccountInputs, PartialBlockchain};
@@ -77,6 +81,30 @@ pub trait DataStore: MastForestStore {
         map_root: Word,
         map_key: StorageMapKey,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>>;
+
+    /// Returns the code witnesses of the provided procedure roots in the code tree with the
+    /// requested `code_tree_root`. The witnesses are needed to prove presence or absence of the
+    /// procedures.
+    fn get_code_witnesses(
+        &self,
+        code_tree_root: CodeTreeRoot,
+        procedure_roots: Vec<ProcedureRoot>,
+    ) -> impl FutureMaybeSend<Result<Vec<CodeWitness>, DataStoreError>>;
+
+    /// Returns the code that the transaction may register for the provided procedure roots, which
+    /// are absent from the code tree.
+    ///
+    /// The returned forests must contain all absent code that the procedure roots reach. A
+    /// reference to code that the code tree already contains can stay an external node. The data
+    /// store leaves out the code that it does not have.
+    ///
+    /// Unlike [`MastForestStore::get`], which provides code for execution, this method must only
+    /// return code that is expected to be published, because the transaction adds it to the public
+    /// code registry.
+    fn get_code_to_register(
+        &self,
+        procedure_roots: BTreeSet<ProcedureRoot>,
+    ) -> impl FutureMaybeSend<Result<Vec<Arc<MastForest>>, DataStoreError>>;
 
     /// Returns a note script with the specified root, or `None` if not found.
     ///

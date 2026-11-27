@@ -36,6 +36,7 @@ impl Verify for TransactionEffectsV1 {
             .ref_block_commitment(self.ref_block_commitment)
             .expiration_block_num(unwrap_infallible(self.expiration_block_num.verify()))
             .logs(self.logs.verify()?)
+            .code_patch(self.code_patch.verify()?)
             .build())
     }
 }

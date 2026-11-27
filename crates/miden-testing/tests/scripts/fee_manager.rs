@@ -2,12 +2,11 @@ use alloc::sync::Arc;
 use std::collections::BTreeSet;
 
 use miden_processor::ExecutionError;
-use miden_processor::crypto::random::RandomCoin;
 use miden_processor::operation::OperationError;
-use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{AssetAmount, AssetId, FungibleAsset};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
@@ -30,7 +29,7 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rstest::rstest;
 
-use super::assert_default_expiration_limit;
+use super::{assert_default_expiration_limit, policy_component};
 
 // HELPERS
 // ================================================================================================
@@ -113,8 +112,8 @@ const CUSTOM_FEE_POLICY_NAME: &str = "test::fees::storage_commitment_fee";
 pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
     let masm_source = format!(
         r#"
+        use miden::protocol::note
         use miden::standards::fees::fee_manager
-        use miden::standards::note
 
         use {{Asset, NoteRecipient}} from miden::protocol::types
 
@@ -135,7 +134,7 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
             timeframe: u32,
             priority: u32
         ) -> Asset
-            exec.note::get_recipient_preimage
+            exec.note::get_recipient_preimage dropw
             # => [NOTE_SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, ATTACHMENTS_COMMITMENT,
             #     timeframe, priority, pad(2)]
 
@@ -173,16 +172,8 @@ pub(super) fn custom_fee_policy() -> anyhow::Result<FeePolicy> {
         "#
     );
 
-    let code =
-        CodeBuilder::default().compile_component_code(CUSTOM_FEE_POLICY_NAME, &masm_source)?;
-    let root = code
-        .get_procedure_root_by_path(format!("{CUSTOM_FEE_POLICY_NAME}::compute_note_fee").as_str())
-        .expect("custom fee policy should export compute_note_fee");
-    let component = AccountComponent::new(
-        code,
-        vec![],
-        AccountComponentMetadata::mock(CUSTOM_FEE_POLICY_NAME),
-    )?;
+    let (root, component) =
+        policy_component(CUSTOM_FEE_POLICY_NAME, "compute_note_fee", vec![], masm_source)?;
 
     Ok(FeePolicy::custom(root, [component])?)
 }
@@ -222,7 +213,7 @@ pub(super) fn estimate_note_fee_tx_script_code(
 ) -> String {
     format!(
         r#"
-        use miden::core::crypto::hashes::poseidon2
+        use miden::core::crypto::hashes::eidos
         use miden::standards::fees::fee_manager
 
         @transaction_script
@@ -236,9 +227,9 @@ pub(super) fn estimate_note_fee_tx_script_code(
 
             # compute the note's recipient, inserting the recipient preimages into the advice map
             # so the fee policy can recover the script root and storage commitment
-            adv.insert_hdword exec.poseidon2::merge
-            adv.insert_hdword exec.poseidon2::merge
-            adv.insert_hdword exec.poseidon2::merge
+            adv.insert_hdword exec.eidos::hash_double_word
+            adv.insert_hdword exec.eidos::hash_double_word
+            adv.insert_hdword exec.eidos::hash_double_word
             # => [RECIPIENT, pad(12)]
 
             # place the timeframe and priority in their parameter slots; the zeros in between
@@ -305,7 +296,7 @@ pub(super) fn create_get_fee_policy_note_script(expected_policy_root: Word) -> S
 
 /// Builds a private note carrying `note_script`, sent by `sender` and seeded from `seed`.
 fn build_sender_note(sender: AccountId, seed: u32, note_script: &str) -> anyhow::Result<Note> {
-    let mut rng = RandomCoin::new([Felt::from(seed); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(seed); 4].into());
     Ok(NoteBuilder::new(sender, &mut rng)
         .note_type(NoteType::Private)
         .code(note_script)
@@ -512,7 +503,7 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
     // recovers; the zeros below serve as the other note parameters.
     let tx_script_code = format!(
         r#"
-        use miden::core::crypto::hashes::poseidon2
+        use miden::core::crypto::hashes::eidos
         use miden::protocol::tx
 
         @transaction_script
@@ -524,9 +515,9 @@ async fn estimate_note_fee_dispatches_to_custom_policy_via_fpi() -> anyhow::Resu
 
             # compute the note's recipient, inserting the recipient preimages into the advice map
             # so the custom policy can recover the script root and storage commitment
-            adv.insert_hdword exec.poseidon2::merge
-            adv.insert_hdword exec.poseidon2::merge
-            adv.insert_hdword exec.poseidon2::merge
+            adv.insert_hdword exec.eidos::hash_double_word
+            adv.insert_hdword exec.eidos::hash_double_word
+            adv.insert_hdword exec.eidos::hash_double_word
             # => [RECIPIENT, pad(16)]
 
             # place the timeframe and priority in their parameter slots; the zeros in between
@@ -589,7 +580,7 @@ async fn get_fee_policy_returns_active_policy_root_via_note() -> anyhow::Result<
     // The active policy is the basic constant fee policy the manager is built with.
     let get_policy_note_script =
         create_get_fee_policy_note_script(BasicConstantFeePolicy::root().as_word());
-    let mut rng = RandomCoin::new([Felt::from(602u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(602u32); 4].into());
     let get_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .code(get_policy_note_script)
@@ -614,6 +605,78 @@ async fn get_fee_policy_returns_active_policy_root_via_note() -> anyhow::Result<
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// After deployment the owner switches the account to another allowed fee policy via
+/// `set_fee_policy`. [`FeePolicyManager::active_fee_policy`] reads the switched policy from the
+/// updated account's storage header, while [`FeePolicyManager::initial_fee_policy`] keeps returning
+/// the policy the account was built with.
+#[tokio::test]
+async fn active_fee_policy_reads_the_policy_set_after_deployment() -> anyhow::Result<()> {
+    let owner_account_id =
+        AccountId::builder().account_type(AccountType::Private).build_with_seed([4; 32]);
+    let custom_policy_root = custom_fee_policy()?.root();
+
+    let set_note = build_sender_note(
+        owner_account_id,
+        703,
+        &create_fee_manager_note_script("set_fee_policy", custom_policy_root.as_word()),
+    )?;
+    let allowed_note_roots = BTreeSet::from([set_note.script().root()]);
+    let fee_policy_manager = fee_policy_manager(&allowed_note_roots)?;
+    let account = build_fee_account_with_switching(owner_account_id, allowed_note_roots)?;
+
+    // Fee collection runs after the switch note, so the custom policy prices it, on its storage
+    // commitment with a timeframe and priority of 0. The sponsorship covers exactly that fee.
+    let custom_fee = custom_fee_amount_for(set_note.recipient().storage().commitment(), 0, 0);
+    let sponsorship_note = Note::from(
+        FeeSponsorshipNote::builder()
+            .sender(owner_account_id)
+            .target_account(account.id())
+            .feature_note_id(set_note.id())
+            .asset(FungibleAsset::new(fee_faucet_id()?, custom_fee.as_u64())?)
+            .serial_number(Word::from([1, 2, 3, 4u32]))
+            .build()?,
+    );
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(sponsorship_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // before the switch, the deployed account uses the policy its manager was built with
+    let initial_policy_root = BasicConstantFeePolicy::root();
+    assert_eq!(fee_policy_manager.initial_fee_policy(), initial_policy_root);
+    assert_eq!(
+        FeePolicyManager::active_fee_policy(
+            &mock_chain.committed_account(account.id())?.storage().to_header()
+        ),
+        Some(initial_policy_root),
+    );
+
+    let executed = mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(set_note.clone())
+        .authenticated_input_note(sponsorship_note.id())
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed)?;
+    mock_chain.prove_next_block()?;
+
+    // after the switch, the updated account's storage holds the custom policy, while the manager
+    // still reports the policy the account was built with
+    let updated_header = mock_chain.committed_account(account.id())?.storage().to_header();
+    assert_eq!(
+        FeePolicyManager::active_fee_policy(&updated_header),
+        Some(custom_policy_root),
+        "the active policy should be read from the updated account's storage"
+    );
+    assert_eq!(fee_policy_manager.initial_fee_policy(), initial_policy_root);
 
     Ok(())
 }

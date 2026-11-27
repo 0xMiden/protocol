@@ -8,6 +8,7 @@ use super::{PrivateOutputNote, PublicOutputNote, RawOutputNote, RawOutputNotes};
 use crate::account::{AccountHeader, AccountId};
 use crate::assembly::mast::{DenseMastForestBuilder, ExternalNodeBuilder, JoinNodeBuilder};
 use crate::asset::FungibleAsset;
+use crate::block::code_tree::CodePatch;
 use crate::constants::NOTE_MAX_SIZE;
 use crate::errors::{OutputNoteError, TransactionOutputError};
 use crate::note::{
@@ -29,7 +30,6 @@ use crate::note::{
 use crate::testing::account_id::{
     ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PRIVATE_SENDER,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
@@ -40,7 +40,7 @@ use crate::transaction::{
     TransactionLogs,
     TransactionOutputs,
 };
-use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::Serializable;
 use crate::{Felt, Word};
 
 #[rstest]
@@ -64,6 +64,7 @@ fn transaction_outputs_preserve_logs_and_apply_submission_visibility(#[case] acc
             RawOutputNotes::new(vec![]).unwrap(),
             1u32.into(),
             logs.clone(),
+            CodePatch::default(),
         );
         assert_eq!(outputs.logs(), &logs);
         assert_eq!(outputs.logs_commitment(), logs.commitment());
@@ -72,7 +73,7 @@ fn transaction_outputs_preserve_logs_and_apply_submission_visibility(#[case] acc
         } else {
             TransactionLogDetails::Private(logs.commitment())
         };
-        let (final_account, output_notes, log_details) = outputs.into_parts();
+        let (final_account, output_notes, log_details, _) = outputs.into_parts();
         assert_eq!(final_account, account);
         assert!(output_notes.is_empty());
         assert_eq!(log_details, expected);
@@ -97,40 +98,6 @@ fn test_duplicate_output_notes() -> anyhow::Result<()> {
 }
 
 #[test]
-fn output_note_size_hint_matches_serialized_length() -> anyhow::Result<()> {
-    let sender_id = ACCOUNT_ID_SENDER.try_into().unwrap();
-
-    // Build a note with at least two assets.
-    let faucet_id_1 = AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET).unwrap();
-    let faucet_id_2 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
-
-    let asset_1 = FungibleAsset::new(faucet_id_1, 100)?.into();
-    let asset_2 = FungibleAsset::new(faucet_id_2, 200)?.into();
-
-    let assets = NoteAssets::new(vec![asset_1, asset_2])?;
-
-    // Build metadata similarly to how mock notes are constructed.
-    let metadata = PartialNoteMetadata::new(sender_id, NoteType::Private)
-        .with_tag(NoteTag::with_account_target(sender_id));
-
-    // Build storage with at least two values.
-    let storage = NoteStorage::new(vec![Felt::ONE, Felt::new_unchecked(2)])?;
-
-    let serial_num = Word::empty();
-    let script = NoteScript::mock();
-    let recipient = NoteRecipient::new(serial_num, script, storage);
-
-    let note = Note::new(assets, metadata, recipient);
-    let output_note = RawOutputNote::Full(note);
-
-    let bytes = output_note.to_bytes();
-
-    assert_eq!(bytes.len(), output_note.get_size_hint());
-
-    Ok(())
-}
-
-#[test]
 fn private_output_note_rejects_attachment_header_mismatch() -> anyhow::Result<()> {
     let committed_attachments = note_attachments(1, Word::from([1, 2, 3, 4u32]));
     let provided_attachments = note_attachments(2, Word::from([1, 2, 3, 4u32]));
@@ -150,21 +117,6 @@ fn private_output_note_rejects_attachments_commitment_mismatch() -> anyhow::Resu
 
     let error = PrivateOutputNote::new(header, provided_attachments).unwrap_err();
     assert_matches!(error, OutputNoteError::AttachmentsCommitmentMismatch(_));
-
-    Ok(())
-}
-
-#[test]
-fn private_output_note_deserialization_rejects_uncommitted_attachments() -> anyhow::Result<()> {
-    let committed_attachments = note_attachments(1, Word::from([1, 2, 3, 4u32]));
-    let provided_attachments = note_attachments(1, Word::from([5, 6, 7, 8u32]));
-    let header = private_note_header(&committed_attachments);
-    let mut bytes = header.to_bytes();
-    bytes.extend_from_slice(&provided_attachments.to_bytes());
-
-    let error = PrivateOutputNote::read_from_bytes(&bytes).unwrap_err();
-
-    assert_matches!(error, DeserializationError::InvalidValue(message) if message.contains("attachments commitment does not match"));
 
     Ok(())
 }

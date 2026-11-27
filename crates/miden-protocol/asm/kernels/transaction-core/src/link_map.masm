@@ -166,17 +166,11 @@ const INSERT_OPERATION_UPDATE = 0
 # The value of the InsertAtHead operation for a set event.
 const INSERT_OPERATION_AT_HEAD = 1
 
-# The value of the InsertAfterEntry operation for a set event.
-const INSERT_OPERATION_AFTER_ENTRY = 2
-
 # The value of the Found operation for a get event.
 const GET_OPERATION_FOUND = 0
 
 # The value of the AbsentAtHead operation for a get event.
 const GET_OPERATION_ABSENT_AT_HEAD = 1
-
-# The value of the AbsentAfterEntry operation for a get event.
-const GET_OPERATION_ABSENT_AFTER_ENTRY = 2
 
 # EVENTS
 # =================================================================================================

@@ -22,7 +22,6 @@ use miden_protocol::account::AccountId;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -32,6 +31,7 @@ use miden_protocol::note::{
     NoteScriptRoot,
     NoteTag,
 };
+use miden_protocol::utils::FeltSliceExt;
 use miden_protocol::{Felt, WORD_SIZE, Word};
 use miden_standards::note::{
     MintNote,
@@ -41,6 +41,7 @@ use miden_standards::note::{
     P2idNoteStorage,
     StandardNoteAttachment,
 };
+use rand::{Rng, RngExt};
 
 use crate::xreserve::encoding::{
     BYTES_PER_PACKED_FELT,
@@ -117,7 +118,7 @@ impl XUsdcMintNoteStorage {
         let serial_num = intent_header.nonce().to_word();
         let recipient = P2idNoteStorage::new(recipient_id).into_recipient(serial_num);
         let tag = NoteTag::with_account_target(recipient_id);
-        let storage = MintNoteStorage::new_public(recipient, asset, tag)
+        let storage = MintNoteStorage::new_public_output(recipient, asset, tag)
             .expect("p2id note storage should not exceed max number of storage items");
 
         Self { storage }
@@ -182,12 +183,7 @@ impl From<&XUsdcDeposit> for NoteAttachment {
             elements.push(Felt::ZERO);
         }
 
-        let words: Vec<Word> = elements
-            .as_chunks::<{ Word::NUM_ELEMENTS }>()
-            .0
-            .iter()
-            .map(|chunk| Word::new(*chunk))
-            .collect();
+        let words = elements.to_words().expect("the elements should be padded to whole words");
         NoteAttachment::with_words(
             NoteAttachmentScheme::new(XUSDC_MINT_TRANSPORT_ATTACHMENT_SCHEME)
                 .expect("the transport scheme is neither reserved nor past the protocol maximum"),
@@ -287,9 +283,9 @@ where
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
-        rng: &mut impl FeltRng,
+        rng: &mut impl Rng,
     ) -> XUsdcMintNoteBuilder<x_usdc_mint_note_builder::SetSerialNumber<S>> {
-        self.serial_number(rng.draw_word())
+        self.serial_number(rng.random())
     }
 }
 

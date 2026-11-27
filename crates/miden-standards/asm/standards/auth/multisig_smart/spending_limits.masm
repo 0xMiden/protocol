@@ -17,8 +17,8 @@ use miden::standards::oracle::price_oracle
 #
 # Every fungible asset a transaction sends out through an output note is priced into the base asset
 # and charged to the account's budget. The base asset is charged one to one; any other asset is
-# priced through the configured oracle and, without a rate for it, falls to the unpriced-asset
-# policy. The budget resets at fixed window boundaries derived from the reference block number. A
+# priced through the configured oracle and, without a non-zero rate for it, falls to the
+# unpriced-asset policy. The budget resets at fixed window boundaries derived from the reference block number. A
 # transaction that would push the budget over its limit fails regardless of how many approvers
 # signed it. The policy never changes how many signatures a transaction needs, it only decides
 # whether the transaction is allowed at all. Non-fungible assets are outside the policy.
@@ -420,53 +420,53 @@ proc price_output_notes(
         # => [note_count, limit, unpriced_asset_policy]
 
         sub.1
-        # => [note_index, limit, unpriced_asset_policy]
+        # => [note_idx, limit, unpriced_asset_policy]
 
         dup locaddr.PRICE_NOTE_ASSETS_LOC
-        # => [assets_ptr, note_index, note_index, limit, unpriced_asset_policy]
+        # => [assets_ptr, note_idx, note_idx, limit, unpriced_asset_policy]
 
         exec.output_note::get_assets
-        # => [num_assets, note_index, limit, unpriced_asset_policy]
+        # => [num_assets, note_idx, limit, unpriced_asset_policy]
 
         dup neq.0
-        # => [has_assets, num_assets, note_index, limit, unpriced_asset_policy]
+        # => [has_assets, num_assets, note_idx, limit, unpriced_asset_policy]
 
         while.true
-            # => [asset_count, note_index, limit, unpriced_asset_policy]
+            # => [asset_count, note_idx, limit, unpriced_asset_policy]
 
             sub.1
-            # => [asset_idx, note_index, limit, unpriced_asset_policy]
+            # => [asset_idx, note_idx, limit, unpriced_asset_policy]
 
             dup.3 dup.3
-            # => [limit, unpriced_asset_policy, asset_idx, note_index, limit, unpriced_asset_policy]
+            # => [limit, unpriced_asset_policy, asset_idx, note_idx, limit, unpriced_asset_policy]
 
             dup.2 mul.ASSET_SIZE locaddr.PRICE_NOTE_ASSETS_LOC add
-            # => [asset_ptr, limit, unpriced_asset_policy, asset_idx, note_index, limit,
+            # => [asset_ptr, limit, unpriced_asset_policy, asset_idx, note_idx, limit,
             #     unpriced_asset_policy]
 
             exec.asset::load
-            # => [ASSET_ID, ASSET_VALUE, limit, unpriced_asset_policy, asset_idx, note_index, limit,
+            # => [ASSET_ID, ASSET_VALUE, limit, unpriced_asset_policy, asset_idx, note_idx, limit,
             #     unpriced_asset_policy]
 
             exec.price_asset
-            # => [converted_amount, asset_idx, note_index, limit, unpriced_asset_policy]
+            # => [converted_amount, asset_idx, note_idx, limit, unpriced_asset_policy]
 
             loc_load.PRICE_TOTAL_LOC exec.fungible_asset::saturating_add_amount
             loc_store.PRICE_TOTAL_LOC
-            # => [asset_idx, note_index, limit, unpriced_asset_policy]
+            # => [asset_idx, note_idx, limit, unpriced_asset_policy]
 
             dup neq.0
-            # => [has_assets, asset_idx, note_index, limit, unpriced_asset_policy]
+            # => [has_assets, asset_idx, note_idx, limit, unpriced_asset_policy]
         end
-        # => [asset_idx, note_index, limit, unpriced_asset_policy]
+        # => [asset_idx, note_idx, limit, unpriced_asset_policy]
 
         drop
-        # => [note_index, limit, unpriced_asset_policy]
+        # => [note_idx, limit, unpriced_asset_policy]
 
         dup neq.0
-        # => [has_notes, note_index, limit, unpriced_asset_policy]
+        # => [has_notes, note_idx, limit, unpriced_asset_policy]
     end
-    # => [note_index, limit, unpriced_asset_policy]
+    # => [note_idx, limit, unpriced_asset_policy]
 
     drop drop drop
     # => []
@@ -578,8 +578,9 @@ end
 #! block. Right after the read the transaction's expiration delta is tightened to
 #! `max_oracle_block_age`, so the reference block the price came from cannot be older than that at
 #! inclusion. That bounds the age of the read, not of the rate: a rate is used whenever the provider
-#! priced the pair (`last_updated != 0`), and how long ago it was observed is left to the oracle
-#! operator rather than checked here.
+#! priced the pair (`last_updated != 0`) at a non-zero rate, and how long ago it was observed is
+#! left to the oracle operator rather than checked here. A zero rate counts as unpriced, since
+#! `fee::convert_amount` cannot convert at it.
 #!
 #! Inputs:  [ASSET_ID, amount]
 #! Outputs: [is_priced, converted_amount]
@@ -633,8 +634,9 @@ proc convert_to_base_asset(asset_id: AssetId, amount: AssetAmount) -> (Bool, Ass
         movup.3 exec.tx::update_expiration_block_delta
         # => [last_updated, num, den, amount]
 
-        # ----- A zero last_updated means the provider does not price the pair. -----
-        eq.0
+        # ----- A zero last_updated means the provider does not price the pair, and a zero rate
+        # cannot be converted, so both leave the asset to the unpriced-asset policy. -----
+        eq.0 dup.1 eq.0 or
         # => [is_unpriced, num, den, amount]
 
         if.true

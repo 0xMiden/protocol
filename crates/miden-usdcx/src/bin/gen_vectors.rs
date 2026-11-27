@@ -2,14 +2,14 @@
 //! (`tests/vectors/xreserve-encoding-vectors.json`).
 //!
 //! Arithmetic and layout expectations are derived here with exact integer math (the formula is
-//! recorded per entry); hash- and protocol-derived expectations (Poseidon2 Words, AccountIds) come
+//! recorded per entry); hash- and protocol-derived expectations (Eidos Words, AccountIds) come
 //! from the protocol crates via `Hasher::hash_elements`, `bytes_to_packed_u32_elements`, and
 //! `AccountIdBuilder::build_with_seed`. Every family is derived independently of the code it
 //! checks, except the `mi` carried and rebuilt felts, which are recorded from the Rust mirror and
 //! pinned against the MASM writer. Regeneration is an explicit, reviewed act:
-//! `cargo run -p miden-usdcx --features vectors --bin gen_vectors`. The binary needs the
-//! `vectors` feature. It finds the vectors file through the crate's manifest directory, so the
-//! command works from any directory in the workspace.
+//! `cargo run -p miden-usdcx --features vectors,miden-protocol/testing --bin gen_vectors`.
+//! It finds the vectors file through the crate's manifest directory, so the command works from
+//! any directory in the workspace.
 //!
 //! Wire-format byte offsets used below: magic@0, version@4, amount@8, remoteDomain@40,
 //! remoteToken@44, remoteRecipient@76, localToken@108, localDepositor@140, maxFee@172,
@@ -68,12 +68,8 @@ fn packed(bytes: &[u8]) -> Vec<Felt> {
     bytes_to_packed_u32_elements(bytes)
 }
 
-// clippy 1.93 flags the `Word::from` as `useless_conversion` when the `vectors` feature compiles
-// this generator, but removing it would change executable behaviour, so the lint is suppressed in
-// place instead.
-#[allow(clippy::useless_conversion)]
-fn poseidon2_key(bytes32: &[u8; 32]) -> Word {
-    Word::from(Hasher::hash_elements(&packed(bytes32)))
+fn eidos_key(bytes32: &[u8; 32]) -> Word {
+    Hasher::hash_elements(&packed(bytes32))
 }
 
 // uint256 → AssetAmount reducer entries
@@ -292,7 +288,7 @@ fn att_sign65(sk: &SigningKey, digest: &[u8; 32]) -> [u8; 65] {
 }
 
 /// The canonical commitment oracle: deserialize the exact 33 compressed wire bytes into the
-/// miden-crypto `PublicKey` and take `to_commitment()` = Poseidon2 over the 16 affine-coordinate
+/// miden-crypto `PublicKey` and take `to_commitment()` = Eidos over the 16 affine-coordinate
 /// pubkey felts. This is exactly what off-chain `set_attester` keys the `xReserveAttesters`
 /// allowlist by.
 fn att_commitment(pk33: &[u8; 33]) -> Word {
@@ -319,10 +315,10 @@ fn main() {
                 "id": id, "tv": ["TV-B32-1", "TV-B32-3", "TV-B32-4", "TV-DUAL-1"],
                 "bytes32": hex_bytes(b),
                 "packed_felts": felts_hex(&packed(b)),
-                "expected_key": word_hex(poseidon2_key(b)),
-                "cite": "generated deterministically by gen_vectors @ protocol v0.17.0-rc.7",
+                "expected_key": word_hex(eidos_key(b)),
+                "cite": "generated deterministically by gen_vectors",
                 "derivation": format!(
-                    "{what}; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) @ protocol v0.17.0-rc.7 (gen_vectors)"
+                    "{what}; key = Hasher::hash_elements(bytes_to_packed_u32_elements(b)) (gen_vectors)"
                 ),
             })
         })
@@ -337,10 +333,10 @@ fn main() {
         "id": "b32-rej-limb-ge-p", "tv": ["TV-B32-2", "TV-DUAL-1"],
         "bytes32": hex_bytes(&ge_p),
         "packed_felts": felts_hex(&packed(&ge_p)),
-        "expected_key": word_hex(poseidon2_key(&ge_p)),
+        "expected_key": word_hex(eidos_key(&ge_p)),
         "lossless_error": "LimbOutOfField",
-        "cite": "generated deterministically by gen_vectors @ protocol v0.17.0-rc.7",
-        "derivation": "first 8-byte LE limb = u64::MAX >= p, so the fallible native path must reject while Option B hashes; key computed @ v0.17.0-rc.7",
+        "cite": "generated deterministically by gen_vectors",
+        "derivation": "first 8-byte LE limb = u64::MAX >= p, so the fallible native path must reject while Option B hashes; key computed by Hasher::hash_elements",
     }));
 
     // ---- amt family -------------------------------------------------------------------
@@ -753,9 +749,9 @@ fn main() {
             "sig_felts": felts_hex(&packed(&sig)),
             "v_byte": sig[64],
             "payload_hex": hex_bytes(&payload),
-            "cite": "miden-crypto-0.25.1 dsa/ecdsa_k256_keccak/mod.rs:253,:301 + src/lib.rs:156-170",
+            "cite": "gen_vectors::att_sign65 and miden_crypto::dsa::ecdsa_k256_keccak::PublicKey::to_commitment",
             "derivation": format!(
-                "k256 SigningKey::random(StdRng seed {seed}); pk = 33B compressed SEC1 wire key, decompressed to affine qx_le_u32[8]||qy_le_u32[8] (16 felts, vm#3342); sig = 65B r||s||v (17 felts, v carried) over keccak256(full {plen}B DepositIntent payload) — raw secp256k1, NOT EIP-712, no struct; digest = 8 felts; commitment = miden-crypto PublicKey::to_commitment @ 0.33.0 (Poseidon2 over the 16 affine pubkey felts)",
+                "k256 SigningKey::random(StdRng seed {seed}); pk = 33B compressed SEC1 wire key, decompressed to affine qx_le_u32[8]||qy_le_u32[8] (16 felts, vm#3342); sig = 65B r||s||v (17 felts, v carried) over keccak256(full {plen}B DepositIntent payload) — raw secp256k1, NOT EIP-712, no struct; digest = 8 felts; commitment = miden-crypto PublicKey::to_commitment (Eidos over the 16 affine pubkey felts)",
                 plen = payload.len(),
             ),
         }));

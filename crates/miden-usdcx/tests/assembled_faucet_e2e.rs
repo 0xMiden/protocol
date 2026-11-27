@@ -36,9 +36,9 @@
 mod support;
 
 use anyhow::{Context, Result};
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{Account, AccountId, RoleSymbol, StorageMapKey, StorageSlotName};
 use miden_protocol::asset::{AssetAmount, FungibleAsset};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteId, NoteTag, NoteType};
 use miden_protocol::transaction::ExecutedTransaction;
@@ -64,6 +64,7 @@ use miden_usdcx::xreserve::encoding::{
     XReserveBurnItems,
     bytes32_to_storage_map_key,
 };
+use rand::{Rng, RngExt};
 use support::*;
 
 // ACTORS (the builder seeds ADMIN / ATTEST_ADMIN = id(1), DOM_PAUSER = id(2),
@@ -187,8 +188,8 @@ fn nonce_key_of_payload(payload: &[u8]) -> Word {
 fn err_paused() -> MasmError {
     MasmError::from_static_str("the contract is paused")
 }
-fn note_rng(seed: u64) -> RandomCoin {
-    RandomCoin::new(Word::from([
+fn note_rng(seed: u64) -> EidosRandomCoin {
+    EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(31u32),
@@ -198,7 +199,7 @@ fn note_rng(seed: u64) -> RandomCoin {
 
 /// A standard role-action note carrying `action`, sent by `sender` and tagged for `faucet_id`. The
 /// serial is drawn from `rng`; every action is gated by the standard role component on the sender.
-fn stock_role_action_note<R: miden_protocol::crypto::rand::FeltRng>(
+fn stock_role_action_note<R: Rng>(
     sender: AccountId,
     faucet_id: AccountId,
     action: RbacConfig,
@@ -208,7 +209,7 @@ fn stock_role_action_note<R: miden_protocol::crypto::rand::FeltRng>(
         .sender(sender)
         .target(faucet_id)
         .config(action)
-        .serial_number(rng.draw_word())
+        .serial_number(rng.random())
         .build()
         .map_err(|e| anyhow::anyhow!("building the standard role-action note: {e}"))?;
     Ok(Note::from(note))
@@ -277,7 +278,7 @@ async fn consume_committed_note(
 /// Consumes a COMMITTED P2ID note carrying POLICED xUSDC with a NON-faucet `account` as the
 /// consumer. The receive callback (`on_before_asset_added_to_account`) fires with the consumer as
 /// the native account, so the kernel dyncalls the issuing faucet to run
-/// `basic_blocklist::check_policy` — the faucet MUST be attached as a foreign account (the
+/// `basic_blocklist::check_receive_policy` — the faucet MUST be attached as a foreign account (the
 /// policed-asset client-side coupling). This is what a real wallet consuming policed xUSDC has to
 /// do; the coupling is pinned executable by
 /// `transfer_blocklist_e2e::send_without_faucet_foreign_account_fails`.
@@ -615,7 +616,8 @@ async fn assembled_faucet_full_lifecycle() -> Result<()> {
                 push.{faucet_id_suffix}
                 exec.::miden::standards::assets::fungible_asset::create
                 call.::miden::standards::faucets::fungible::mint_and_send
-                dropw dropw dropw dropw
+                exec.::miden::protocol::output_note::seal
+                dropw dropw dropw drop drop drop
             end
             ",
         recipient = recipient_recipe.digest(),

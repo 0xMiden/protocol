@@ -3,7 +3,7 @@ use miden_protocol::Word;
 use miden_protocol::account::auth::{self, AuthSecretKey, PublicKeyCommitment};
 use miden_protocol::account::{AccountBuilder, AccountComponent};
 use miden_protocol::asset::{AssetAmount, NonFungibleAsset, TokenSymbol};
-use miden_protocol::crypto::rand::RandomCoin;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
@@ -11,10 +11,14 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUT
 use crate::account::auth::{
     Approver,
     ApproverSet,
+    AuthHotColdGuardian,
+    AuthHotColdGuardianConfig,
     AuthMultisig,
     AuthMultisigConfig,
     AuthSingleSig,
     AuthTxFeeCollector,
+    GuardianConfig,
+    HotColdDelayConfig,
     NoAuth,
 };
 use crate::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
@@ -37,7 +41,7 @@ fn test_required_asset_same_as_offered() {
         .requested_asset(requested_asset)
         .note_type(NoteType::Public)
         .payback_note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([1, 2, 3, 4u32])))
         .build();
 
     assert_matches!(result, Err(NoteError::Other { error_msg, .. }) if error_msg == "requested asset same as offered asset".into());
@@ -49,7 +53,7 @@ fn test_required_asset_same_as_offered() {
 fn get_mock_falcon_auth_component() -> AuthSingleSig {
     let mock_word = Word::from([0, 1, 2, 3u32]);
     let mock_public_key = PublicKeyCommitment::from(mock_word);
-    AuthSingleSig::new(Approver::new(mock_public_key, auth::AuthScheme::Falcon512Poseidon2))
+    AuthSingleSig::new(Approver::new(mock_public_key, auth::AuthScheme::Falcon512Eidos))
 }
 
 // CUSTOM COMPONENT IDENTIFICATION TESTS
@@ -224,6 +228,33 @@ fn test_account_interface_identifies_tx_fee_collector_auth() {
 }
 
 #[test]
+fn test_account_interface_identifies_hot_cold_guardian_auth() {
+    let approver = || Approver::from(&AuthSecretKey::new_ecdsa_k256_keccak().public_key());
+    let config = AuthHotColdGuardianConfig::new(
+        vec![approver(), approver()],
+        approver(),
+        GuardianConfig::new(approver()),
+        HotColdDelayConfig::default(),
+    )
+    .expect("hot/cold/guardian config should be valid");
+
+    let mock_seed = Word::from([8, 9, 10, 11u32]).as_bytes();
+    let account = AccountBuilder::new(mock_seed)
+        .with_component(AuthHotColdGuardian::new(config))
+        .with_component(BasicWallet)
+        .build_existing()
+        .expect("failed to create hot/cold/guardian account");
+
+    let interface = AccountInterface::from_account(&account);
+
+    assert!(matches!(
+        interface.auth_component(),
+        AccountComponentInterface::AuthHotColdGuardian
+    ));
+    assert!(interface.components().contains(&AccountComponentInterface::BasicWallet));
+}
+
+#[test]
 fn test_account_interface_identifies_custom_auth() {
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let custom_auth_account = AccountBuilder::new(mock_seed)
@@ -281,8 +312,8 @@ fn test_public_key_extraction_multisig_account() {
     let pub_key_3 = PublicKeyCommitment::from(Word::from([3u32, 0, 0, 0]));
 
     let approvers = vec![
-        Approver::new(pub_key_1, auth::AuthScheme::Falcon512Poseidon2),
-        Approver::new(pub_key_2, auth::AuthScheme::Falcon512Poseidon2),
+        Approver::new(pub_key_1, auth::AuthScheme::Falcon512Eidos),
+        Approver::new(pub_key_2, auth::AuthScheme::Falcon512Eidos),
         Approver::new(pub_key_3, auth::AuthScheme::EcdsaK256Keccak),
     ];
 

@@ -8,7 +8,6 @@
 
 use core::num::{NonZeroU16, NonZeroU32, NonZeroU64};
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
@@ -21,6 +20,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetId, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -89,6 +89,7 @@ const ORACLE_RATE: u64 = 3_000;
 
 const FIXED_RATE_PROVIDER: &str = "fixed_rate_3000";
 const UNPRICED_PROVIDER: &str = "unpriced";
+const ZERO_RATE_PROVIDER: &str = "zero_rate";
 
 const RATE_PROVIDERS_PATH: &str = "test::spending_limits::rate_providers";
 
@@ -119,6 +120,19 @@ const RATE_PROVIDERS_CODE: &str = r#"
     pub proc unpriced
         dropw dropw
         push.0 push.0 push.0
+        exec.sys::truncate_stack
+    end
+
+    #! Prices every pair at 0/1, observed at timestamp 7.
+    #!
+    #! Inputs:  [SOURCE_ASSET_ID, TARGET_ASSET_ID, pad(8)]
+    #! Outputs: [last_updated, num, den, pad(13)]
+    #!
+    #! Invocation: dyncall
+    @account_procedure
+    pub proc zero_rate
+        dropw dropw
+        push.1 push.0 push.7
         exec.sys::truncate_stack
     end
 "#;
@@ -293,7 +307,7 @@ impl Harness {
             .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into()?)
             .assets(assets)
             .note_type(NoteType::Public)
-            .generate_serial_number(&mut RandomCoin::new(seed))
+            .generate_serial_number(&mut EidosRandomCoin::new(seed))
             .build()?
             .into())
     }
@@ -651,14 +665,19 @@ async fn the_budget_accumulates_across_assets() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// An asset the oracle does not price, or prices at a zero rate, falls to the unpriced-asset
+/// policy.
 #[rstest]
-#[case::reject(UnpricedAssetPolicy::Reject)]
-#[case::allow(UnpricedAssetPolicy::Allow)]
+#[case::reject(UnpricedAssetPolicy::Reject, UNPRICED_PROVIDER)]
+#[case::allow(UnpricedAssetPolicy::Allow, UNPRICED_PROVIDER)]
+#[case::zero_rate_reject(UnpricedAssetPolicy::Reject, ZERO_RATE_PROVIDER)]
+#[case::zero_rate_allow(UnpricedAssetPolicy::Allow, ZERO_RATE_PROVIDER)]
 #[tokio::test]
 async fn an_unpriced_asset_falls_to_the_policy(
     #[case] unpriced: UnpricedAssetPolicy,
+    #[case] provider: &str,
 ) -> anyhow::Result<()> {
-    let mut harness = Harness::new(Some(unpriced), UNPRICED_PROVIDER)?;
+    let mut harness = Harness::new(Some(unpriced), provider)?;
 
     let result = harness.send_signed(fungible(eth(), 10), &[0, 1], None).await?;
 
@@ -1057,10 +1076,13 @@ async fn a_limit_raised_in_the_same_transaction_does_not_apply_to_it() -> anyhow
             exec.p2id::create_output_note
             # => [note_idx]
 
-            push.{asset_value}
+            dup push.{asset_value}
             push.{asset_id}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            dropw dropw dropw dropw
+            # => [note_idx, pad(15)]
+
+            exec.::miden::protocol::output_note::seal
+            dropw dropw dropw drop drop drop
         end
         ",
         new_limit = 1_000_000u64,

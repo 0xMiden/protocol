@@ -4,13 +4,6 @@ use alloc::vec::Vec;
 use super::TransactionInputError;
 use crate::note::{Note, NoteId, NoteInclusionProof, NoteLocation, Nullifier};
 use crate::transaction::InputNoteCommitment;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{Felt, Hasher, MAX_INPUT_NOTES_PER_TX, Word};
 
 // TO INPUT NOTE COMMITMENT
@@ -90,7 +83,7 @@ impl<T: ToInputNoteCommitments> InputNotes<T> {
     /// > hash(nullifier_0 || noteid0_or_zero || nullifier_1 || noteid1_or_zero || .. || nullifier_n
     /// > || noteidn_or_zero)
     ///
-    /// Otherwise defined as ZERO for empty lists.
+    /// An empty list commits to the canonical Eidos hash of an empty Felt sequence.
     pub fn commitment(&self) -> Word {
         self.commitment
     }
@@ -189,35 +182,11 @@ impl<T: ToInputNoteCommitments> Default for InputNotes<T> {
     }
 }
 
-// SERIALIZATION
-// ------------------------------------------------------------------------------------------------
-
-impl<T: Serializable> Serializable for InputNotes<T> {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        // assert is OK here because we enforce max number of notes in the constructor
-        assert!(self.notes.len() <= u16::MAX.into());
-        target.write_u16(self.notes.len() as u16);
-        target.write_many(&self.notes);
-    }
-}
-
-impl<T: Deserializable + ToInputNoteCommitments> Deserializable for InputNotes<T> {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let num_notes = source.read_u16()?;
-        let notes = source.read_many_iter(num_notes.into())?.collect::<Result<Vec<T>, _>>()?;
-        Self::new(notes).map_err(|err| DeserializationError::InvalidValue(format!("{err}")))
-    }
-}
-
 // HELPER FUNCTIONS
 // ------------------------------------------------------------------------------------------------
 
 fn build_input_note_commitment<T: ToInputNoteCommitments>(notes: &[T]) -> Word {
     // Note: This implementation must be kept in sync with the kernel's `process_input_notes_data`
-    if notes.is_empty() {
-        return Word::empty();
-    }
-
     let mut elements: Vec<Felt> = Vec::with_capacity(notes.len() * 2);
     for commitment_data in notes {
         let nullifier = commitment_data.nullifier();
@@ -318,9 +287,6 @@ impl ToInputNoteCommitments for &InputNote {
         (*self).note_id()
     }
 }
-
-// SERIALIZATION
-// ------------------------------------------------------------------------------------------------
 
 // TESTS
 // ================================================================================================

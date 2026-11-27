@@ -1,4 +1,3 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::asset::AssetId;
@@ -7,13 +6,6 @@ use crate::constants::MIN_PROOF_SECURITY_LEVEL;
 use crate::crypto::SequentialCommit;
 use crate::errors::ProtocolConfigError;
 use crate::transaction::TransactionKernel;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{Felt, Word};
 
 mod kernel_config;
@@ -187,40 +179,6 @@ impl SequentialCommit for ProtocolConfig {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for ProtocolConfig {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let Self {
-            fee_asset_id,
-            tx_kernel,
-            batch_kernel,
-            block_kernel,
-            proof_verification,
-        } = self;
-
-        fee_asset_id.write_into(target);
-        tx_kernel.write_into(target);
-        batch_kernel.write_into(target);
-        block_kernel.write_into(target);
-        proof_verification.write_into(target);
-    }
-}
-
-impl Deserializable for ProtocolConfig {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let fee_asset_id = source.read()?;
-        let tx_kernel = source.read()?;
-        let batch_kernel = source.read()?;
-        let block_kernel = source.read()?;
-        let proof_verification = source.read()?;
-
-        Self::new(fee_asset_id, tx_kernel, batch_kernel, block_kernel, proof_verification)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -244,8 +202,7 @@ mod tests {
 
     #[test]
     fn to_elements_is_pipeable() {
-        // The kernel pipes the preimage into memory, which requires the element count to be a
-        // multiple of the hasher's rate width.
+        // The kernel pipes the preimage into memory as complete Eidos compression blocks.
         let config = ProtocolConfig::current(fee_asset_id()).unwrap();
 
         assert_eq!(config.to_elements().len(), 24);
@@ -280,16 +237,5 @@ mod tests {
         .unwrap_err();
 
         assert_matches!(error, ProtocolConfigError::FeeAssetMustBeFungible(AssetComposition::None));
-    }
-
-    #[test]
-    fn serde_round_trip() -> anyhow::Result<()> {
-        let config = ProtocolConfig::current(fee_asset_id())?;
-
-        let deserialized = ProtocolConfig::read_from_bytes(&config.to_bytes())
-            .map_err(|err| anyhow::anyhow!("{err}"))?;
-
-        assert_eq!(config, deserialized);
-        Ok(())
     }
 }

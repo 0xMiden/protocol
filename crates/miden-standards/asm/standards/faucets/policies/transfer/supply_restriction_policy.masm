@@ -1,0 +1,152 @@
+# miden::standards::faucets::policies::transfer::supply_restriction_policy
+#
+# Supply restriction send policy: rejects transfers that would spend frozen or confiscated amounts
+# of the native account.
+#
+# Receiving assets is never restricted, and the issuing faucet is exempt so that minting does not
+# depend on its own restricted amounts.
+
+use {AccountId, NoteAttachmentCount, NoteAttachmentListCommitment, OutputNoteIndex}
+    from miden::protocol::types
+use miden::protocol::account_id
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::standards::assets::fungible_asset
+use miden::standards::expiration
+use miden::standards::faucets::policies::transfer::supply_restriction
+
+# ERRORS
+# ================================================================================================
+
+const ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE = "transfer exceeds the balance of the account that is neither frozen nor confiscated"
+
+# POLICY PROCEDURES
+# ================================================================================================
+
+#! Send policy that rejects output notes if the amount sent by the transaction so far would spend
+#! frozen or confiscated amounts of the native account on the issuing faucet, and returns no
+#! attachment for the accepted ones.
+#!
+#! Inputs:  [note_idx, pad(15)]
+#! Outputs: [0, EMPTY_WORD, pad(11)]
+#!
+#! Where:
+#! - note_idx is the index of the output note being sealed.
+#! - 0 is the number of attachments returned for the note, so the attachment list commitment is
+#!   EMPTY_WORD.
+#!
+#! Panics if:
+#! - the native account sends restricted amounts (see `check_native_account`).
+#!
+#! Invocation: call
+@account_procedure
+pub proc check_send_policy(note_idx: OutputNoteIndex) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
+    # the check covers all output notes rather than only the one being sealed
+    drop
+    # => [pad(16)]
+
+    exec.check_native_account
+    # => [pad(16)]
+end
+
+#! Asserts that the transaction does not spend frozen or confiscated amounts of the native account
+#! on the issuing faucet. The issuing faucet itself is exempt.
+#!
+#! Amounts received in input notes can be sent in the same transaction, as long as the restricted
+#! amount remains in the account.
+#!
+#! Limits the transaction's expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks
+#! after the reference block.
+#!
+#! The send policy runs this check, and a send policy that combines it with other checks can `exec`
+#! it.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the native account is restricted, it is not the issuing faucet, and its initial balance plus
+#!   the amount received in all input notes is less than its restricted amount plus the amount sent
+#!   in all output notes created so far.
+#!
+#! Invocation: exec
+pub proc check_native_account()
+    exec.expiration::apply_default
+    # => []
+
+    exec.native_account::get_id
+    # => [account_id_suffix, account_id_prefix]
+
+    dup.1 dup.1 exec.active_account::get_id exec.account_id::eq
+    # => [is_issuer, account_id_suffix, account_id_prefix]
+
+    # the issuing faucet is exempt
+    if.true
+        drop drop
+        # => []
+    else
+        exec.assert_restricted_amount_not_sent
+        # => []
+    end
+end
+
+# HELPER PROCEDURES
+# ================================================================================================
+
+#! Asserts that the transaction does not send restricted amounts of the native account, which must
+#! have the provided ID.
+#!
+#! The current vault balance is not used, because it is not final while a note is being sealed: the
+#! kernel checks asset conservation only at the end of the transaction, so an account can remove the
+#! sent assets from its vault after sealing the note, or add assets temporarily. The initial balance
+#! and the received amount are fixed, and assets cannot be removed from output notes. Every later
+#! note holding the asset invokes the policy again, so the last invocation covers everything the
+#! transaction sends.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the account is restricted and its initial balance plus the amount received in all input notes
+#!   is less than its restricted amount plus the amount sent in all output notes created so far.
+#!
+#! Invocation: exec
+proc assert_restricted_amount_not_sent(account_id: AccountId)
+    # frozen plus confiscated is at most FUNGIBLE_ASSET_MAX_AMOUNT, so the sum cannot wrap around
+    exec.supply_restriction::get_restricted_amounts add
+    # => [restricted]
+
+    # skip summing up the notes for unrestricted accounts
+    dup neq.0
+    # => [is_restricted, restricted]
+
+    if.true
+        exec.active_account::get_id exec.fungible_asset::create_id
+        # => [ASSET_ID, restricted]
+
+        dupw exec.fungible_asset::get_initial_native_account_balance movdn.5
+        # => [ASSET_ID, restricted, initial_balance]
+
+        dupw exec.fungible_asset::get_received_amount
+        # => [received, ASSET_ID, restricted, initial_balance]
+
+        # the sum cannot wrap around (see fungible_asset::get_received_amount)
+        movup.6 add movdn.5
+        # => [ASSET_ID, restricted, initial_balance + received]
+
+        exec.fungible_asset::get_sent_amount
+        # => [sent, restricted, initial_balance + received]
+
+        # the sum cannot wrap around in a valid transaction, because both amounts are at most
+        # FUNGIBLE_ASSET_MAX_AMOUNT (see fungible_asset::get_sent_amount)
+        add
+        # => [sent + restricted, initial_balance + received]
+
+        # assert that initial_balance + received >= sent + restricted
+        gte assert.err=ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE
+        # => []
+    else
+        drop
+        # => []
+    end
+end

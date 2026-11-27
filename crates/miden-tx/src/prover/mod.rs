@@ -2,8 +2,10 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use miden_processor::{ExecutionError, ExecutionOptions, FastProcessor};
+use miden_protocol::PROTOCOL_PROOF_HASH;
 use miden_protocol::account::{AccountPatch, AccountUpdateDetails, PartialAccount};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::transaction::{
     AccountInputs,
     InputNote,
@@ -15,7 +17,6 @@ use miden_protocol::transaction::{
     TransactionWitness,
     TxAccountUpdate,
 };
-use miden_prover::HashFunction::Poseidon2;
 pub use miden_prover::Prover;
 use miden_prover::{ExecutionProof, Word};
 
@@ -47,15 +48,17 @@ pub struct LocalTransactionProver {
 
 impl Default for LocalTransactionProver {
     fn default() -> Self {
-        Self::new(Prover::new().with_hash_fn(Poseidon2))
+        Self::new(Prover::new())
     }
 }
 
 impl LocalTransactionProver {
     /// Creates a new [LocalTransactionProver] instance with the default [`ExecutionOptions`].
+    ///
+    /// Uses the protocol proof hash and preserves the supplied prover's other settings.
     pub fn new(prover: Prover) -> Self {
         Self {
-            prover,
+            prover: prover.with_hash_fn(PROTOCOL_PROOF_HASH),
             execution_options: ExecutionOptions::default(),
         }
     }
@@ -74,7 +77,7 @@ impl LocalTransactionProver {
 
     /// Returns the [`ExecutionOptions`] this prover uses.
     pub fn execution_options(&self) -> ExecutionOptions {
-        self.execution_options
+        self.execution_options.clone()
     }
 
     fn build_proven_transaction(
@@ -88,7 +91,7 @@ impl LocalTransactionProver {
         proof: ExecutionProof,
     ) -> Result<ProvenTransaction, TransactionProverError> {
         let expiration_block_num = tx_outputs.expiration_block_num();
-        let (account_header, output_notes, log_details) = tx_outputs.into_parts();
+        let (account_header, output_notes, log_details, code_patch) = tx_outputs.into_parts();
 
         // erase private note information (convert private full notes to just headers)
         let output_notes: Vec<_> = output_notes
@@ -125,6 +128,7 @@ impl LocalTransactionProver {
             expiration_block_num,
             proof,
             log_details,
+            code_patch,
         )
         .map_err(TransactionProverError::ProvenTransactionBuildFailed)
     }
@@ -173,7 +177,7 @@ impl LocalTransactionProver {
 
         let block_commitments = tx_inputs.collect_block_commitments();
 
-        let (partial_account, ref_block, _, input_notes, _) = tx_inputs.into_parts();
+        let (partial_account, ref_block, _, input_notes, tx_args) = tx_inputs.into_parts();
         let mut host = TransactionProverHost::new(
             &partial_account,
             input_notes,
@@ -181,13 +185,14 @@ impl LocalTransactionProver {
             &mast_store,
             script_mast_store,
             account_procedure_index_map,
+            tx_args.ies_seal_seed().cloned(),
         )
         .map_err(|err| TransactionProverError::TransactionHostCreationFailed(Box::new(err)))?;
 
         let processor = FastProcessor::new_with_options(
             stack_inputs,
             advice_inputs.into_advice_inputs(),
-            self.execution_options,
+            self.execution_options.clone(),
         )
         .map_err(ExecutionError::advice_error_no_context)
         .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
@@ -205,6 +210,9 @@ impl LocalTransactionProver {
             output_notes,
             expiration_block_num,
             logs,
+            // TODO(#4006): take the code patch from the host once the transaction kernel builds
+            // it.
+            CodePatch::default(),
         );
 
         // The proof commits to the stack outputs, so checking them against the outputs binds the
@@ -300,7 +308,7 @@ mod tests {
         assert_eq!(prover.execution_options(), ExecutionOptions::default());
 
         let custom_options = ExecutionOptions::default().with_max_advice_size_bytes(1);
-        let prover = prover.with_execution_options(custom_options);
+        let prover = prover.with_execution_options(custom_options.clone());
         assert_eq!(prover.execution_options(), custom_options);
     }
 }

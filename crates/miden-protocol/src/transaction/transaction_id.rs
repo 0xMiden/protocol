@@ -2,19 +2,14 @@ use core::fmt::{Debug, Display};
 
 use miden_crypto_derive::WordWrapper;
 
-use super::{ExecutedTransaction, Felt, Hasher, ProvenTransaction, WORD_SIZE, Word, ZERO};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
+use super::{ExecutedTransaction, Felt, Hasher, ProvenTransaction, Word};
+use crate::block::code_tree::CodePatchCommitment;
+use crate::{WORD_SIZE, ZERO};
 
 // TRANSACTION COMMITMENTS
 // ================================================================================================
 
-/// The five commitments that make up the preimage of the corresponding [`TransactionId`].
+/// The six commitments that make up the preimage of the corresponding [`TransactionId`].
 #[derive(Clone, Copy)]
 pub struct TransactionCommitments {
     init_account_commitment: Word,
@@ -22,19 +17,21 @@ pub struct TransactionCommitments {
     input_notes_commitment: Word,
     output_notes_commitment: Word,
     logs_commitment: Word,
+    code_patch_commitment: CodePatchCommitment,
 }
 
 impl TransactionCommitments {
     /// Length of the felt sequence returned by [`Self::elements`].
-    pub const ELEMENTS_LEN: usize = 5 * WORD_SIZE;
+    pub const ELEMENTS_LEN: usize = 6 * WORD_SIZE;
 
-    /// Returns a new [`TransactionCommitments`] from the five commitment words.
+    /// Returns a new [`TransactionCommitments`] from the six commitment words.
     pub fn new(
         init_account_commitment: Word,
         final_account_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
         logs_commitment: Word,
+        code_patch_commitment: CodePatchCommitment,
     ) -> Self {
         Self {
             init_account_commitment,
@@ -42,6 +39,7 @@ impl TransactionCommitments {
             input_notes_commitment,
             output_notes_commitment,
             logs_commitment,
+            code_patch_commitment,
         }
     }
 
@@ -49,7 +47,7 @@ impl TransactionCommitments {
     ///
     /// The layout is:
     ///   `[INIT[4], FINAL[4], INPUT_NOTES_COMMITMENT[4], OUTPUT_NOTES_COMMITMENT[4],
-    ///   LOGS_COMMITMENT[4]]`
+    ///   LOGS_COMMITMENT[4], CODE_PATCH_COMMITMENT[4]]`
     ///
     /// The batch kernel pipes this same felt sequence from the advice provider to memory and
     /// asserts the resulting hash matches a previously-verified `tx_id`.
@@ -60,6 +58,7 @@ impl TransactionCommitments {
         elements[8..12].copy_from_slice(self.input_notes_commitment.as_elements());
         elements[12..16].copy_from_slice(self.output_notes_commitment.as_elements());
         elements[16..20].copy_from_slice(self.logs_commitment.as_elements());
+        elements[20..24].copy_from_slice(self.code_patch_commitment.as_elements());
         elements
     }
 
@@ -87,6 +86,11 @@ impl TransactionCommitments {
     pub fn logs_commitment(&self) -> Word {
         self.logs_commitment
     }
+
+    /// Returns the code patch commitment.
+    pub fn code_patch_commitment(&self) -> CodePatchCommitment {
+        self.code_patch_commitment
+    }
 }
 
 impl From<&ProvenTransaction> for TransactionCommitments {
@@ -97,6 +101,7 @@ impl From<&ProvenTransaction> for TransactionCommitments {
             input_notes_commitment: tx.input_notes().commitment(),
             output_notes_commitment: tx.output_notes().commitment(),
             logs_commitment: tx.log_details().commitment(),
+            code_patch_commitment: tx.code_patch().commitment(),
         }
     }
 }
@@ -109,6 +114,7 @@ impl From<&ExecutedTransaction> for TransactionCommitments {
             input_notes_commitment: tx.input_notes().commitment(),
             output_notes_commitment: tx.output_notes().commitment(),
             logs_commitment: tx.logs_commitment(),
+            code_patch_commitment: tx.code_patch().commitment(),
         }
     }
 }
@@ -126,6 +132,7 @@ impl From<&ExecutedTransaction> for TransactionCommitments {
 ///     INPUT_NOTES_COMMITMENT,
 ///     OUTPUT_NOTES_COMMITMENT,
 ///     LOGS_COMMITMENT,
+///     CODE_PATCH_COMMITMENT,
 /// )
 ///
 /// This achieves the following properties:
@@ -159,21 +166,5 @@ impl Display for TransactionId {
 impl From<&ProvenTransaction> for TransactionId {
     fn from(tx: &ProvenTransaction) -> Self {
         Self::new(TransactionCommitments::from(tx))
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for TransactionId {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write_bytes(&self.0.to_bytes());
-    }
-}
-
-impl Deserializable for TransactionId {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let id = Word::read_from(source)?;
-        Ok(Self(id))
     }
 }

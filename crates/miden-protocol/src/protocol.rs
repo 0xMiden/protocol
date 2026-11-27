@@ -36,6 +36,18 @@ impl ProtocolLib {
     }
 }
 
+#[cfg(any(feature = "testing", test))]
+impl ProtocolLib {
+    const UTILS_PACKAGE_BYTES: &'static [u8] =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/miden-protocol-utils.masp"));
+
+    /// Returns the shared utilities package for testing under `miden::protocol_utils`.
+    pub fn utils_package() -> Package {
+        Package::read_from_bytes_trusted(Self::UTILS_PACKAGE_BYTES)
+            .expect("protocol utils masp should be well-formed")
+    }
+}
+
 impl AsRef<Package> for ProtocolLib {
     fn as_ref(&self) -> &Package {
         self.0.as_ref()

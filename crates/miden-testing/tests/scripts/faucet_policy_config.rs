@@ -4,27 +4,25 @@
 //! Integration coverage exercises the mint and burn dispatch branches (each switching `allow_all`
 //! to `owner_only`) plus the note-level guards. The send and receive branches run the identical
 //! script path (`load_policy_root_window` + a `set_*_policy` call) and differ only in variant and
-//! call target, which are covered by the `faucet_policy_config` unit storage tests; there is no
-//! built-in alternative `TransferPolicy` to switch to without bespoke policy setup.
+//! call target, which are covered by the `faucet_policy_config` unit storage tests.
 
 extern crate alloc;
 
 use alloc::vec::Vec;
 
-use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
-use miden_protocol::asset::AssetAmount;
+use miden_protocol::account::{Account, AccountId, AccountType};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::errors::standards::{
     ERR_FAUCET_POLICY_CONFIG_NOTE_IS_NOT_PUBLIC,
@@ -43,6 +41,7 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
+use super::fungible_faucet_account;
 use crate::into_private_note;
 
 // HELPERS
@@ -55,25 +54,16 @@ fn create_faucet_with_policies(
     builder: &mut MockChainBuilder,
     owner: AccountId,
 ) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("SYM")?)
-        .symbol("SYM".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .allowed_mint_policy(MintPolicy::owner_only())
         .active_burn_policy(BurnPolicy::allow_all())
         .allowed_burn_policy(BurnPolicy::owner_only())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
-    let account_builder = AccountBuilder::new([43; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(43)?
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager);
@@ -94,7 +84,7 @@ fn faucet_policy_config_note(
     sender: AccountId,
     account: AccountId,
     config: FaucetPolicyConfig,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
 ) -> anyhow::Result<Note> {
     let note = FaucetPolicyConfigNote::builder()
         .sender(sender)
@@ -115,7 +105,7 @@ fn malformed_faucet_policy_config_note(
     sender: AccountId,
     target: AccountId,
     storage: Vec<Felt>,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
 ) -> anyhow::Result<Note> {
     let note = NoteBuilder::new(sender, rng)
         .script(FaucetPolicyConfigNote::script())
@@ -154,7 +144,7 @@ async fn set_mint_policy_dispatch() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet = create_faucet_with_policies(&mut builder, owner)?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let owner_only_root = MintPolicy::owner_only().root();
     assert_ne!(active_mint_policy_root(&faucet)?, owner_only_root.as_word());
@@ -180,7 +170,7 @@ async fn set_burn_policy_dispatch() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet = create_faucet_with_policies(&mut builder, owner)?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let owner_only_root = BurnPolicy::owner_only().root();
     assert_ne!(active_burn_policy_root(&faucet)?, owner_only_root.as_word());
@@ -205,7 +195,7 @@ async fn unknown_variant_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet = create_faucet_with_policies(&mut builder, owner)?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     // a root-sized payload followed by variant 99, which is not a known action
     let storage = vec![Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(99u32)];
@@ -228,7 +218,7 @@ async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet = create_faucet_with_policies(&mut builder, owner)?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     // a single storage item instead of the expected five; the variant position reads as an
     // uninitialized zero, dispatching to SetMintPolicy, whose count guard then rejects the note
@@ -257,7 +247,7 @@ async fn oversized_storage_is_rejected_before_the_storage_is_loaded() -> anyhow:
     let mut builder = MockChain::builder();
     let faucet = create_faucet_with_policies(&mut builder, owner)?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let storage = vec![Felt::from(0u32); MAX_NOTE_STORAGE_ITEMS];
     let note = malformed_faucet_policy_config_note(owner, faucet.id(), storage, &mut rng)?;
@@ -282,7 +272,7 @@ async fn decoy_faucet_cannot_consume_note_of_another_faucet() -> anyhow::Result<
     let mut builder = MockChain::builder();
     let decoy = create_faucet_with_policies(&mut builder, owner)?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     // The note's intended target. It need not be built: the note only references its ID.
     let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
@@ -318,7 +308,7 @@ async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet = create_faucet_with_policies(&mut builder, owner)?;
     let mock_chain = builder.build()?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let note = faucet_policy_config_note(
         owner,

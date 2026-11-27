@@ -13,13 +13,16 @@ use miden_protocol::account::auth::{BoundSignature, PublicKeyCommitment, Signatu
 use miden_protocol::account::{Account, AccountCodeUpgrade, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
+use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
-use miden_protocol::transaction::{RawOutputNote, TransactionArgs, TransactionScript};
+use miden_protocol::transaction::{IesSealSeed, RawOutputNote, TransactionArgs, TransactionScript};
+use miden_standards::account::auth::{FeeConversionInfo, commit_fee_conversion_info};
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::TransactionMastStore;
 use miden_tx::auth::BasicAuthenticator;
+use rand::RngExt;
 
 use super::MockTransaction;
 use crate::MockChain;
@@ -85,7 +88,9 @@ pub struct MockTransactionBuilder<'chain> {
     required_blocks: BTreeSet<BlockNumber>,
     note_args: BTreeMap<NoteId, Word>,
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
+    ies_seal_seed: Option<IesSealSeed>,
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
+    code_to_register: Vec<Arc<MastForest>>,
     source_manager: Option<Arc<dyn SourceManagerSync>>,
 }
 
@@ -117,7 +122,9 @@ impl<'chain> MockTransactionBuilder<'chain> {
             required_blocks: BTreeSet::new(),
             note_args: BTreeMap::new(),
             signatures: Vec::new(),
+            ies_seal_seed: Some(IesSealSeed::new([0; 32])),
             note_scripts: BTreeMap::new(),
+            code_to_register: Vec::new(),
             source_manager: None,
         }
     }
@@ -230,6 +237,20 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
+    /// Sets the auth arguments that let an account with a standard signing auth component pay the
+    /// transaction fee in the chain's native fee asset at rate 1/1.
+    ///
+    /// The auth arguments commit to [`FeeConversionInfo::one_to_one`] under a random salt, and the
+    /// committed conversion info is added to the advice map.
+    pub fn native_fee_auth_args(self) -> Self {
+        let (auth_args, conversion_info) = commit_fee_conversion_info(
+            FeeConversionInfo::one_to_one(self.chain.fee_faucet_id()),
+            rand::rng().random(),
+        );
+
+        self.auth_args(auth_args).add_advice_map_entry(auth_args, conversion_info)
+    }
+
     /// Sets the code upgrade of the native account, which the transaction must provide if it
     /// upgrades the account's code.
     pub fn account_code_upgrade(mut self, account_code_upgrade: AccountCodeUpgrade) -> Self {
@@ -287,9 +308,25 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
+    /// Sets the IES seal seed of the transaction arguments, or removes it with `None`.
+    ///
+    /// Defaults to a fixed seed, so that transactions that encrypt with
+    /// `miden::protocol::ies::ecgfp5_eidos::seal` execute without further setup.
+    pub fn ies_seal_seed(mut self, ies_seal_seed: Option<IesSealSeed>) -> Self {
+        self.ies_seal_seed = ies_seal_seed;
+        self
+    }
+
     /// Adds a note script to the mock transaction for testing.
     pub fn add_note_script(mut self, script: NoteScript) -> Self {
         self.note_scripts.insert(script.root(), script);
+        self
+    }
+
+    /// Adds code that the data store of the mock transaction provides as code to register (see
+    /// [`DataStore::get_code_to_register`](miden_tx::DataStore::get_code_to_register)).
+    pub fn code_to_register(mut self, mast_forest: Arc<MastForest>) -> Self {
+        self.code_to_register.push(mast_forest);
         self
     }
 
@@ -339,6 +376,9 @@ impl<'chain> MockTransactionBuilder<'chain> {
         if let Some(account_code_upgrade) = self.account_code_upgrade {
             tx_args = tx_args.with_account_code_upgrade(account_code_upgrade);
         }
+        if let Some(ies_seal_seed) = self.ies_seal_seed {
+            tx_args = tx_args.with_ies_seal_seed(ies_seal_seed);
+        }
         tx_args.extend_advice_inputs(self.advice_inputs);
         tx_args.extend_output_note_recipients(
             self.expected_output_notes.iter().map(|note| note.recipient().clone()),
@@ -365,10 +405,12 @@ impl<'chain> MockTransactionBuilder<'chain> {
             expected_output_notes: self.expected_output_notes,
             foreign_account_inputs: self.foreign_account_inputs,
             tx_inputs,
+            code_tree: self.chain.code_tree().clone(),
             mast_store,
             authenticator: self.authenticator,
             source_manager,
             note_scripts: self.note_scripts,
+            code_to_register: self.code_to_register,
         })
     }
 }

@@ -40,6 +40,9 @@ pub use blocklist_config::{BlocklistConfig, BlocklistConfigNote};
 mod constant_fee_policy_config;
 pub use constant_fee_policy_config::ConstantFeePolicyConfigNote;
 
+mod encrypted_assets_issuer_key_config;
+pub use encrypted_assets_issuer_key_config::EncryptedAssetsIssuerKeyConfigNote;
+
 mod faucet_metadata_config;
 pub use faucet_metadata_config::{FaucetMetadataConfig, FaucetMetadataConfigNote};
 
@@ -60,3 +63,6 @@ pub use pause_config::{PauseConfig, PauseConfigNote};
 
 mod rbac_config;
 pub use rbac_config::{RbacConfig, RbacConfigNote};
+
+mod supply_restriction_config;
+pub use supply_restriction_config::{SupplyRestrictionConfig, SupplyRestrictionConfigNote};

@@ -25,6 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "partial_blockchain.proto",
         "transaction_inputs.proto",
         "transaction_effects.proto",
+        "transaction_summary.proto",
         "transaction_witness.proto",
         "batch.proto",
         "account_file.proto",
@@ -48,6 +49,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut prost = prost_build::Config::new();
     prost.out_dir(out_dir);
+    // The seed is secret, so its `Debug` implementation omits it.
+    prost.skip_debug([".transaction.IesSealSeed"]);
     for message in ["primitives.Felt", "primitives.Word", "primitives.ExecutionProof"] {
         prost.message_attribute(
             message,
@@ -70,7 +73,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".transaction.TransactionLog",
             ".transaction.TransactionLogs",
             ".transaction.TransactionLogDetails",
+            ".transaction.PublicTransactionLogEntry",
+            ".transaction.PublicTransactionLogs",
             ".blockchain.SignedBlock",
+            ".blockchain.ValidatorSignature",
             ".blockchain.BlockBody",
             ".blockchain.OutputNoteBatch",
             ".blockchain.BatchTransactions",
@@ -97,6 +103,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".account.AccountStorage",
             ".account.StorageSlot",
             ".account.StorageMap",
+            ".account.AccountVaultDelta",
+            ".account.AccountDelta",
             ".asset.AssetVault",
             ".account.PartialAccount",
             ".account.PartialVault",
@@ -114,6 +122,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".transaction.TransactionHeader",
             ".transaction.TransactionEffects",
             ".transaction.TransactionEffectsV1",
+            ".transaction.TransactionSummary",
+            ".transaction.TransactionSummaryV1",
             ".transaction.TransactionWitness",
             ".transaction.TransactionWitnessV1",
             ".transaction.PrivateOutputNote",
@@ -133,9 +143,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".transaction.AccountInputs",
             ".transaction.AuthSignature",
             ".transaction.BoundSignature",
+            ".transaction.IesSealSeed",
             ".transaction.TransactionArgs",
             ".transaction.NoteArgument",
             ".transaction.TransactionScript",
+            ".transaction.CodePatch",
             ".account.AccountVaultPatch",
             ".account.AccountCodePatch",
             ".account.AccountVaultPatchEntry",
@@ -220,9 +232,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string(),
     );
     prost.field_attribute(
-        ".transaction.AuthSignature.signature.falcon512_poseidon2",
+        ".transaction.AuthSignature.signature.falcon512_eidos",
         quote::quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
-            miden_protocol::crypto::dsa::falcon512_poseidon2::Signature
+            miden_protocol::crypto::dsa::falcon512_eidos::Signature
+        >)])
+        .to_string(),
+    );
+    prost.field_attribute(
+        ".transaction.IesSealSeed.seed",
+        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+            miden_protocol::transaction::IesSealSeed
         >)])
         .to_string(),
     );
@@ -234,9 +253,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string(),
     );
     prost.field_attribute(
-        ".account_file.AuthSecretKey.key.falcon512_poseidon2",
+        ".account_file.AuthSecretKey.key.falcon512_eidos",
         quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
-            miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey
+            miden_protocol::crypto::dsa::falcon512_eidos::SecretKey
         >)])
         .to_string(),
     );

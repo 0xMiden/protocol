@@ -2,14 +2,8 @@ use alloc::vec::Vec;
 
 use crate::account::AccountCode;
 use crate::crypto::utils::{bytes_to_elements_with_padding, padded_elements_to_bytes};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
-use crate::{Felt, Hasher, ProtocolDomainRegistry, WORD_SIZE, Word};
+use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
+use crate::{ACCOUNT_CODE_UPGRADE_ADVICE_DOMAIN, Felt, Hasher, WORD_SIZE, Word};
 
 // ACCOUNT CODE UPGRADE
 // ================================================================================================
@@ -34,15 +28,6 @@ pub struct AccountCodeUpgrade {
 }
 
 impl AccountCodeUpgrade {
-    // CONSTANTS
-    // --------------------------------------------------------------------------------------------
-
-    /// Domain separator for [`AccountCodeUpgrade::advice_map_key`].
-    ///
-    /// It keeps the key distinct from the keys of other advice map entries that hash the same
-    /// elements without a domain, such as note storage or note attachment content.
-    const ADVICE_MAP_KEY_DOMAIN: Felt = ProtocolDomainRegistry::AccountCodeUpgradeAdvice.as_felt();
-
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -62,7 +47,7 @@ impl AccountCodeUpgrade {
     pub fn advice_map_key(new_code_commitment: Word) -> Word {
         Hasher::hash_elements_in_domain(
             new_code_commitment.as_elements(),
-            Self::ADVICE_MAP_KEY_DOMAIN,
+            ACCOUNT_CODE_UPGRADE_ADVICE_DOMAIN,
         )
     }
 
@@ -115,22 +100,6 @@ impl AccountCodeUpgrade {
         })?;
 
         AccountCode::read_from_bytes(&bytes).map(Self::new)
-    }
-}
-
-impl Serializable for AccountCodeUpgrade {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.code.write_into(target);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.code.get_size_hint()
-    }
-}
-
-impl Deserializable for AccountCodeUpgrade {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        AccountCode::read_from(source).map(Self::new)
     }
 }
 

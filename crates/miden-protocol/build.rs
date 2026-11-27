@@ -52,7 +52,7 @@ const TX_KERNEL_ERRORS_ARRAY_NAME: &str = "TX_KERNEL_ERRORS";
 const PROTOCOL_LIB_ERRORS_ARRAY_NAME: &str = "PROTOCOL_LIB_ERRORS";
 const BATCH_KERNEL_ERRORS_ARRAY_NAME: &str = "BATCH_KERNEL_ERRORS";
 
-const TX_KERNEL_ERROR_CATEGORIES: [&str; 14] = [
+const TX_KERNEL_ERROR_CATEGORIES: [&str; 15] = [
     "KERNEL",
     "PROLOGUE",
     "EPILOGUE",
@@ -65,6 +65,7 @@ const TX_KERNEL_ERROR_CATEGORIES: [&str; 14] = [
     "NON_FUNGIBLE_ASSET",
     "VAULT",
     "LINK_MAP",
+    "MEM",
     "INPUT_NOTE",
     "OUTPUT_NOTE",
 ];
@@ -98,6 +99,13 @@ fn main() -> Result<()> {
     // compile protocol library
     let manifest_path = source_dir.join(ASM_PROTOCOL_DIR).join(PROJECT_MANIFEST);
     assemble_project(manifest_path, ProjectTargetSelector::Library, &mut store, &target_dir)?;
+
+    // Make the shared utilities available to test assemblers as a package.
+    #[cfg(any(feature = "testing", test))]
+    {
+        let manifest_path = source_dir.join(ASM_PROTOCOL_UTILS_DIR).join(PROJECT_MANIFEST);
+        assemble_project(manifest_path, ProjectTargetSelector::Library, &mut store, &target_dir)?;
+    }
 
     // compile batch kernel
     let manifest_path = source_dir.join(ASM_BATCH_KERNEL_DIR).join(PROJECT_MANIFEST);

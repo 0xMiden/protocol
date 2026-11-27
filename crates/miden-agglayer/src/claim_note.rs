@@ -4,7 +4,6 @@ use alloc::vec::Vec;
 use miden_core::{Felt, Word};
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::SequentialCommit;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -22,6 +21,7 @@ use miden_standards::interop::eth::{EthAddress, EthAmount};
 use miden_standards::note::costs::NoteConsumptionCost;
 use miden_standards::note::{MintNote, NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
+use rand::{Rng, RngExt};
 
 use crate::costs::CLAIM_CONSUMPTION_CYCLES;
 use crate::utils::Keccak256Output;
@@ -74,7 +74,7 @@ impl ClaimNote {
     ///
     /// # Errors
     /// Returns an error if note creation fails.
-    pub fn create<R: FeltRng>(
+    pub fn create<R: Rng>(
         storage: ClaimNoteStorage,
         target_bridge_id: AccountId,
         sender_account_id: AccountId,
@@ -90,7 +90,7 @@ impl ClaimNote {
 
         let metadata = PartialNoteMetadata::new(sender_account_id, NoteType::Public);
 
-        let recipient = NoteRecipient::new(rng.draw_word(), Self::script(), note_storage);
+        let recipient = NoteRecipient::new(rng.random(), Self::script(), note_storage);
         let assets = NoteAssets::new(vec![])?;
 
         Ok(Note::with_attachments(assets, metadata, recipient, attachments))

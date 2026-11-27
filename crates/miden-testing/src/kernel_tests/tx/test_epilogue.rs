@@ -1,7 +1,7 @@
 use alloc::string::ToString;
 use std::borrow::ToOwned;
 
-use miden_processor::crypto::random::RandomCoin;
+use anyhow::Context;
 use miden_processor::{Felt, ONE};
 use miden_protocol::account::{
     Account,
@@ -11,10 +11,12 @@ use miden_protocol::account::{
     AccountVaultPatch,
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED,
     ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY,
     ERR_EPILOGUE_NONCE_CANNOT_BE_0,
+    ERR_EPILOGUE_OUTPUT_NOTE_NOT_SEALED,
     ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME,
     ERR_TX_INVALID_EXPIRATION_DELTA,
 };
@@ -30,7 +32,12 @@ use miden_protocol::transaction::memory::{
     OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET,
     OUTPUT_NOTE_SECTION_OFFSET,
 };
-use miden_protocol::transaction::{RawOutputNote, RawOutputNotes, TransactionOutputs};
+use miden_protocol::transaction::{
+    RawOutputNote,
+    RawOutputNotes,
+    TransactionLogs,
+    TransactionOutputs,
+};
 use miden_protocol::{Hasher, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -45,6 +52,15 @@ use crate::{
     assert_execution_error,
     assert_transaction_executor_error,
 };
+
+/// Returns the logs expiration commitment of a transaction without logs that expires at the
+/// provided block number.
+fn logs_expiration_commitment(expiration_block_num: u32) -> Word {
+    Hasher::hash_double_word(&[
+        TransactionLogs::default().commitment(),
+        Word::from([expiration_block_num, 0, 0, 0]),
+    ])
+}
 
 /// Tests that the return values from the tx kernel main.masm program match the expected values.
 #[tokio::test]
@@ -74,12 +90,15 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
             push.{recipient}
             push.{note_type}
             push.{tag}
-            call.::mock::account::create_note
-            # => [note_idx]
+            call.::mock::account::create_note dup
+            # => [note_idx, note_idx]
 
             push.{ASSET_VALUE}
             push.{ASSET_ID}
             exec.output_note::add_asset
+            # => [note_idx]
+
+            exec.output_note::seal
             # => []
 
             exec.epilogue::finalize_transaction
@@ -120,7 +139,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     .to_commitment();
 
     let account_update_commitment =
-        Hasher::merge(&[final_account.to_commitment(), account_patch_commitment]);
+        Hasher::hash_double_word(&[final_account.to_commitment(), account_patch_commitment]);
 
     assert_eq!(
         exec_output.get_stack_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX),
@@ -131,23 +150,28 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         account_update_commitment,
     );
     assert_eq!(
-        exec_output
-            .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-            .as_canonical_u64(),
-        u64::from(u32::MAX)
-    );
-
-    assert_eq!(
-        exec_output.get_stack_word(TransactionOutputs::LOGS_COMMITMENT_WORD_IDX),
+        exec_output.get_stack_word(TransactionOutputs::CODE_PATCH_COMMITMENT_WORD_IDX),
         Word::empty(),
     );
 
-    // Everything after the expiration block number must be zero.
+    let logs_commitment = TransactionLogs::default().commitment();
+    let expiration_word = Word::from([u32::MAX, 0, 0, 0]);
+    let logs_expiration_commitment =
+        exec_output.get_stack_word(TransactionOutputs::LOGS_EXPIRATION_COMMITMENT_WORD_IDX);
     assert_eq!(
-        exec_output
-            .get_stack_word(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-            .as_elements()[1..],
-        Word::empty().as_elements()[1..],
+        logs_expiration_commitment,
+        Hasher::hash_double_word(&[logs_commitment, expiration_word]),
+    );
+
+    // The advice map must contain the logs commitment and the expiration word under the logs
+    // expiration commitment.
+    let logs_expiration_data = exec_output
+        .advice
+        .get_mapped_values(&logs_expiration_commitment)
+        .context("logs expiration commitment should be in the advice map")?;
+    assert_eq!(
+        logs_expiration_data,
+        [logs_commitment.as_elements(), expiration_word.as_elements()].concat(),
     );
 
     assert_eq!(
@@ -161,7 +185,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
 /// Tests that the output note memory section is correctly populated during finalize_transaction.
 #[tokio::test]
 async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
-    let mut rng = RandomCoin::new(Word::from([3, 4, 5, 6u32]));
+    let mut rng = EidosRandomCoin::new(Word::from([3, 4, 5, 6u32]));
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
     let mut assets = account.vault().assets();
     let asset0 = assets.next().unwrap();
@@ -195,12 +219,15 @@ async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
         push.{recipient}
         push.{note_type}
         push.{tag}
-        call.::mock::account::create_note
-        # => [note_idx]
+        call.::mock::account::create_note dup
+        # => [note_idx, note_idx]
 
         push.{ASSET_VALUE}
         push.{ASSET_ID}
         call.::miden::standards::wallets::basic::move_asset_to_note
+        # => [note_idx]
+
+        exec.output_note::seal
         # => []
         ",
             recipient = note.recipient().digest(),
@@ -319,6 +346,7 @@ async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Resul
         use miden::tx_kernel_core::tx
         use miden::tx_kernel_core::epilogue
         use miden::tx_kernel_core::account
+        use miden::core::sys
 
         begin
             exec.prologue::prepare_transaction
@@ -332,7 +360,7 @@ async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Resul
             exec.epilogue::finalize_transaction
 
             # truncate the stack
-            repeat.13 movup.13 drop end
+            exec.sys::truncate_stack
         end
         ";
 
@@ -348,10 +376,8 @@ async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Resul
         // (which can only decrease, not increase)
         let expected_expiry = v1.min(v2) + mock_tx.tx_inputs().block_header().block_num().as_u64();
         assert_eq!(
-            exec_output
-                .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-                .as_canonical_u64(),
-            expected_expiry
+            exec_output.get_stack_word(TransactionOutputs::LOGS_EXPIRATION_COMMITMENT_WORD_IDX),
+            logs_expiration_commitment(u32::try_from(expected_expiry)?),
         );
     }
 
@@ -416,6 +442,7 @@ async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
     use miden::tx_kernel_core::epilogue
     use miden::tx_kernel_core::tx
     use miden::tx_kernel_core::account
+    use miden::core::sys
 
     begin
         exec.prologue::prepare_transaction
@@ -425,7 +452,7 @@ async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
         exec.epilogue::finalize_transaction
 
         # truncate the stack
-        repeat.13 movup.13 drop end
+        exec.sys::truncate_stack
     end
     ";
 
@@ -433,10 +460,8 @@ async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
 
     // Default value should be equal to u32::MAX, set in the prologue
     assert_eq!(
-        exec_output
-            .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-            .as_canonical_u64() as u32,
-        u32::MAX
+        exec_output.get_stack_word(TransactionOutputs::LOGS_EXPIRATION_COMMITMENT_WORD_IDX),
+        logs_expiration_commitment(u32::MAX),
     );
 
     Ok(())
@@ -454,6 +479,7 @@ async fn test_epilogue_increment_nonce_success() -> anyhow::Result<()> {
         use mock::account
         use miden::tx_kernel_core::epilogue
         use miden::tx_kernel_core::memory
+        use miden::core::sys
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
@@ -467,8 +493,8 @@ async fn test_epilogue_increment_nonce_success() -> anyhow::Result<()> {
 
             exec.epilogue::finalize_transaction
 
-            # clean the stack
-            dropw dropw dropw dropw
+            # truncate the stack
+            exec.sys::truncate_stack
 
             exec.memory::get_account_nonce
             push.{expected_nonce} assert_eq.err="nonce mismatch"
@@ -574,6 +600,9 @@ async fn test_epilogue_empty_transaction_with_empty_output_note() -> anyhow::Res
             call.::mock::account::create_note
             # => [note_idx]
 
+            dup exec.output_note::seal
+            # => [note_idx]
+
             # make sure that output note was created: compare the output note hash with an empty
             # word
             exec.note::compute_output_notes_commitment
@@ -596,6 +625,48 @@ async fn test_epilogue_empty_transaction_with_empty_output_note() -> anyhow::Res
 
     // assert that even if the output note was created, the transaction is considered empty
     assert_execution_error!(result, ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY);
+
+    Ok(())
+}
+
+/// Tests that the epilogue rejects a transaction that leaves any of its output notes unsealed.
+#[rstest::rstest]
+#[case::first_note_unsealed("drop", "exec.output_note::seal")]
+#[case::last_note_unsealed("exec.output_note::seal", "drop")]
+#[tokio::test]
+async fn epilogue_fails_when_output_note_is_not_sealed(
+    #[case] finish_note0: &str,
+    #[case] finish_note1: &str,
+) -> anyhow::Result<()> {
+    let code = format!(
+        "
+        use miden::protocol::output_note
+        use mock::util
+
+        @transaction_script
+        pub proc main
+            exec.util::create_default_note
+            # => [note_idx]
+            {finish_note0}
+            # => []
+
+            exec.util::create_default_note
+            # => [note_idx]
+            {finish_note1}
+            # => []
+        end
+        "
+    );
+
+    let tx_script = CodeBuilder::with_mock_packages().compile_tx_script(code)?;
+
+    let result = TestTransactionBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_EPILOGUE_OUTPUT_NOTE_NOT_SEALED);
 
     Ok(())
 }

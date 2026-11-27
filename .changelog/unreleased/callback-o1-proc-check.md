@@ -1,0 +1,1 @@
+[BREAKING] The transaction kernel now checks a faucet callback procedure root in constant time instead of scanning the faucet's procedures for every asset, so a root that is not part of the faucet's code fails with the host error `UnknownAccountProcedure` and `ERR_FAUCET_CALLBACK_PROC_ROOT_NOT_PART_OF_ACCOUNT_CODE` is removed.

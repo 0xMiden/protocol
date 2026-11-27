@@ -14,10 +14,9 @@
 
 use anyhow::{Context, Result};
 use miden_processor::advice::AdviceInputs;
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{Account, AccountId, StorageMapKey, StorageSlotName};
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
     Note,
@@ -33,6 +32,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::transaction::ExecutedTransaction;
+use miden_protocol::utils::FeltSliceExt;
 use miden_protocol::{Felt, Word};
 use miden_standards::interop::eth::EthEmbeddedAccountId;
 use miden_standards::note::{
@@ -47,6 +47,7 @@ use miden_tx::TransactionExecutorError;
 use miden_usdcx::note::xreserve_admin::XReserveSetAttesterNote;
 use miden_usdcx::vectors::{MiVector, load};
 use miden_usdcx::xreserve::encoding::{DepositIntent, MintIntent, bytes32_to_storage_map_key};
+use rand::RngExt;
 
 use super::*;
 
@@ -140,8 +141,8 @@ pub fn nonce_key_of_payload(payload: &[u8]) -> Word {
 }
 
 /// Deterministic note rng (serial only; never affects a gate).
-pub fn note_rng(seed: u64) -> RandomCoin {
-    RandomCoin::new(Word::from([
+pub fn note_rng(seed: u64) -> EidosRandomCoin {
+    EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(3u32),
@@ -280,15 +281,6 @@ fn transport_felts(
     felts
 }
 
-fn words_of(felts: &[Felt]) -> Vec<Word> {
-    felts
-        .as_chunks::<{ Word::NUM_ELEMENTS }>()
-        .0
-        .iter()
-        .map(|c| Word::from(*c))
-        .collect()
-}
-
 /// The merged transport attachment under `plan` (word truncation / padding applied last, so the
 /// committed word count is exactly what the negatives intend).
 fn transport_attachment(
@@ -296,7 +288,9 @@ fn transport_attachment(
     key_source: &AttesterVector,
     plan: &AttachmentPlan,
 ) -> Result<NoteAttachment> {
-    let mut words = words_of(&transport_felts(payload, key_source, plan));
+    let mut words = transport_felts(payload, key_source, plan)
+        .to_words()
+        .context("the transport sections should be padded to whole words")?;
     if let Some(truncate) = plan.transport_truncate_words {
         words.truncate(truncate);
     }
@@ -331,10 +325,10 @@ pub fn tampered_mint_note(
         .map_err(|e| anyhow::anyhow!("storage asset: {e}"))?;
     let tag = storage.tag.unwrap_or_else(|| NoteTag::with_account_target(storage.recipient));
     let mint_storage = if storage.public {
-        MintNoteStorage::new_public(recipient_recipe, asset, tag)
+        MintNoteStorage::new_public_output(recipient_recipe, asset, tag)
             .map_err(|e| anyhow::anyhow!("public mint storage: {e}"))?
     } else {
-        MintNoteStorage::new_private(recipient_recipe.digest(), asset, tag)
+        MintNoteStorage::new_private_output(recipient_recipe.digest(), asset, tag)
     };
     let mut attachments: Vec<NoteAttachment> = Vec::new();
     if plan.transport {
@@ -358,7 +352,7 @@ pub fn tampered_mint_note(
     let metadata = PartialNoteMetadata::new(pf.producer_id, NoteType::Public)
         .with_tag(NoteTag::with_account_target(pf.faucet_id));
     let recipient = NoteRecipient::new(
-        note_rng(rng_seed).draw_word(),
+        note_rng(rng_seed).random(),
         MintNote::script(),
         NoteStorage::from(mint_storage),
     );

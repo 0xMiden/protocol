@@ -1,10 +1,11 @@
 use super::account::{AccountHeader, AccountId};
 use super::note::{NoteId, Nullifier};
-use super::{Felt, Hasher, WORD_SIZE, Word, ZERO};
+use super::{Felt, Hasher, Word};
 
 mod effects;
 mod executed_tx;
 mod fee;
+mod ies_seal_seed;
 mod inputs;
 mod kernel;
 mod logs;
@@ -23,10 +24,12 @@ mod verifier;
 pub use effects::TransactionEffects;
 pub use executed_tx::{ExecutedTransaction, TransactionMeasurements};
 pub use fee::{TransactionFee, TransactionFeeError};
+pub use ies_seal_seed::IesSealSeed;
 pub use inputs::{AccountInputs, InputNote, InputNotes, ToInputNoteCommitments, TransactionInputs};
 pub use kernel::{TransactionAdviceInputs, TransactionEventId, TransactionKernel, memory};
 pub use logs::{
     LogTopic,
+    PublicTransactionLogs,
     TransactionLog,
     TransactionLogDetails,
     TransactionLogError,

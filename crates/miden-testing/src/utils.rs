@@ -1,16 +1,22 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::Asset;
-use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::vm::AdviceMap;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::note::NoteBuilder;
-use rand::SeedableRng;
 use rand::rngs::SmallRng;
+use rand::{RngExt, SeedableRng};
+
+// CONSTANTS
+// ================================================================================================
+
+/// The default expiration delta of `miden::standards::expiration`, which standard procedures that
+/// read mutable account state through FPI apply to the transaction.
+pub const DEFAULT_EXPIRATION_BLOCK_DELTA: u32 = 20;
 
 // HELPER MACROS
 // ================================================================================================
@@ -117,7 +123,7 @@ pub fn create_public_p2any_note(
     sender: AccountId,
     assets: impl IntoIterator<Item = Asset>,
 ) -> Note {
-    let mut rng = RandomCoin::new(Default::default());
+    let mut rng = EidosRandomCoin::new(Default::default());
     create_p2any_note(sender, NoteType::Public, assets, &mut rng)
 }
 
@@ -131,9 +137,9 @@ pub fn create_p2any_note(
     sender: AccountId,
     note_type: NoteType,
     assets: impl IntoIterator<Item = Asset>,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
 ) -> Note {
-    let serial_number = rng.draw_word();
+    let serial_number = rng.random();
     let assets: Vec<_> = assets.into_iter().collect();
     let mut code_body = String::new();
     for asset_idx in 0..assets.len() {
@@ -316,6 +322,12 @@ fn note_script_that_creates_notes<'note>(
                 ASSET_VALUE = asset.to_value_word(),
             ));
         }
+
+        out.push_str(
+            "dup exec.output_note::seal
+            # => [note_idx]
+            ",
+        );
     }
 
     out.push_str("repeat.5 dropw end\nend");

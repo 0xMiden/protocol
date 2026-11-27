@@ -1,4 +1,3 @@
-use {BlockNumber} from miden::protocol_utils::types
 use {Commitment} from miden::tx_kernel_core::types
 use miden::tx_kernel_core::account
 use miden::tx_kernel_core::account_update
@@ -8,7 +7,7 @@ use miden::tx_kernel_core::memory
 use miden::tx_kernel_core::note
 use miden::tx_kernel_core::tx
 
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::core::word
 use {ASSET_SIZE} from miden::tx_kernel_core::asset
 use {NOTE_MEM_SIZE} from miden::tx_kernel_core::constants
@@ -27,6 +26,9 @@ const ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT =
     "auth procedure has been called from outside the epilogue"
 
 const ERR_EPILOGUE_NONCE_CANNOT_BE_0 = "nonce cannot be 0 after an account-creating transaction"
+
+const ERR_EPILOGUE_OUTPUT_NOTE_NOT_SEALED =
+    "every output note must be sealed before the transaction ends"
 
 # CONSTANTS
 # =================================================================================================
@@ -86,6 +88,37 @@ proc copy_output_notes_to_advice_map(output_notes_commitment: Commitment) -> Com
         movup.4 drop movup.4 drop
     end
     # => [OUTPUT_NOTES_COMMITMENT]
+end
+
+#! Asserts that every output note created by the transaction is sealed.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - any output note is not sealed.
+proc assert_output_notes_sealed()
+    # compute the end boundary of the output notes section
+    exec.memory::get_num_output_notes exec.memory::get_output_note_ptr
+    # => [output_notes_end_ptr]
+
+    push.OUTPUT_NOTE_SECTION_OFFSET
+    # => [output_note_ptr, output_notes_end_ptr]
+
+    dup.1 dup.1 neq
+    # => [should_loop, output_note_ptr, output_notes_end_ptr]
+
+    while.true
+        dup exec.memory::is_output_note_sealed
+        assert.err=ERR_EPILOGUE_OUTPUT_NOTE_NOT_SEALED
+        # => [output_note_ptr, output_notes_end_ptr]
+
+        add.NOTE_MEM_SIZE dup.1 dup.1 neq
+        # => [should_loop, output_note_ptr, output_notes_end_ptr]
+    end
+
+    drop drop
+    # => []
 end
 
 # BUILD OUTPUT VAULT
@@ -261,29 +294,33 @@ end
 
 #! Finalizes the transaction by performing the following steps:
 #! - invokes the native account's authentication procedure.
+#! - asserts that every output note is sealed.
 #! - applies a pending code upgrade of the native account.
-#! - computes the output notes commitment and transaction logs commitment.
+#! - computes the output notes commitment and the hash of the transaction logs commitment and
+#!   expiration block number.
 #! - computes the account delta commitment and the final account commitment, and the merged
 #!   hash of both.
 #!
 #! Inputs:  []
 #! Outputs: [
-#!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT, tx_expiration_block_num
+#!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
+#!   CODE_PATCH_COMMITMENT, LOGS_EXPIRATION_COMMITMENT
 #! ]
 #!
 #! Where:
 #! - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
 #! - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
 #!   patch commitment.
-#! - tx_expiration_block_num is the transaction expiration block number.
-#! - LOGS_COMMITMENT is the commitment to all transaction logs, including those emitted during
-#!   authentication.
+#! - CODE_PATCH_COMMITMENT is the commitment to the code patch of the transaction.
+#! - LOGS_EXPIRATION_COMMITMENT is the hash of the commitment to all transaction logs, including
+#!   those emitted during authentication, and the word [tx_expiration_block_num, 0, 0, 0].
 #!
 #! Locals:
 #! - 0..4: OUTPUT_NOTES_COMMITMENT
 #! - 4..8: ACCOUNT_PATCH_COMMITMENT
 #!
 #! Panics if:
+#! - any output note is not sealed after the authentication procedure returns.
 #! - the assets that were in input notes or in the account vault at the beginning of
 #!   transaction execution are not in output notes or in the account vault at the end of the
 #!   transaction.
@@ -292,13 +329,17 @@ end
 #!   changing the account's state. The latter is validated as part of computing the account patch
 #!   commitment.
 @locals(8)
-pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, BlockNumber)
+pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, Commitment)
     # make sure that the context was switched back to the native account
     exec.memory::assert_native_account
 
     # ------ Execute the account's authentication procedure ------
 
     exec.execute_auth_procedure
+    # => []
+
+    # the check runs after the auth procedure, since it can create notes as well
+    exec.assert_output_notes_sealed
     # => []
 
     # nonce cannot be 0 after the first transaction
@@ -342,24 +383,19 @@ pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, BlockNum
     # => [ACCOUNT_PATCH_COMMITMENT]
 
     # store commitment in local
-    loc_storew_le.4
-    # => [ACCOUNT_PATCH_COMMITMENT]
+    loc_storew_le.4 dropw
+    # => []
 
     # ------ Assert that account was changed or notes were consumed ------
 
-    # check if the account patch commitment is the EMPTY_WORD, which is the case when the patch
-    # is empty, i.e. the account did not change in this transaction
-    exec.word::eqz
-    # => [is_patch_commitment_empty]
+    # When the nonce is unchanged, compute_patch_commitment has already proved that the storage,
+    # vault, and code patches are empty.
+    exec.account_update::was_nonce_incremented not
+    # => [is_patch_empty]
 
-    # assert that if the patch commitment is empty, the transaction had input notes,
-    # otherwise this transaction is considered empty, which is not allowed
-    exec.memory::get_input_notes_commitment
-    # => [INPUT_NOTES_COMMITMENT, is_patch_commitment_empty]
-
-    # if the input notes commitment is an empty word there were no input notes in this transaction
-    exec.word::eqz and
-    # => [is_patch_commitment_and_input_notes_commitment_empty]
+    # The input-note count is bound to the commitment checked by the prologue.
+    exec.memory::get_num_input_notes eq.0 and
+    # => [is_patch_and_input_notes_empty]
 
     # assert that either the account was changed or notes were consumed
     assertz.err=ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY
@@ -398,20 +434,34 @@ pub proc finalize_transaction() -> (Commitment, Commitment, Commitment, BlockNum
     adv.insert_hdword
     # => [FINAL_ACCOUNT_COMMITMENT, ACCOUNT_PATCH_COMMITMENT]
 
-    exec.poseidon2::merge
+    exec.eidos::hash_double_word
     # => [ACCOUNT_UPDATE_COMMITMENT]
 
     # ------ Build output stack ------
 
-    # Place the logs commitment below the account update commitment.
-    exec.tx::get_logs_commitment swapw
-    # => [ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT]
+    push.0.0.0 exec.memory::get_expiration_block_num
+    # => [EXPIRATION_WORD, ACCOUNT_UPDATE_COMMITMENT]
 
-    # place the expiration block number below the two commitment words
-    exec.memory::get_expiration_block_num movdn.8
-    # => [ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT, tx_expiration_block_num]
+    exec.tx::get_logs_commitment
+    # => [LOGS_COMMITMENT, EXPIRATION_WORD, ACCOUNT_UPDATE_COMMITMENT]
+
+    # insert into advice map LOGS_EXPIRATION_COMMITMENT: (LOGS_COMMITMENT, EXPIRATION_WORD),
+    # where LOGS_EXPIRATION_COMMITMENT = hash(LOGS_COMMITMENT || EXPIRATION_WORD)
+    adv.insert_hdword
+    # => [LOGS_COMMITMENT, EXPIRATION_WORD, ACCOUNT_UPDATE_COMMITMENT]
+
+    exec.eidos::hash_double_word
+    # => [LOGS_EXPIRATION_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT]
+
+    # TODO(#4006): compute the code patch commitment and insert the code patch into the advice map.
+    padw
+    # => [CODE_PATCH_COMMITMENT, LOGS_EXPIRATION_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT]
+
+    # place the account update commitment above the code patch commitment
+    movupw.2
+    # => [ACCOUNT_UPDATE_COMMITMENT, CODE_PATCH_COMMITMENT, LOGS_EXPIRATION_COMMITMENT]
 
     # load output notes commitment from local
     padw loc_loadw_le.0
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, LOGS_COMMITMENT, tx_expiration_block_num]
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, CODE_PATCH_COMMITMENT, LOGS_EXPIRATION_COMMITMENT]
 end

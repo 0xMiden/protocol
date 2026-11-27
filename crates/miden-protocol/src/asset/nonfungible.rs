@@ -6,13 +6,6 @@ use super::{Asset, AssetComposition, AssetError, Word};
 use crate::Hasher;
 use crate::account::AccountId;
 use crate::asset::vault::AssetClass;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // NON-FUNGIBLE ASSET
 // ================================================================================================
@@ -24,10 +17,10 @@ use crate::utils::serde::{
 /// and its asset class is the first two elements of that hash. The protocol itself does not enforce
 /// this interpretation, see [`Asset`].
 ///
-/// The collision resistance of non-fungible assets issued by the same faucet is ~2^64, due to the
-/// 128-bit asset class that is unique per non-fungible asset. In other words, two non-fungible
-/// assets issued by the same faucet are very unlikely to have the same asset ID and thus should
-/// not collide when stored in the same account's vault.
+/// Each Eidos digest element contains 63 bits, so the two-element asset class has 126 bits of
+/// support. Generic birthday collision work for asset classes issued by the same faucet is
+/// therefore at most about 2^63 hash evaluations. This bound concerns finding any colliding pair,
+/// not matching a particular existing asset class.
 ///
 /// [`NonFungibleAsset`] itself does not contain the actual asset data. The container for this data
 /// is [`NonFungibleAssetDetails`].
@@ -41,15 +34,6 @@ pub struct NonFungibleAsset {
 }
 
 impl NonFungibleAsset {
-    // CONSTANTS
-    // --------------------------------------------------------------------------------------------
-
-    /// The serialized size of a [`NonFungibleAsset`] in bytes.
-    ///
-    /// A composition byte (u8) plus an account ID (15 bytes) plus a word (32 bytes).
-    pub const SERIALIZED_SIZE: usize =
-        AssetComposition::SERIALIZED_SIZE + AccountId::SERIALIZED_SIZE + Word::SERIALIZED_SIZE;
-
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -154,40 +138,6 @@ impl From<NonFungibleAsset> for Asset {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for NonFungibleAsset {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        // Lead with the asset composition byte to distinguish asset types on the wire.
-        target.write(AssetComposition::None);
-        target.write(self.faucet_id());
-        target.write(self.value);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        AssetComposition::SERIALIZED_SIZE
-            + self.faucet_id.get_size_hint()
-            + self.value.get_size_hint()
-    }
-}
-
-impl Deserializable for NonFungibleAsset {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let composition: AssetComposition = source.read()?;
-        if !composition.is_none() {
-            return Err(DeserializationError::InvalidValue(format!(
-                "expected non-fungible asset composition but found {composition:?}"
-            )));
-        }
-
-        let faucet_id: AccountId = source.read()?;
-        let value: Word = source.read()?;
-
-        Ok(NonFungibleAsset::from_parts(faucet_id, value))
-    }
-}
-
 // NON-FUNGIBLE ASSET DETAILS
 // ================================================================================================
 
@@ -226,13 +176,8 @@ mod tests {
 
     use super::*;
     use crate::Felt;
-    use crate::account::AccountId;
     use crate::asset::FungibleAsset;
-    use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
-    };
+    use crate::testing::account_id::ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET;
 
     #[test]
     fn non_fungible_asset_from_id_and_value_words_fails_on_invalid_composition()
@@ -264,40 +209,6 @@ mod tests {
             .unwrap_err();
 
         assert_matches!(err, AssetError::NonFungibleAssetClassMustMatchValue { .. });
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_non_fungible_asset_serde() -> anyhow::Result<()> {
-        for non_fungible_account_id in [
-            ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
-            ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
-            ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
-        ] {
-            let account_id = AccountId::try_from(non_fungible_account_id).unwrap();
-            let details = NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]);
-            let non_fungible_asset = NonFungibleAsset::new(&details);
-            assert_eq!(
-                non_fungible_asset,
-                NonFungibleAsset::read_from_bytes(&non_fungible_asset.to_bytes()).unwrap()
-            );
-            assert_eq!(non_fungible_asset.to_bytes().len(), non_fungible_asset.get_size_hint());
-
-            assert_eq!(
-                non_fungible_asset,
-                NonFungibleAsset::from_id_and_value_words(
-                    non_fungible_asset.to_id_word(),
-                    non_fungible_asset.to_value_word()
-                )?
-            )
-        }
-
-        let fungible_asset = FungibleAsset::mock(42);
-        let err = NonFungibleAsset::read_from_bytes(&fungible_asset.to_bytes()).unwrap_err();
-        assert_matches!(err, DeserializationError::InvalidValue(msg) => {
-            assert!(msg.contains("expected non-fungible asset composition but found Fungible"));
-        });
 
         Ok(())
     }

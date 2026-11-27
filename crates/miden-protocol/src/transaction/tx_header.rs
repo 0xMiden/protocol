@@ -2,6 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use crate::Word;
+use crate::block::code_tree::CodePatchCommitment;
 use crate::errors::TransactionHeaderError;
 use crate::note::NoteHeader;
 use crate::transaction::{
@@ -20,9 +21,9 @@ use crate::transaction::{
 ///
 /// The header is essentially a direct copy of the transaction's public commitments, in particular
 /// the initial and final account state commitment as well as all nullifiers of consumed notes and
-/// all note IDs of created notes, together with the transaction logs commitment. While account
-/// updates may be aggregated and notes may be erased as part of batch and block building, the
-/// header retains the original transaction's data.
+/// all note IDs of created notes, together with the transaction logs and code patch commitments.
+/// While account updates may be aggregated and notes may be erased as part of batch and block
+/// building, the header retains the original transaction's data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionHeader {
     id: TransactionId,
@@ -32,6 +33,7 @@ pub struct TransactionHeader {
     input_notes: InputNotes<InputNoteCommitment>,
     output_notes: Vec<NoteHeader>,
     logs_commitment: Word,
+    code_patch_commitment: CodePatchCommitment,
 }
 
 impl TransactionHeader {
@@ -41,8 +43,8 @@ impl TransactionHeader {
     /// Constructs a new [`TransactionHeader`] from the provided parameters.
     ///
     /// The [`TransactionId`] is computed from the provided parameters, committing to the initial
-    /// and final account commitments, the input and output note commitments, and the transaction
-    /// logs commitment.
+    /// and final account commitments, the input and output note commitments, the transaction
+    /// logs commitment and the code patch commitment.
     ///
     /// The input notes and output notes must be in the same order as they appeared in the
     /// transaction that this header represents, otherwise an incorrect ID will be computed.
@@ -63,6 +65,7 @@ impl TransactionHeader {
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<NoteHeader>,
         logs_commitment: Word,
+        code_patch_commitment: CodePatchCommitment,
     ) -> Result<Self, TransactionHeaderError> {
         let mut input_nullifiers = BTreeSet::new();
         for input_note in &input_notes {
@@ -93,6 +96,7 @@ impl TransactionHeader {
             input_notes_commitment,
             output_notes_commitment,
             logs_commitment,
+            code_patch_commitment,
         ));
 
         Ok(Self {
@@ -103,6 +107,7 @@ impl TransactionHeader {
             input_notes,
             output_notes,
             logs_commitment,
+            code_patch_commitment,
         })
     }
 
@@ -120,6 +125,7 @@ impl TransactionHeader {
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<NoteHeader>,
         logs_commitment: Word,
+        code_patch_commitment: CodePatchCommitment,
     ) -> Self {
         Self {
             id,
@@ -129,6 +135,7 @@ impl TransactionHeader {
             input_notes,
             output_notes,
             logs_commitment,
+            code_patch_commitment,
         }
     }
 
@@ -138,6 +145,11 @@ impl TransactionHeader {
     /// Returns the commitment to public or private transaction logs.
     pub fn logs_commitment(&self) -> Word {
         self.logs_commitment
+    }
+
+    /// Returns the commitment to the code patch of the transaction.
+    pub fn code_patch_commitment(&self) -> CodePatchCommitment {
+        self.code_patch_commitment
     }
 
     /// Returns the unique identifier of this transaction.
@@ -198,6 +210,7 @@ impl From<&ProvenTransaction> for TransactionHeader {
             tx.input_notes().clone(),
             tx.output_notes().iter().map(|note| *note.header()).collect(),
             tx.log_details().commitment(),
+            tx.code_patch().commitment(),
         )
     }
 }
@@ -213,6 +226,7 @@ impl From<&ExecutedTransaction> for TransactionHeader {
             tx.input_notes().to_commitments(),
             tx.output_notes().iter().map(|n| *n.header()).collect(),
             tx.logs_commitment(),
+            tx.code_patch().commitment(),
         )
     }
 }
@@ -227,6 +241,7 @@ mod tests {
     use super::TransactionHeader;
     use crate::Word;
     use crate::account::AccountId;
+    use crate::block::code_tree::CodePatch;
     use crate::errors::TransactionHeaderError;
     use crate::note::Note;
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
@@ -250,6 +265,7 @@ mod tests {
             inputs,
             vec![],
             Word::empty(),
+            CodePatch::default().commitment(),
         )
         .unwrap_err();
 
@@ -271,6 +287,7 @@ mod tests {
             InputNotes::default(),
             vec![*note.header(), *note.header()],
             Word::empty(),
+            CodePatch::default().commitment(),
         )
         .unwrap_err();
 
@@ -293,6 +310,7 @@ mod tests {
             InputNotes::new(vec![input]).unwrap(),
             vec![*note.header()],
             Word::empty(),
+            CodePatch::default().commitment(),
         )
         .unwrap_err();
 

@@ -23,6 +23,7 @@ use miden_protocol::{
     MAX_OUTPUT_NOTES_PER_BATCH,
     MAX_TRANSACTIONS_PER_BATCH,
     MIN_PROOF_SECURITY_LEVEL,
+    PROTOCOL_PROOF_HASH,
     WORD_SIZE,
     Word,
 };
@@ -262,6 +263,7 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
     let proven = LocalBatchProver::default().prove(executed).context("batch proving failed")?;
 
     assert_eq!(proven.id(), expected_id);
+    assert_eq!(proven.proof().vm().proof.hash_fn(), PROTOCOL_PROOF_HASH);
 
     Ok(())
 }
@@ -292,25 +294,16 @@ async fn prove_batch_settling_precompile_claims() -> anyhow::Result<()> {
     for (shape, transactions, expected_root_count) in shapes {
         let batch = propose_batch(&chain, transactions).context(shape)?;
 
-        // The roots the batch must settle, in transaction order.
-        let mut expected_roots = Vec::new();
+        // The witnesses the batch must settle, in transaction order.
+        let mut expected_witnesses = Vec::new();
         for transaction in batch.transactions() {
-            expected_roots
-                .extend(transaction.precompile_witness().map(|witness| witness.root_unchecked()));
+            expected_witnesses.extend(transaction.precompile_witness().cloned());
         }
         // Pin the count independently, so this fails if transactions stop deferring claims.
-        assert_eq!(expected_roots.len(), expected_root_count, "{shape}");
+        assert_eq!(expected_witnesses.len(), expected_root_count, "{shape}");
 
         let executed = BatchExecutor::new().execute(batch).context(shape)?;
-        assert_eq!(
-            executed
-                .precompile_witnesses()
-                .iter()
-                .map(|witness| witness.root_unchecked())
-                .collect::<Vec<_>>(),
-            expected_roots,
-            "{shape}"
-        );
+        assert_eq!(executed.precompile_witnesses(), expected_witnesses.as_slice(), "{shape}");
 
         LocalBatchProver::default().prove(executed).context(shape)?;
     }
@@ -345,6 +338,7 @@ async fn propose_batch_rejects_mismatched_precompile_witness() -> anyhow::Result
             PrecompileStatus::Deferred(foreign_witness),
         ),
         original.log_details().clone(),
+        original.code_patch().clone(),
     )?;
 
     let (reference_block, partial_blockchain, unauthenticated_note_proofs) =

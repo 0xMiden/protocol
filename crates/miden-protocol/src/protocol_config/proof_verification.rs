@@ -1,15 +1,7 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use super::ProtocolConfigError;
 use crate::crypto::SequentialCommit;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{Felt, Word, ZERO};
 
 // PROOF VERIFICATION CONFIG
@@ -91,30 +83,6 @@ impl SequentialCommit for ProofVerificationConfig {
     }
 }
 
-impl Serializable for ProofVerificationConfig {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let Self {
-            vm_verifier_root,
-            precompile_verifier_root,
-            security_policy,
-        } = self;
-
-        vm_verifier_root.write_into(target);
-        precompile_verifier_root.write_into(target);
-        security_policy.write_into(target);
-    }
-}
-
-impl Deserializable for ProofVerificationConfig {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let vm_verifier_root = source.read()?;
-        let precompile_verifier_root = source.read()?;
-        let security_policy = source.read()?;
-
-        Ok(Self::new(vm_verifier_root, precompile_verifier_root, security_policy))
-    }
-}
-
 // PROOF SECURITY POLICY
 // ================================================================================================
 
@@ -173,25 +141,6 @@ impl ProofSecurityPolicy {
     }
 }
 
-impl Serializable for ProofSecurityPolicy {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let Self { security_estimator_root, minimum_bits } = self;
-
-        security_estimator_root.write_into(target);
-        minimum_bits.write_into(target);
-    }
-}
-
-impl Deserializable for ProofSecurityPolicy {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let security_estimator_root = source.read()?;
-        let minimum_bits = source.read()?;
-
-        Self::new(security_estimator_root, minimum_bits)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -209,8 +158,7 @@ mod tests {
 
     #[test]
     fn to_elements_is_pipeable() {
-        // The kernel pipes the protocol config into memory, which requires the element count of
-        // every nested preimage to be a multiple of the hasher's rate width.
+        // The kernel pipes the protocol config into memory as complete Eidos compression blocks.
         assert_eq!(config().to_elements().len(), 16);
     }
 
@@ -218,15 +166,5 @@ mod tests {
     fn new_rejects_zero_minimum_bits() {
         let error = ProofSecurityPolicy::new(Word::empty(), 0).unwrap_err();
         assert_matches!(error, ProtocolConfigError::MinimumSecurityBitsMustBeNonZero);
-    }
-
-    #[test]
-    fn serde_round_trip() -> anyhow::Result<()> {
-        let config = config();
-
-        let deserialized = ProofVerificationConfig::read_from_bytes(&config.to_bytes())?;
-        assert_eq!(config, deserialized);
-
-        Ok(())
     }
 }

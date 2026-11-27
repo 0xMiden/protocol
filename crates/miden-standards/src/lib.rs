@@ -16,7 +16,11 @@ mod standards_lib;
 pub mod tx_script;
 pub mod utils;
 
-pub use domain_registry::StandardsDomainRegistry;
+pub use domain_registry::{
+    MULTISIG_SMART_CANCEL_PROPOSAL_DOMAIN,
+    MultisigSmartCancelProposalDomain,
+    StandardsDomainRegistry,
+};
 pub use standards_lib::StandardsLib;
 
 #[cfg(any(feature = "testing", test))]

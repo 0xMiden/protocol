@@ -16,6 +16,12 @@ pub use witness::CodeWitness;
 mod partial;
 pub use partial::PartialCodeTree;
 
+mod patch;
+pub use patch::{CodePatch, CodePatchCommitment};
+
+mod root;
+pub use root::CodeTreeRoot;
+
 /// The value of a procedure root that is present in the code tree.
 ///
 /// Absent procedure roots have the [`EMPTY_WORD`] as their value.
@@ -34,6 +40,9 @@ const PRESENT_VALUE: Word = Word::new([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::
 /// have been proven against an older tree root.
 ///
 /// Procedure roots are arbitrary hashes and so multiple of them can map to the same leaf.
+/// Eidos-derived roots have a zero high bit in the index limb and occupy the lower 2^63 leaf
+/// positions of the depth-64 tree. Leaves retain full procedure roots to distinguish index
+/// collisions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodeTree<Backend = Smt> {
     smt: Backend,
@@ -68,12 +77,7 @@ where
     /// Returns an error if:
     /// - the SMT contains a value that does not mark a procedure root as present.
     pub fn new(backend: Backend) -> Result<Self, CodeTreeError> {
-        if let Some((key, value)) = backend.entries().find(|(_, value)| *value != PRESENT_VALUE) {
-            return Err(CodeTreeError::InvalidLeafValue {
-                procedure_root: ProcedureRoot::from_raw(key),
-                value,
-            });
-        }
+        validate_code_tree_entries(backend.entries())?;
 
         Ok(Self::new_unchecked(backend))
     }
@@ -92,8 +96,8 @@ where
     // --------------------------------------------------------------------------------------------
 
     /// Returns the root of the code SMT.
-    pub fn root(&self) -> Word {
-        self.smt.root()
+    pub fn root(&self) -> CodeTreeRoot {
+        CodeTreeRoot::from_raw(self.smt.root())
     }
 
     /// Returns the number of procedure roots in this tree.
@@ -279,6 +283,22 @@ impl CodeMutationSet {
     }
 }
 
+// HELPERS
+// ================================================================================================
+
+/// Validates that every value marks its procedure root as present.
+fn validate_code_tree_entries(
+    entries: impl IntoIterator<Item = (Word, Word)>,
+) -> Result<(), CodeTreeError> {
+    match entries.into_iter().find(|(_, value)| *value != PRESENT_VALUE) {
+        Some((key, value)) => Err(CodeTreeError::InvalidLeafValue {
+            procedure_root: ProcedureRoot::from_raw(key),
+            value,
+        }),
+        None => Ok(()),
+    }
+}
+
 // TESTS
 // ================================================================================================
 
@@ -355,7 +375,7 @@ mod tests {
             let witness = tree.open(&root);
             assert_eq!(witness.proof().get(&root.as_word()), Some(PRESENT_VALUE));
             assert_eq!(witness.proof().leaf().num_entries(), 2);
-            assert_eq!(witness.proof().compute_root(), tree.root());
+            assert_eq!(witness.proof().compute_root(), tree.root().as_word());
         }
 
         Ok(())

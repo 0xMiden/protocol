@@ -21,7 +21,6 @@ mod support;
 use std::collections::BTreeMap;
 
 use anyhow::{Context, Result};
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{
     Account,
     AccountId,
@@ -30,7 +29,7 @@ use miden_protocol::account::{
     StorageSlotName,
     StorageSlotPatch,
 };
-use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::ExecutedTransaction;
@@ -41,6 +40,7 @@ use miden_standards::note::config::{RbacConfig, RbacConfigNote};
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use miden_usdcx::account::xreserve::{BLK_MANAGER_ROLE, DOM_PAUSER_ROLE, XReserveFaucetExtension};
 use miden_usdcx::note::xreserve_admin::XReserveSetAttesterNote;
+use rand::{Rng, RngExt};
 use support::*;
 
 /// The exact stock RBAC delegation error (v0.16: rbac.masm:66 ERR_SENDER_NOT_ROLE_ADMIN — #3215
@@ -71,8 +71,8 @@ fn member_marker() -> Word {
     Word::from([1u32, 0, 0, 0])
 }
 
-fn note_rng(seed: u64) -> RandomCoin {
-    RandomCoin::new(Word::from([
+fn note_rng(seed: u64) -> EidosRandomCoin {
+    EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(7u32),
@@ -82,7 +82,7 @@ fn note_rng(seed: u64) -> RandomCoin {
 
 /// A standard role-action note carrying `action`, sent by `sender` and tagged for `faucet_id`. The
 /// serial is drawn from `rng` so note ids stay deterministic; every gate reads the sender.
-fn stock_role_note<R: FeltRng>(
+fn stock_role_note<R: Rng>(
     sender: AccountId,
     faucet_id: AccountId,
     action: RbacConfig,
@@ -92,14 +92,14 @@ fn stock_role_note<R: FeltRng>(
         .sender(sender)
         .target(faucet_id)
         .config(action)
-        .serial_number(rng.draw_word())
+        .serial_number(rng.random())
         .build()
         .map_err(|e| anyhow::anyhow!("building the standard role-action note: {e}"))?;
     Ok(Note::from(note))
 }
 
 /// A standard role-action note granting `role` to `member`.
-fn stock_grant_role_note<R: FeltRng>(
+fn stock_grant_role_note<R: Rng>(
     sender: AccountId,
     faucet_id: AccountId,
     role: RoleSymbol,
@@ -110,7 +110,7 @@ fn stock_grant_role_note<R: FeltRng>(
 }
 
 /// A standard role-action note revoking `role` from `member`.
-fn stock_revoke_role_note<R: FeltRng>(
+fn stock_revoke_role_note<R: Rng>(
     sender: AccountId,
     faucet_id: AccountId,
     role: RoleSymbol,

@@ -38,8 +38,9 @@ type AssetIdVersion = u8;
 /// guarantees that an empty word is not a valid asset ID.
 ///
 /// Use [`AssetId::hash`] to produce the corresponding [`AssetIdHash`] that is used as
-/// the key in the asset vault's underlying SMT. Hashing ensures a uniform distribution across
-/// leaves regardless of how faucet IDs or asset classes are chosen.
+/// the key in the asset vault's underlying SMT. Hashing avoids clustering raw asset IDs by faucet.
+/// Eidos clears the index limb's high bit, so hashed IDs occupy the lower 2^63 leaf positions in
+/// the depth-64 tree. Leaf-index collisions remain possible; each leaf retains full hashed keys.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct AssetId {
     /// The asset class of the asset ID.

@@ -1,8 +1,4 @@
 use super::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
     NoteAssets,
     NoteAttachments,
     NoteDetailsCommitment,
@@ -10,7 +6,6 @@ use super::{
     NoteId,
     NoteMetadata,
     PartialNoteMetadata,
-    Serializable,
 };
 use crate::Word;
 
@@ -100,37 +95,5 @@ impl PartialNote {
     /// Consumes self and returns the non-Copy parts of this note.
     pub fn into_parts(self) -> (NoteAssets, NoteHeader, NoteAttachments) {
         (self.assets, self.header, self.attachments)
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for PartialNote {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        // Serialize only partial metadata since note ID can be recomputed from the note details and
-        // attachment schemes and commitments can be reconstructed from attachments
-        self.header().metadata().partial_metadata().write_into(target);
-        self.recipient_digest.write_into(target);
-        self.assets.write_into(target);
-        self.attachments.write_into(target);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.partial_metadata().get_size_hint()
-            + Word::SERIALIZED_SIZE
-            + self.assets.get_size_hint()
-            + self.attachments.get_size_hint()
-    }
-}
-
-impl Deserializable for PartialNote {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let partial_metadata = PartialNoteMetadata::read_from(source)?;
-        let recipient_digest = Word::read_from(source)?;
-        let assets = NoteAssets::read_from(source)?;
-        let attachments = NoteAttachments::read_from(source)?;
-
-        Ok(Self::new(partial_metadata, recipient_digest, assets, attachments))
     }
 }

@@ -10,7 +10,6 @@ mod config;
 
 use alloc::collections::BTreeMap;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
@@ -21,6 +20,7 @@ use miden_protocol::account::{
     RoleSymbol,
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
@@ -30,8 +30,9 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::errors::standards::{
     ERR_PAUSABLE_IS_PAUSED,
@@ -47,6 +48,7 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
+use super::fungible_faucet_account;
 use super::rbac::{build_grant_role_note, build_note, role, test_account_id};
 
 pub(crate) static OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(11));
@@ -64,16 +66,7 @@ fn add_faucet_with_pause(
     builder: &mut MockChainBuilder,
     owner: AccountId,
 ) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("SYM")?)
-        .symbol("SYM".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
-    let account_builder = AccountBuilder::new([43u8; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(43)?
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(Pausable::unpaused())
         .with_component(PausableManager);
@@ -450,16 +443,7 @@ fn add_faucet_with_pause_and_policies(
     builder: &mut MockChainBuilder,
     owner: AccountId,
 ) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("SYM")?)
-        .symbol("SYM".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
-    let account_builder = AccountBuilder::new([44u8; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(44)?
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(Pausable::unpaused())
         .with_component(PausableManager)
@@ -467,8 +451,8 @@ fn add_faucet_with_pause_and_policies(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(TransferPolicy::empty_basic_blocklist())
-                .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+                .active_send_policy(SendPolicy::empty_basic_blocklist())
+                .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
                 .build(),
         );
 
@@ -598,7 +582,8 @@ async fn pausable_mint_fails_when_paused() -> anyhow::Result<()> {
             push.{tag}
             push.{amount}
             call.::miden::standards::faucets::fungible::mint_and_send
-            dropw dropw dropw dropw
+            exec.::miden::protocol::output_note::seal
+            dropw dropw dropw drop drop drop
         end
         "#,
         recipient = recipient_word,
@@ -641,7 +626,7 @@ async fn pausable_burn_fails_when_paused() -> anyhow::Result<()> {
     "#;
     let burn_note_script = miden_standards::code_builder::CodeBuilder::default()
         .compile_note_script(burn_note_script_code)?;
-    let mut rng = RandomCoin::new(Word::from([1u32, 2, 3, 4]));
+    let mut rng = EidosRandomCoin::new(Word::from([1u32, 2, 3, 4]));
     let burn_note = NoteBuilder::new(faucet.id(), &mut rng)
         .note_type(NoteType::Private)
         .add_assets([Asset::from(burn_asset)])
@@ -713,7 +698,7 @@ async fn pausable_set_max_supply_fails_when_paused() -> anyhow::Result<()> {
     );
     let set_max_supply_note_script = miden_standards::code_builder::CodeBuilder::default()
         .compile_note_script(&set_max_supply_note_code)?;
-    let mut rng = RandomCoin::new(Word::from([9u32, 8, 7, 6]));
+    let mut rng = EidosRandomCoin::new(Word::from([9u32, 8, 7, 6]));
     let set_max_supply_note = NoteBuilder::new(*OWNER_ID, &mut rng)
         .note_type(NoteType::Private)
         .script(set_max_supply_note_script)
@@ -750,16 +735,7 @@ async fn pausable_set_max_supply_fails_when_paused() -> anyhow::Result<()> {
 fn add_faucet_with_pause_auth_controlled(
     builder: &mut MockChainBuilder,
 ) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("SYM")?)
-        .symbol("SYM".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
-    let account_builder = AccountBuilder::new([46u8; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(46)?
         .with_component(Authority::AuthControlled)
         .with_component(Pausable::unpaused())
         .with_component(PausableManager);

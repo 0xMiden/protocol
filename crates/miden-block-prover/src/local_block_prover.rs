@@ -1,6 +1,6 @@
 use miden_processor::ExecutionError;
+use miden_protocol::PROTOCOL_PROOF_HASH;
 use miden_protocol::vm::ExecutionProof;
-use miden_prover::HashFunction::Poseidon2;
 use miden_prover::Prover;
 
 use crate::{BlockProverError, ExecutedBlock};
@@ -28,16 +28,17 @@ pub struct LocalBlockProver {
 
 impl Default for LocalBlockProver {
     fn default() -> Self {
-        Self {
-            prover: Prover::new().with_hash_fn(Poseidon2),
-        }
+        Self::new(Prover::new())
     }
 }
 
 impl LocalBlockProver {
-    /// Creates a new [`LocalBlockProver`] instance.
+    /// Creates a new [`LocalBlockProver`] while preserving the supplied prover settings and using
+    /// the protocol proof hash.
     pub fn new(prover: Prover) -> Self {
-        Self { prover }
+        Self {
+            prover: prover.with_hash_fn(PROTOCOL_PROOF_HASH),
+        }
     }
 
     /// Proves the [`ExecutedBlock`] into an [`ExecutionProof`].

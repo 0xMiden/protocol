@@ -4,6 +4,7 @@ use core::error::Error;
 
 use assert_matches::assert_matches;
 use miden_protocol::Word;
+use miden_protocol::block::code_tree::CodeTreeRoot;
 use miden_protocol::block::{BlockBody, BlockNumber};
 use miden_protocol::errors::{ProtocolConfigError, ValidatorConfigError};
 
@@ -36,11 +37,37 @@ fn fee_parameters_verify() {
     );
 }
 
+/// Returns a header with the given number, parent commitment and validator config that is
+/// consistent with an empty [`BlockBody`].
+fn header_for(
+    num: u32,
+    previous: Word,
+    keys: miden_protocol::block::ValidatorConfig,
+) -> miden_protocol::block::BlockHeader {
+    let body = BlockBody::default();
+    miden_protocol::block::BlockHeader::new(
+        previous,
+        num.into(),
+        Word::empty(),
+        Word::empty(),
+        Word::empty(),
+        CodeTreeRoot::from_raw(Word::empty()),
+        body.compute_block_note_tree().root(),
+        body.compute_transactions_commitment(),
+        keys,
+        miden_protocol::block::FeeParameters::new(500),
+        Word::empty(),
+        None,
+        0,
+    )
+}
+
 #[test]
 fn signed_blocks_require_a_trusted_parent_for_authentication() {
     use miden_protocol::block::{
         BlockBody,
-        BlockHeader,
+        BlockSignatures,
+        SignatureVerificationError,
         SignedBlock,
         SignedBlockError,
         ValidatorConfig,
@@ -48,23 +75,6 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
 
     use crate::{BuildUnchecked, VerifyWith};
 
-    fn header_for(num: u32, previous: Word, keys: ValidatorConfig) -> BlockHeader {
-        let body = BlockBody::default();
-        BlockHeader::new(
-            previous,
-            num.into(),
-            Word::empty(),
-            Word::empty(),
-            Word::empty(),
-            body.compute_block_note_tree().root(),
-            body.compute_transactions_commitment(),
-            keys,
-            miden_protocol::block::FeeParameters::new(500),
-            Word::empty(),
-            None,
-            0,
-        )
-    }
     let (parent_signers, parent_keys) = ValidatorConfig::random_with_signers(1);
     let (child_signers, child_keys) = ValidatorConfig::random_with_signers(1);
     let parent = header_for(0, Word::empty(), parent_keys.clone());
@@ -73,7 +83,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
     let block = SignedBlock::new(
         header.clone(),
         body.clone(),
-        parent_keys.sign_all(&parent_signers, header.commitment()),
+        BlockSignatures::sign(&parent_signers, header.commitment()),
     )
     .unwrap();
     let wire: proto::blockchain::SignedBlock = (&block).into();
@@ -90,7 +100,7 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
     let self_signed = SignedBlock::new(
         header.clone(),
         body,
-        child_keys.sign_all(&child_signers, header.commitment()),
+        BlockSignatures::sign(&child_signers, header.commitment()),
     )
     .unwrap();
     let self_signed_wire: proto::blockchain::SignedBlock = (&self_signed).into();
@@ -102,7 +112,9 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
         .unwrap_err();
     assert_matches!(
         error_source::<SignedBlockError>(&error),
-        Some(SignedBlockError::InvalidSignatureAtPosition { position: 0 })
+        Some(SignedBlockError::InvalidSignatures(
+            SignatureVerificationError::SignerNotInValidatorSet { .. }
+        ))
     );
     assert_eq!(
         self_signed_wire.decode_fields().unwrap().build_unchecked().unwrap(),
@@ -134,15 +146,43 @@ fn signed_blocks_require_a_trusted_parent_for_authentication() {
 }
 
 #[test]
+fn signed_block_protobuf_rejects_duplicate_signer() {
+    use miden_protocol::block::{
+        BlockSignatures,
+        BlockSignaturesError,
+        SignedBlock,
+        ValidatorConfig,
+    };
+
+    let (signers, keys) = ValidatorConfig::random_with_signers(1);
+    let header = header_for(0, Word::empty(), keys);
+    let signatures = BlockSignatures::sign(&signers, header.commitment());
+    let block = SignedBlock::new(header, BlockBody::default(), signatures).unwrap();
+
+    // Repeat the only signature, so the same validator would be counted twice.
+    let mut wire: proto::blockchain::SignedBlock = (&block).into();
+    wire.signatures.push(wire.signatures[0].clone());
+
+    let error = wire.decode_fields().unwrap().build_unchecked().unwrap_err();
+    assert_matches!(
+        error_source::<BlockSignaturesError>(&error),
+        Some(BlockSignaturesError::DuplicateSigner { .. })
+    );
+}
+
+#[test]
 fn empty_protobuf_block_body_decodes_to_an_empty_domain_body() {
     let expected = BlockBody::default();
 
     assert_eq!(
-        proto::blockchain::BlockBody::default()
-            .decode_fields()
-            .unwrap()
-            .build_unchecked()
-            .unwrap(),
+        proto::blockchain::BlockBody {
+            public_logs: Some(Default::default()),
+            ..Default::default()
+        }
+        .decode_fields()
+        .unwrap()
+        .build_unchecked()
+        .unwrap(),
         expected
     );
 }
@@ -176,10 +216,7 @@ fn block_header_protobuf_rejects_invalid_validator_quorum() {
         .unwrap_err();
     let source = error_source::<ValidatorConfigError>(&error).unwrap();
 
-    assert_matches!(
-        source,
-        ValidatorConfigError::QuorumMustEqualValidatorCount { quorum: 0, count: 3 }
-    );
+    assert_matches!(source, ValidatorConfigError::QuorumOutOfRange { quorum: 0, count: 3 });
 }
 
 #[test]
@@ -315,5 +352,14 @@ fn partial_blockchain_verifies_nested_mmr() {
     assert_matches!(
         error_source::<PartialMmrError>(&error),
         Some(PartialMmrError::Position { position: 2, size: 2 })
+    );
+}
+
+#[test]
+fn block_body_requires_public_logs_field() {
+    let error = proto::blockchain::BlockBody::default().decode_fields().unwrap_err();
+    assert_eq!(
+        alloc::format!("{error}"),
+        "public_logs: field miden_objects::proto::blockchain::BlockBody::public_logs is missing"
     );
 }

@@ -439,23 +439,6 @@ impl From<NoteAttachmentScheme> for NoteAttachmentHeader {
     }
 }
 
-impl Serializable for NoteAttachmentHeader {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.scheme.write_into(target);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.scheme.get_size_hint()
-    }
-}
-
-impl Deserializable for NoteAttachmentHeader {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let scheme = Option::<NoteAttachmentScheme>::read_from(source)?;
-        Ok(Self::new_maybe(scheme))
-    }
-}
-
 // NOTE ATTACHMENTS
 // ================================================================================================
 
@@ -463,10 +446,9 @@ impl Deserializable for NoteAttachmentHeader {
 ///
 /// Notes can have up to [`Self::MAX_COUNT`] attachments.
 ///
-/// The commitment to the attachments is defined as:
-/// - 0 attachments: `EMPTY_WORD`
-/// - 1+ attachments: `hash(ATTACHMENT_0_COMMITMENT || ... || ATTACHMENT_N_COMMITMENT)`, i.e., the
-///   sequential hash over the individual attachment commitments.
+/// The commitment is the sequential hash
+/// `hash(ATTACHMENT_0_COMMITMENT || ... || ATTACHMENT_N_COMMITMENT)` over the individual attachment
+/// commitments. An empty collection commits to the canonical Eidos empty hash.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoteAttachments {
     attachments: Vec<NoteAttachment>,

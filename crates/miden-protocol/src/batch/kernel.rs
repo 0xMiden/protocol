@@ -177,7 +177,7 @@ impl BatchKernel {
     ///   [`TransactionCommitments::elements`]).
     /// - each per-tx `INPUT_NOTES_COMMITMENT` -> the `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuples.
     /// - each per-tx `OUTPUT_NOTES_COMMITMENT` -> the `(DETAILS_COMMITMENT, METADATA_COMMITMENT)`
-    ///   tuples (the kernel derives each output `NoteId` from these via `poseidon2::merge`).
+    ///   tuples (the kernel derives each output `NoteId` from these via `eidos::hash_double_word`).
     ///
     /// It also provides two sorted lists: the pre-erasure union of every transaction's input
     /// notes, sorted by nullifier (keyed by [`INPUT_NOTE_LIST_KEY`]), and of their output notes,
@@ -209,7 +209,7 @@ impl BatchKernel {
             // Layer 3a: per-tx INPUT_NOTES_COMMITMENT -> [NULLIFIER, NOTE_ID_OR_EMPTY] tuples.
             // This must reproduce `build_input_note_commitment` exactly.
             let input_notes_commitment = tx.input_notes().commitment();
-            if input_notes_commitment != Word::empty() {
+            if !tx.input_notes().is_empty() {
                 let mut preimage_data = Vec::with_capacity(
                     usize::from(tx.input_notes().num_notes()) * FELTS_PER_NOTE_ENTRY,
                 );
@@ -226,9 +226,9 @@ impl BatchKernel {
 
             // Layer 3b: per-tx OUTPUT_NOTES_COMMITMENT -> [DETAILS_COMMITMENT,
             // METADATA_COMMITMENT] tuples. Mirrors `OutputNotes::commitment`; the kernel derives
-            // each output NoteId as `merge(details_commitment, metadata_commitment)`.
+            // each output NoteId as `hash(details_commitment || metadata_commitment)`.
             let output_notes_commitment = tx.output_notes().commitment();
-            if output_notes_commitment != Word::empty() {
+            if !tx.output_notes().is_empty() {
                 let mut preimage_data =
                     Vec::with_capacity(tx.output_notes().num_notes() * FELTS_PER_NOTE_ENTRY);
                 for note in tx.output_notes().iter() {

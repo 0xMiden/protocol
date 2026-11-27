@@ -6,7 +6,7 @@ use {
     OutputNoteEntry,
 } from miden::batch_kernel::types
 use miden::core::mem
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::core::word
 use miden::core::collections::sorted_array
 
@@ -46,6 +46,22 @@ const ERR_BATCH_TX_TOO_MANY_NOTES =
 
 const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED =
     "an erased input note was consumed before the transaction that created it"
+
+# HELPERS
+# =================================================================================================
+
+#! Returns whether a per-transaction note set commitment is the commitment of an empty note set,
+#! i.e. the hash of the empty felt sequence.
+#!
+#! Inputs:  [NOTES_COMMITMENT]
+#! Outputs: [is_empty, NOTES_COMMITMENT]
+proc is_empty_note_set_commitment(notes_commitment: word) -> (Bool, word)
+    exec.eidos::empty_felt_sequence_digest dupw.1
+    # => [NOTES_COMMITMENT, EMPTY_DIGEST, NOTES_COMMITMENT]
+
+    exec.word::eq
+    # => [is_empty, NOTES_COMMITMENT]
+end
 
 # SORTED NOTE LIST LOOKUP
 # =================================================================================================
@@ -233,7 +249,7 @@ end
 #! - the output note was already created in this batch.
 #! - the input note it erases is not in the `ERASURE_EXPECTED` state.
 proc bind_one_output_note(verified_output_note_ptr: ptr<OutputNoteCommitments>)
-    # Derive the output note's id as merge(details_commitment, metadata_commitment).
+    # Derive the output note's id as hash(details_commitment || metadata_commitment).
     dup padw movup.4 mem_loadw_le
     # => [DETAILS, verified_output_note_ptr]
 
@@ -243,8 +259,8 @@ proc bind_one_output_note(verified_output_note_ptr: ptr<OutputNoteCommitments>)
     swapw
     # => [DETAILS, METADATA, verified_output_note_ptr]
 
-    exec.poseidon2::merge
-    # => [NOTE_ID, verified_output_note_ptr]   (NoteId = merge(details, metadata))
+    exec.eidos::hash_double_word
+    # => [NOTE_ID, verified_output_note_ptr]   (NoteId = hash(details || metadata))
 
     movup.4 drop
     # => [NOTE_ID]
@@ -325,7 +341,9 @@ proc process_tx_output_notes(tx_index: u32)
     dup exec.memory::get_tx_output_notes_commitment
     # => [OUTPUT_NOTES_COMMITMENT_idx, tx_index]
 
-    exec.word::testz
+    exec.is_empty_note_set_commitment
+    # => [is_empty, OUTPUT_NOTES_COMMITMENT_idx, tx_index]
+
     if.true
         # Empty commitment: the transaction has no output notes, so there is nothing to bind.
         dropw drop
@@ -503,7 +521,9 @@ proc process_tx_input_notes(tx_index: u32)
     dup exec.memory::get_tx_input_notes_commitment
     # => [INPUT_NOTES_COMMITMENT_idx, tx_index]
 
-    exec.word::testz
+    exec.is_empty_note_set_commitment
+    # => [is_empty, INPUT_NOTES_COMMITMENT_idx, tx_index]
+
     if.true
         # Empty commitment: the transaction has no input notes, so there is nothing to bind.
         dropw drop

@@ -1,8 +1,9 @@
 //! Domain construction for decoded blockchain messages.
 use miden_protobuf::unwrap_infallible;
+use miden_protocol::block::code_tree::CodeTreeRoot;
 
 use crate::decoded::VerificationError;
-use crate::{Verify, proto};
+use crate::{Verify, VerifyWith, proto};
 
 #[cfg(test)]
 mod tests;
@@ -68,6 +69,7 @@ impl crate::BuildUnchecked for BlockHeader {
             self.chain_commitment,
             self.account_root,
             self.nullifier_root,
+            CodeTreeRoot::from_raw(self.code_tree_root),
             self.note_root,
             self.tx_commitment,
             self.validator_config.verify()?,
@@ -171,7 +173,21 @@ impl crate::BuildUnchecked for BlockBody {
         let notes = self.output_note_batches.verify()?;
         let nullifiers = self.created_nullifiers.map(miden_protocol::note::Nullifier::from_raw);
         let transactions = self.transactions.build_unchecked()?;
-        Ok(Self::Output::new(updates, notes, nullifiers, transactions)?)
+        let public_logs = VerifyWith::verify_with(self.public_logs, transactions.as_slice())?;
+        Ok(Self::Output::new(updates, notes, nullifiers, transactions, public_logs)?)
+    }
+}
+
+pub use proto::blockchain::DecodedValidatorSignature as ValidatorSignature;
+
+/// Returns the signature and the key it is attributed to; authenticity is not established here.
+impl Verify for ValidatorSignature {
+    type Verified = miden_protocol::block::ValidatorSignature;
+    type Error = core::convert::Infallible;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        let public_key = unwrap_infallible(self.public_key.verify());
+        let signature = unwrap_infallible(self.signature.verify());
+        Ok(Self::Verified::new(public_key, signature))
     }
 }
 
@@ -206,7 +222,7 @@ impl SignedBlock {
 
 /// Authenticates the block against an already-trusted parent, in addition to self-consistency.
 /// This does not re-execute transactions or validate the account/nullifier state transition.
-impl crate::VerifyWith<&miden_protocol::block::BlockHeader> for SignedBlock {
+impl VerifyWith<&miden_protocol::block::BlockHeader> for SignedBlock {
     type Verified = miden_protocol::block::SignedBlock;
     type Error = VerificationError;
     fn verify_with(

@@ -31,6 +31,7 @@ pub type TransactionCommitments = struct {
     input_notes_commitment: word,
     output_notes_commitment: word,
     logs_commitment: word,
+    code_patch_commitment: word,
 }
 
 #! An input note as committed to by a transaction's input notes commitment, and as stored in the

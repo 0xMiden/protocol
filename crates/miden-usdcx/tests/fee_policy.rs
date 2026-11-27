@@ -17,7 +17,6 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{AssetAmount, AssetId, FungibleAsset};
 use miden_protocol::block::FeeParameters;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
@@ -57,6 +56,7 @@ use miden_usdcx::note::xreserve_burn::{
 };
 use miden_usdcx::note::xreserve_mint::DepositAttestation;
 use miden_usdcx::xreserve::encoding::{ForeignChainAddress, Signature, XReserveBurnItems};
+use rand::Rng;
 use support::mint_transport::commit;
 use support::*;
 
@@ -126,7 +126,7 @@ fn scheduled_fee_amount(account: &Account, note_root: NoteScriptRoot) -> Result<
     AssetAmount::new(scheduled_fee(account, note_root)?[0].as_canonical_u64()).map_err(Into::into)
 }
 
-fn sponsorship_note<R: FeltRng>(
+fn sponsorship_note<R: Rng>(
     feature_note: &Note,
     target: AccountId,
     amount: AssetAmount,

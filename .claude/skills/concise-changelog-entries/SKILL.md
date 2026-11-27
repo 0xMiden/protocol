@@ -1,6 +1,6 @@
 ---
 name: concise-changelog-entries
-description: Keep CHANGELOG.md entries to a single concise sentence. Use when adding or editing entries in CHANGELOG.md.
+description: Keep changelog entries (`.changelog/unreleased/`) to a single concise sentence. Use when adding or editing changelog entries.
 ---
 
 # Concise CHANGELOG Entries
@@ -20,11 +20,8 @@ Those belong in the PR description and the commit message, which the entry's lin
 points to. The reader gets "what changed" from the CHANGELOG and one click away for
 the details.
 
-When trimming, don't drop:
-
-- The trailing PR/issue link, e.g. `([#3310](https://github.com/0xMiden/protocol/issues/3310))`.
-- A leading `[BREAKING]` tag if one is already there. Condensing an entry must not silently
-  change whether it's marked breaking.
+When trimming, don't drop a leading `[BREAKING]` tag if one is already there. Condensing an
+entry must not silently change whether it's marked breaking.
 
 The `[BREAKING]` tag is not about verbosity — it belongs only on changes that actually break
 users of a prior version (removed/renamed/behavior-changed public APIs). Purely additive changes
@@ -36,13 +33,13 @@ itself, never as a side effect of shortening the sentence.
 **Avoid** (verbose — mechanism + consequences inline):
 
 ```markdown
-- [BREAKING] Unified the two account-origin authenticators in the transaction kernel's `api.masm` into a single `authenticate_account_origin` procedure that conditionally tracks the call: a kernel procedure call is recorded (via the `was_called` flag) only when the active account is the native account and the account's authentication procedure is not currently executing. As a result the read-only introspection procedures (`account_has_procedure`, ...) are now tracked in the native context, and `account_upgrade` is now gated by the authenticator ([#3310](https://github.com/0xMiden/protocol/issues/3310)).
+[BREAKING] Unified the two account-origin authenticators in the transaction kernel's `api.masm` into a single `authenticate_account_origin` procedure that conditionally tracks the call: a kernel procedure call is recorded (via the `was_called` flag) only when the active account is the native account and the account's authentication procedure is not currently executing. As a result the read-only introspection procedures (`account_has_procedure`, ...) are now tracked in the native context, and `account_upgrade` is now gated by the authenticator.
 ```
 
 **Good** (first sentence only):
 
 ```markdown
-- [BREAKING] Unified the two account-origin authenticators in `api.masm` into a single `authenticate_account_origin` procedure that conditionally tracks the call ([#3310](https://github.com/0xMiden/protocol/issues/3310)).
+[BREAKING] Unified the two account-origin authenticators in `api.masm` into a single `authenticate_account_origin` procedure that conditionally tracks the call.
 ```
 
 ---
@@ -50,13 +47,13 @@ itself, never as a side effect of shortening the sentence.
 **Avoid:**
 
 ```markdown
-- [BREAKING] Transaction fees are now paid by the authentication procedure creating a public TX_FEE note before the transaction summary is created, so the fee payment is covered by the signature (`miden::standards::fee`). The payment asset and conversion rate are committed to via the auth args (see `FeeConversionInfo`); on zero-base-fee chains no note is created ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
+[BREAKING] Transaction fees are now paid by the authentication procedure creating a public TX_FEE note before the transaction summary is created, so the fee payment is covered by the signature (`miden::standards::fee`). The payment asset and conversion rate are committed to via the auth args (see `FeeConversionInfo`); on zero-base-fee chains no note is created.
 ```
 
 **Good:**
 
 ```markdown
-- [BREAKING] Transaction fees are now paid by the authentication procedure creating a public TX_FEE note covered by the signature ([#2899](https://github.com/0xMiden/protocol/discussions/2899)).
+[BREAKING] Transaction fees are now paid by the authentication procedure creating a public TX_FEE note covered by the signature.
 ```
 
 ## When a second sentence is warranted

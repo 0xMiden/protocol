@@ -24,12 +24,12 @@ use miden_agglayer::{
 use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::errors::standards::ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT;
 use miden_standards::interop::eth::{EthAddress, EthAmount};
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
+use rand::{Rng, RngExt};
 use rstest::rstest;
 
 use super::test_utils::{
@@ -59,9 +59,8 @@ async fn note_addressed_to_another_bridge_cannot_be_consumed(
     let mut builder = MockChain::builder();
 
     // the sender holds every bridge role, so nothing but the target check can reject the note
-    let privileged_sender = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let privileged_sender =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
 
     let target_bridge = add_bridge(&mut builder, privileged_sender.id())?;
     let decoy_bridge = add_bridge(&mut builder, privileged_sender.id())?;
@@ -91,7 +90,7 @@ async fn note_addressed_to_another_bridge_cannot_be_consumed(
 /// Adds a bridge account that grants every role to `role_holder`, and returns its ID.
 fn add_bridge(builder: &mut MockChainBuilder, role_holder: AccountId) -> anyhow::Result<AccountId> {
     let bridge = create_existing_bridge_account_with_roles(
-        builder.rng_mut().draw_word(),
+        builder.rng_mut().random(),
         bridge_admin_account_id(),
         role_holder,
         role_holder,
@@ -111,7 +110,7 @@ fn add_bridge(builder: &mut MockChainBuilder, role_holder: AccountId) -> anyhow:
 /// The payloads are placeholders: every one of these scripts asserts the target attachment before
 /// it reads its storage, so a note that reaches the storage checks has already lost the target
 /// check this file is about.
-fn build_note<R: FeltRng>(
+fn build_note<R: Rng>(
     note_kind: AgglayerNote,
     target: AccountId,
     sender: AccountId,

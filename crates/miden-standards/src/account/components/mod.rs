@@ -6,6 +6,7 @@ use miden_protocol::account::AccountProcedureRoot;
 use crate::account::access::{Authority, Ownable2Step, RoleBasedAccessControl};
 use crate::account::auth::{
     AuthGuardedMultisig,
+    AuthHotColdGuardian,
     AuthMultisig,
     AuthMultisigSmart,
     AuthNetworkAccount,
@@ -37,6 +38,7 @@ pub enum StandardAccountComponent {
     AuthMultisig,
     AuthMultisigSmart,
     AuthGuardedMultisig,
+    AuthHotColdGuardian,
     AuthNoAuth,
     AuthNetworkAccount,
     AuthTxFeeCollector,
@@ -59,6 +61,7 @@ impl StandardAccountComponent {
             Self::AuthMultisig => AuthMultisig::code(),
             Self::AuthMultisigSmart => AuthMultisigSmart::code(),
             Self::AuthGuardedMultisig => AuthGuardedMultisig::code(),
+            Self::AuthHotColdGuardian => AuthHotColdGuardian::code(),
             Self::AuthNoAuth => NoAuth::code(),
             Self::AuthNetworkAccount => AuthNetworkAccount::code(),
             Self::AuthTxFeeCollector => AuthTxFeeCollector::code(),
@@ -120,6 +123,9 @@ impl StandardAccountComponent {
                 Self::AuthGuardedMultisig => {
                     component_interface_vec.push(AccountComponentInterface::AuthGuardedMultisig)
                 },
+                Self::AuthHotColdGuardian => {
+                    component_interface_vec.push(AccountComponentInterface::AuthHotColdGuardian)
+                },
                 Self::AuthNoAuth => {
                     component_interface_vec.push(AccountComponentInterface::AuthNoAuth)
                 },
@@ -151,6 +157,7 @@ impl StandardAccountComponent {
         Self::Ownable2Step.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);
         Self::AuthGuardedMultisig.extract_component(procedures_set, component_interface_vec);
+        Self::AuthHotColdGuardian.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisigSmart.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);

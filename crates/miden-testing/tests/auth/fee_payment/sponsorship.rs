@@ -1,11 +1,10 @@
 use std::collections::BTreeSet;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset};
-use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteScriptRoot, NoteTag, NoteType, PartialNote};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::RawOutputNote;
@@ -16,6 +15,7 @@ use miden_standards::account::auth::{
     commit_fee_conversion_info,
 };
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
+use miden_standards::errors::standards::ERR_FEE_MANAGER_SPONSORSHIP_HAS_ATTACHMENTS;
 use miden_standards::note::{
     FeeSponsorshipNote,
     NetworkAccountTarget,
@@ -25,15 +25,16 @@ use miden_standards::note::{
 };
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::utils::create_spawn_note;
-use miden_testing::{Auth, MockChain};
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use rand::RngExt;
 
-use super::VERIFICATION_BASE_FEE;
+use super::{VERIFICATION_BASE_FEE, attaching_callback_faucet};
 
 // CONSTANTS
 // ================================================================================================
 
 /// The fee a network account's fee policy charges for a sponsored feature note.
-const FEE_AMOUNT: u64 = 500;
+pub(super) const FEE_AMOUNT: u64 = 500;
 
 // HELPERS
 // ================================================================================================
@@ -44,7 +45,7 @@ fn fee_faucet_id() -> anyhow::Result<AccountId> {
 }
 
 /// A fungible asset of `amount` units of the native fee asset.
-fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
+pub(super) fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
     Ok(FungibleAsset::new(fee_faucet_id()?, amount)?.into())
 }
 
@@ -52,7 +53,7 @@ fn fee_asset(amount: u64) -> anyhow::Result<Asset> {
 /// `FeePolicyManager`) that allowlists `allowed_notes`, prices each `(root, amount)` in `priced`
 /// through its active `BasicConstantFeePolicy`, holds `assets` in its vault, and bounds its
 /// sponsorship spending by `sponsorship_policy`.
-fn network_account(
+pub(super) fn network_account(
     seed: [u8; 32],
     allowed_notes: impl IntoIterator<Item = NoteScriptRoot>,
     priced: &[(NoteScriptRoot, u64)],
@@ -88,11 +89,11 @@ fn native_conversion_info() -> (Word, Vec<miden_protocol::Felt>) {
 
 /// Builds a public P2ID network note (a P2ID note carrying a `NetworkAccountTarget` attachment)
 /// sent by `sender`, targeting and routed to `target`, and carrying `asset`.
-fn p2id_network_note(
+pub(super) fn p2id_network_note(
     sender: AccountId,
     target: AccountId,
     asset: Asset,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
 ) -> anyhow::Result<Note> {
     let attachment = NetworkAccountTarget::new(target, NoteExecutionHint::Always)?;
     Ok(P2idNote::builder()
@@ -101,7 +102,7 @@ fn p2id_network_note(
         .asset(asset)
         .note_type(NoteType::Public)
         .attachment(attachment)
-        .serial_number(rng.draw_word())
+        .serial_number(rng.random())
         .build()?
         .into())
 }
@@ -114,7 +115,7 @@ fn p2id_network_note(
 /// carrying exactly the fee the target account's policy prices the note at.
 #[tokio::test]
 async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
-    let mut rng = RandomCoin::new(Word::from([1u32, 2, 3, 4]));
+    let mut rng = EidosRandomCoin::new(Word::from([1u32, 2, 3, 4]));
     // a payload asset issued by a faucet other than the fee faucet, carried by the network note
     let payload_asset: Asset = FungibleAsset::mock(50);
 
@@ -203,6 +204,72 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The FEE_SPONSORSHIP note is sealed, so the `on_before_note_sealed` callback of the fee asset's
+/// faucet runs on it. A callback that returns an attachment makes sponsoring the network note fail,
+/// because the sponsorship note must not carry attachments.
+#[tokio::test]
+async fn pay_fee_rejects_sponsorship_note_with_callback_attachment() -> anyhow::Result<()> {
+    let mut rng = EidosRandomCoin::new(Word::from([1u32, 2, 3, 4]));
+    let payload_asset: Asset = FungibleAsset::mock(50);
+    let fee_faucet = attaching_callback_faucet([12; 32])?;
+
+    let mut builder = MockChain::builder()
+        .verification_base_fee(VERIFICATION_BASE_FEE)
+        .fee_faucet_id(fee_faucet.id());
+    builder.add_account(fee_faucet.clone())?;
+    let sponsor = builder.add_existing_wallet_with_assets(
+        Auth::basic_ecdsa(),
+        [FungibleAsset::new(fee_faucet.id(), 1_000_000)?.into(), payload_asset],
+    )?;
+
+    // the target network account prices the P2ID script root in the fee faucet's asset
+    let fee_policy_manager = FeePolicyManager::builder()
+        .active_fee_policy(
+            BasicConstantFeePolicy::new()
+                .with_fee(P2idNote::script_root(), AssetAmount::new(FEE_AMOUNT)?)
+                .into(),
+        )
+        .fee_faucet_id(fee_faucet.id())
+        .build();
+    let target = AccountBuilder::new([2; 32])
+        .account_type(AccountType::Public)
+        .with_components(AuthNetworkAccount::new(
+            BTreeSet::from([P2idNote::script_root(), FeeSponsorshipNote::script_root()]),
+            fee_policy_manager,
+        )?)
+        .build_existing()?;
+    builder.add_account(target.clone())?;
+    let mock_chain = builder.build()?;
+
+    let network_note = p2id_network_note(sponsor.id(), target.id(), payload_asset, &mut rng)?;
+    let tx_script = SendNotesTransactionScript::new(
+        &sponsor.code().interface(sponsor.id()),
+        &[PartialNote::from(network_note.clone())],
+    )?;
+    let (auth_args, advice_value) = commit_fee_conversion_info(
+        FeeConversionInfo::one_to_one(fee_faucet.id()),
+        Word::from([9u32, 10, 11, 12]),
+    );
+
+    let result = mock_chain
+        .build_transaction(sponsor.id())
+        .foreign_accounts([
+            mock_chain.get_foreign_account_inputs(target.id())?,
+            mock_chain.get_foreign_account_inputs(fee_faucet.id())?,
+        ])
+        .send_notes_script(&tx_script)
+        .auth_args(auth_args)
+        .add_advice_map_entry(auth_args, advice_value)
+        .expected_output_note(RawOutputNote::Full(network_note))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FEE_MANAGER_SPONSORSHIP_HAS_ATTACHMENTS);
+
+    Ok(())
+}
+
 /// End-to-end single hop: a local wallet creates a P2ID network note (and, via `pay_fee`, its
 /// FEE_SPONSORSHIP note); the target network account then consumes both, and its
 /// `collect_sponsored_fees` credits the prepaid fee into its vault.
@@ -210,7 +277,7 @@ async fn pay_fee_sponsors_network_output_note() -> anyhow::Result<()> {
 async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<()> {
     const NETWORK_INITIAL_FEE_BALANCE: u64 = 1_000_000;
 
-    let mut rng = RandomCoin::new(Word::from([1u32, 2, 3, 4]));
+    let mut rng = EidosRandomCoin::new(Word::from([1u32, 2, 3, 4]));
     let payload_asset = FungibleAsset::mock(50).unwrap_fungible();
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
@@ -313,7 +380,7 @@ async fn network_account_collects_sponsored_fee_single_hop() -> anyhow::Result<(
 async fn spawned_network_note_sponsored_by_a_and_collected_by_b_multi_hop() -> anyhow::Result<()> {
     const B_INITIAL_FEE_BALANCE: u64 = 1_000_000;
 
-    let mut rng = RandomCoin::new(Word::from([7u32, 8, 9, 10]));
+    let mut rng = EidosRandomCoin::new(Word::from([7u32, 8, 9, 10]));
     let payload_asset: Asset = FungibleAsset::mock(50);
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);

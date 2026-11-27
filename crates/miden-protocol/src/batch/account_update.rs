@@ -1,17 +1,9 @@
 use alloc::boxed::Box;
-use alloc::string::ToString;
 
 use crate::Word;
 use crate::account::{AccountId, AccountUpdateDetails, validate_new_public_account};
 use crate::errors::BatchAccountUpdateError;
 use crate::transaction::ProvenTransaction;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // BATCH ACCOUNT UPDATE
 // ================================================================================================
@@ -194,29 +186,6 @@ impl BatchAccountUpdate {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for BatchAccountUpdate {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.account_id.write_into(target);
-        self.initial_state_commitment.write_into(target);
-        self.final_state_commitment.write_into(target);
-        self.details.write_into(target);
-    }
-}
-
-impl Deserializable for BatchAccountUpdate {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let account_id = AccountId::read_from(source)?;
-        let initial_state_commitment = Word::read_from(source)?;
-        let final_state_commitment = Word::read_from(source)?;
-        let details = AccountUpdateDetails::read_from(source)?;
-        Self::new(account_id, initial_state_commitment, final_state_commitment, details)
-            .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -242,6 +211,7 @@ mod tests {
         StorageSlotName,
     };
     use crate::block::BlockNumber;
+    use crate::block::code_tree::CodePatch;
     use crate::errors::BatchAccountUpdateError;
     use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
     use crate::testing::add_component::AddComponent;
@@ -305,6 +275,7 @@ mod tests {
             BlockNumber::from(2),
             dummy_execution_proof(),
             TransactionLogDetails::Public(TransactionLogs::default()),
+            CodePatch::default(),
         )
         .unwrap()
     }

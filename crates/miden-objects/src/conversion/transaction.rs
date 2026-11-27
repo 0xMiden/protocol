@@ -1,4 +1,6 @@
+use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::transaction::{
+    IesSealSeed,
     InputNoteCommitment,
     OutputNote,
     PrivateOutputNote,
@@ -12,6 +14,7 @@ use miden_protocol::transaction::{
     TransactionScript,
     TxAccountUpdate,
 };
+use miden_protocol::utils::serde::Serializable;
 
 use crate::proto;
 
@@ -48,7 +51,20 @@ impl From<&TransactionArgs> for proto::transaction::TransactionArgs {
             account_code_upgrade: value.account_code_upgrade().map(Into::into),
             output_note_recipients: value.output_note_recipients().iter().map(Into::into).collect(),
             signatures: value.signatures().iter().map(Into::into).collect(),
+            ies_seal_seed: value.ies_seal_seed().map(Into::into),
         }
+    }
+}
+
+impl From<&IesSealSeed> for proto::transaction::IesSealSeed {
+    fn from(value: &IesSealSeed) -> Self {
+        Self { seed: value.to_bytes() }
+    }
+}
+
+impl core::fmt::Debug for proto::transaction::IesSealSeed {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("IesSealSeed").finish_non_exhaustive()
     }
 }
 
@@ -73,6 +89,15 @@ impl From<&TxAccountUpdate> for proto::transaction::TxAccountUpdate {
     }
 }
 
+// CODE PATCH
+// ================================================================================================
+
+impl From<&CodePatch> for proto::transaction::CodePatch {
+    fn from(value: &CodePatch) -> Self {
+        Self { mast: Some(value.mast().as_ref().into()) }
+    }
+}
+
 // PROVEN TRANSACTION
 // ================================================================================================
 
@@ -87,6 +112,7 @@ impl From<&ProvenTransaction> for proto::transaction::ProvenTransaction {
             expiration_block_num: Some(value.expiration_block_num().into()),
             proof: Some(value.proof().into()),
             log_details: Some(value.log_details().into()),
+            code_patch: Some(value.code_patch().into()),
         }
     }
 }
@@ -141,6 +167,7 @@ impl From<&TransactionHeader> for proto::transaction::TransactionHeader {
         Self {
             transaction_id: Some(header.id().into()),
             logs_commitment: Some(header.logs_commitment().into()),
+            code_patch_commitment: Some(header.code_patch_commitment().as_word().into()),
             account_id: Some(header.account_id().into()),
             initial_state_commitment: Some(header.initial_state_commitment().into()),
             final_state_commitment: Some(header.final_state_commitment().into()),

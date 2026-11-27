@@ -1,9 +1,8 @@
 use alloc::collections::BTreeMap;
-use alloc::string::ToString;
 
 use miden_crypto::merkle::EmptySubtreeRoots;
 
-use super::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable, Word};
+use super::Word;
 use crate::account::StorageMapPatchEntries;
 use crate::crypto::merkle::smt::{LeafIndex, SMT_DEPTH, Smt, SmtLeaf};
 use crate::crypto::merkle::{InnerNodeInfo, MerkleError};
@@ -37,10 +36,10 @@ pub const EMPTY_STORAGE_MAP_ROOT: Word = *EmptySubtreeRoots::entry(StorageMap::D
 ///
 /// Because the keys of the map are user-chosen and thus not necessarily uniformly distributed, the
 /// tree could be imbalanced and made less efficient. To mitigate that, the keys used in the
-/// storage map are hashed before they are inserted into the SMT, which creates a uniform
-/// distribution. The original keys are retained in a separate map. This causes redundancy but
-/// allows for introspection of the map, e.g. by querying the set of stored (original) keys which is
-/// useful in debugging and explorer scenarios.
+/// storage map are hashed before they are inserted into the SMT. Eidos clears the index limb's
+/// high bit, so hashed keys occupy the lower 2^63 leaf positions in the depth-64 tree. Distinct
+/// hashed keys can share a leaf and are stored there in full. The original keys are retained in a
+/// separate map for introspection, such as listing them in debugging tools or explorers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageMap {
     /// The SMT where each key is the hashed original key.
@@ -227,64 +226,12 @@ impl Default for StorageMap {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for StorageMap {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.entries.write_into(target);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.smt.get_size_hint()
-    }
-}
-
-impl Deserializable for StorageMap {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let map = BTreeMap::read_from(source)?;
-        Self::from_btree_map(map)
-            .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
 
-    use super::{
-        Deserializable,
-        EMPTY_STORAGE_MAP_ROOT,
-        Serializable,
-        StorageMap,
-        StorageMapKey,
-        Word,
-    };
+    use super::{EMPTY_STORAGE_MAP_ROOT, StorageMap, StorageMapKey, Word};
     use crate::errors::StorageMapError;
-
-    #[test]
-    fn account_storage_serialization() {
-        // StorageMap for default types (empty map)
-        let storage_map_default = StorageMap::default();
-        let bytes = storage_map_default.to_bytes();
-        assert_eq!(storage_map_default, StorageMap::read_from_bytes(&bytes).unwrap());
-
-        // StorageMap with values
-        let storage_map_leaves_2 = [
-            (StorageMapKey::from_array([101, 102, 103, 104]), Word::from([1, 2, 3, 4u32])),
-            (StorageMapKey::from_array([105, 106, 107, 108]), Word::from([5, 6, 7, 8u32])),
-        ];
-        let storage_map = StorageMap::with_entries(storage_map_leaves_2).unwrap();
-        assert_eq!(storage_map.num_entries(), 2);
-        assert_eq!(storage_map.num_leaves(), 2);
-
-        let bytes = storage_map.to_bytes();
-        let deserialized_map = StorageMap::read_from_bytes(&bytes).unwrap();
-
-        assert_eq!(storage_map.root(), deserialized_map.root());
-
-        assert_eq!(storage_map, deserialized_map);
-    }
 
     #[test]
     fn test_empty_storage_map_constants() {

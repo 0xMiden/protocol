@@ -4,6 +4,7 @@ use core::error::Error;
 
 use assert_matches::assert_matches;
 use miden_protocol::Word;
+use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::errors::TransactionHeaderError;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::{InputNotes, TransactionHeader};
@@ -41,6 +42,7 @@ fn transaction_header_unchecked_build_still_checks_id_and_duplicates() {
         Default::default(),
         vec![],
         Default::default(),
+        CodePatch::default().commitment(),
     )
     .unwrap();
     let wire = proto::transaction::TransactionHeader::from(&header);
@@ -87,6 +89,7 @@ fn transaction_header_conversion_preserves_validation_error_source() {
         InputNotes::default(),
         vec![*note.header()],
         Default::default(),
+        CodePatch::default().commitment(),
     )
     .unwrap();
     let mut message = proto::transaction::TransactionHeader::from(transaction);
@@ -120,6 +123,7 @@ fn transaction_header_unchecked_build_retains_input_note_error_context() {
         InputNotes::default(),
         vec![],
         Default::default(),
+        CodePatch::default().commitment(),
     )
     .unwrap();
     let mut message = proto::transaction::TransactionHeader::from(transaction);

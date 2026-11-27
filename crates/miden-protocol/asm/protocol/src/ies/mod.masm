@@ -1,0 +1,3 @@
+#! Integrated encryption schemes, one module per scheme.
+
+pub mod ecgfp5_eidos

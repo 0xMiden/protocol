@@ -18,7 +18,6 @@ const DEFAULT_VALIDATOR_COUNT: usize = 3;
 // ================================================================================================
 
 use itertools::Itertools;
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -31,6 +30,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset, TokenSymbol};
 use miden_protocol::block::account_tree::AccountTree;
+use miden_protocol::block::code_tree::CodeTree;
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{
     BlockAccountUpdate,
@@ -45,15 +45,19 @@ use miden_protocol::block::{
     ProvenBlock,
     ValidatorConfig,
 };
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::smt::Smt;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteDetails, NoteScriptRoot, NoteType};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
-use miden_protocol::transaction::RawOutputNote;
-use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
+use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
+use miden_protocol::vm::PackageExport;
+use miden_protocol::{CoreLibrary, MAX_OUTPUT_NOTES_PER_BATCH, ProtocolLib, Word};
+use miden_standards::StandardsLib;
 use miden_standards::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use miden_standards::account::auth::{AuthNetworkAccount, SponsorshipPolicy};
 use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
@@ -62,8 +66,9 @@ use miden_standards::account::note_creator::NoteCreator;
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, SwapNote, TxFeeNote};
@@ -122,7 +127,7 @@ pub struct MockChainBuilder {
     accounts: BTreeMap<AccountId, Account>,
     account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
     notes: Vec<RawOutputNote>,
-    rng: RandomCoin,
+    rng: EidosRandomCoin,
     validator_signing_keys: Option<Vec<SigningKey>>,
     // Fee parameters.
     fee_faucet_id: AccountId,
@@ -149,7 +154,7 @@ impl MockChainBuilder {
             accounts: BTreeMap::new(),
             account_authenticators: BTreeMap::new(),
             notes: Vec::new(),
-            rng: RandomCoin::new(Default::default()),
+            rng: EidosRandomCoin::new(Default::default()),
             validator_signing_keys: None,
             fee_faucet_id,
             verification_base_fee: 0,
@@ -254,6 +259,7 @@ impl MockChainBuilder {
             output_note_batches,
             Vec::new(),
             Vec::new(),
+            Default::default(),
         );
 
         let prev_block_commitment = Word::empty();
@@ -261,6 +267,7 @@ impl MockChainBuilder {
         let chain_commitment = Blockchain::new().commitment();
         let account_root = account_tree.root();
         let nullifier_root = NullifierTree::<Smt>::default().root();
+        let code_tree = default_code_tree()?;
         let note_root = note_tree.root();
         let tx_commitment = body.compute_transactions_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
@@ -284,9 +291,10 @@ impl MockChainBuilder {
             chain_commitment,
             account_root,
             nullifier_root,
+            code_tree.root(),
             note_root,
             tx_commitment,
-            validator_config.clone(),
+            validator_config,
             fee_parameters,
             protocol_config.to_commitment(),
             None,
@@ -295,26 +303,14 @@ impl MockChainBuilder {
 
         // The genesis block is the trust root: it is self-signed by the validator set it commits
         // as the signer of block 1.
-        let signatures = BlockSignatures::new(
-            validator_config
-                .keys()
-                .iter()
-                .map(|key| {
-                    let signer = validator_secret_keys
-                        .iter()
-                        .find(|sk| &sk.public_key() == key)
-                        .expect("a signer should exist for every validator key");
-                    signer.sign(header.commitment())
-                })
-                .collect(),
-        )
-        .expect("signature count same as validator key count");
+        let signatures = BlockSignatures::sign(&validator_secret_keys, header.commitment());
         let block_proof = miden_protocol::testing::dummy_execution_proof();
         let genesis_block = ProvenBlock::new_unchecked(header, body, signatures, block_proof);
 
         MockChain::from_genesis_block(
             genesis_block,
             account_tree,
+            code_tree,
             self.account_authenticators,
             validator_secret_keys,
             protocol_config,
@@ -487,8 +483,8 @@ impl MockChainBuilder {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::allow_all())
             .active_burn_policy(BurnPolicy::allow_all())
-            .active_send_policy(TransferPolicy::allow_all())
-            .active_receive_policy(TransferPolicy::allow_all())
+            .active_send_policy(SendPolicy::allow_all())
+            .active_receive_policy(ReceivePolicy::allow_all())
             .build();
 
         let account_builder = AccountBuilder::new(self.rng.random())
@@ -562,8 +558,8 @@ impl MockChainBuilder {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(mint_policy)
             .active_burn_policy(BurnPolicy::allow_all())
-            .active_send_policy(TransferPolicy::allow_all())
-            .active_receive_policy(TransferPolicy::allow_all())
+            .active_send_policy(SendPolicy::allow_all())
+            .active_receive_policy(ReceivePolicy::allow_all())
             .build();
 
         let allowed_script_roots: BTreeSet<NoteScriptRoot> = allowed_script_roots
@@ -596,10 +592,27 @@ impl MockChainBuilder {
         let token_policy_manager = TokenPolicyManager::builder()
             .active_mint_policy(MintPolicy::owner_only())
             .active_burn_policy(BurnPolicy::allow_all())
-            .active_send_policy(TransferPolicy::allow_all())
-            .active_receive_policy(TransferPolicy::allow_all())
+            .active_send_policy(SendPolicy::allow_all())
+            .active_receive_policy(ReceivePolicy::allow_all())
             .build();
 
+        self.add_existing_network_faucet_with_policies(
+            owner_account_id,
+            faucet,
+            allowed_script_roots,
+            token_policy_manager,
+        )
+    }
+
+    /// Same as [`Self::add_existing_network_faucet_with_metadata`], but installs the provided
+    /// `token_policy_manager` instead of the default policies.
+    pub fn add_existing_network_faucet_with_policies(
+        &mut self,
+        owner_account_id: AccountId,
+        faucet: FungibleFaucet,
+        allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
+        token_policy_manager: TokenPolicyManager,
+    ) -> anyhow::Result<Account> {
         let allowed_script_roots: BTreeSet<NoteScriptRoot> = allowed_script_roots
             .into_iter()
             .chain([MintNote::script_root(), BurnNote::script_root()])
@@ -951,7 +964,7 @@ impl MockChainBuilder {
     /// Returns a mutable reference to the builder's RNG.
     ///
     /// This can be used when creating accounts or notes and randomness is required.
-    pub fn rng_mut(&mut self) -> &mut RandomCoin {
+    pub fn rng_mut(&mut self) -> &mut EidosRandomCoin {
         &mut self.rng
     }
 
@@ -965,4 +978,34 @@ impl Default for MockChainBuilder {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// HELPERS
+// ================================================================================================
+
+/// Returns the code tree with the procedures of the default libraries that other code can
+/// reference.
+fn default_code_tree() -> anyhow::Result<CodeTree> {
+    let exec_kernel_proc = TransactionKernel::package()
+        .get_procedure_root_by_path("$kernel::exec_kernel_proc")
+        .context("transaction kernel should export exec_kernel_proc")?;
+    let libraries = [
+        CoreLibrary::default().package(),
+        ProtocolLib::default().package(),
+        StandardsLib::default().package(),
+    ];
+
+    // Libraries can re-export procedures of other libraries, so roots must be deduplicated.
+    let mut procedure_roots = BTreeSet::from([ProcedureRoot::from_raw(exec_kernel_proc)]);
+    for library in libraries {
+        procedure_roots.extend(
+            library
+                .manifest
+                .exports()
+                .filter_map(PackageExport::as_procedure)
+                .map(|export| ProcedureRoot::from_raw(export.digest)),
+        );
+    }
+
+    CodeTree::with_entries(procedure_roots).context("failed to create genesis code tree")
 }

@@ -1,4 +1,5 @@
-use {AccountId, NoteRecipient, NoteSerialNumber, NoteTag, NoteType} from miden::protocol::types
+use {AccountId, NoteRecipient, NoteSerialNumber, NoteTag, NoteType, OutputNoteIndex}
+    from miden::protocol::types
 use miden::protocol::active_note
 use miden::protocol::note
 use miden::standards::note::note_target
@@ -128,7 +129,8 @@ end
 #! the account's `create_note` procedure. This lets `p2id::create_output_note` be used from contexts
 #! outside the account code, such as note or transaction scripts. Callers that are already inside an
 #! account procedure should instead use `p2id::prepare_note` together with
-#! `exec.output_note::create`.
+#! `exec.output_note::create`. The caller must seal the note with `output_note::seal` once its
+#! assets and attachments are final.
 #!
 #! Requires that the account exposes:
 #! - `miden::standards::note::note_creator::create_note` procedure.
@@ -151,7 +153,7 @@ pub proc create_output_note(
     tag: NoteTag,
     note_type: NoteType,
     serial_num: NoteSerialNumber
-) -> u16
+) -> OutputNoteIndex
     exec.prepare_note
     # => [tag, note_type, RECIPIENT]
 

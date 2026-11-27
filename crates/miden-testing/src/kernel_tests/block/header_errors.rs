@@ -14,6 +14,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::batch::ProvenBatch;
+use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::errors::{AccountTreeError, NullifierTreeError, ProposedBlockError};
 use miden_protocol::note::NoteType;
@@ -405,6 +406,7 @@ async fn block_building_fails_on_creating_account_with_duplicate_account_id_pref
                 BlockNumber::from(u32::MAX),
                 miden_protocol::testing::dummy_execution_proof(),
                 TransactionLogDetails::Private(Word::empty()),
+                CodePatch::default(),
             )
             .context("failed to build proven transaction")
             .unwrap()

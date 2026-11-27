@@ -3,7 +3,6 @@ use alloc::vec::Vec;
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::Asset;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -20,6 +19,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
+use rand::{Rng, RngExt};
 
 use crate::StandardsLib;
 use crate::note::costs::{MINT_CONSUMPTION_CYCLES, NoteConsumptionCost};
@@ -199,9 +199,9 @@ where
     /// Draws a serial number from `rng` and sets it on the builder.
     pub fn generate_serial_number(
         self,
-        rng: &mut impl FeltRng,
+        rng: &mut impl Rng,
     ) -> MintNoteBuilder<mint_note_builder::SetSerialNumber<S>> {
-        self.serial_number(rng.draw_word())
+        self.serial_number(rng.random())
     }
 }
 
@@ -255,8 +255,14 @@ pub enum MintNoteStorage {
 }
 
 impl MintNoteStorage {
-    /// Builds private-mode storage (creates a private output note).
-    pub fn new_private(recipient_digest: Word, asset: impl Into<Asset>, tag: NoteTag) -> Self {
+    /// Builds storage that makes the MINT note create a private output note.
+    ///
+    /// The MINT note itself is always public; only the output note it creates is private.
+    pub fn new_private_output(
+        recipient_digest: Word,
+        asset: impl Into<Asset>,
+        tag: NoteTag,
+    ) -> Self {
         Self::Private {
             recipient_digest,
             asset: asset.into(),
@@ -264,8 +270,8 @@ impl MintNoteStorage {
         }
     }
 
-    /// Builds public-mode storage (creates a public output note).
-    pub fn new_public(
+    /// Builds storage that makes the MINT note create a public output note.
+    pub fn new_public_output(
         recipient: NoteRecipient,
         asset: impl Into<Asset>,
         tag: NoteTag,
@@ -342,7 +348,7 @@ impl NoteConsumptionCost for MintNote {
 mod tests {
     use miden_protocol::account::AccountType;
     use miden_protocol::asset::FungibleAsset;
-    use miden_protocol::crypto::rand::RandomCoin;
+    use miden_protocol::crypto::rand::EidosRandomCoin;
 
     use super::*;
     use crate::note::{NetworkNoteExt, NoteExecutionHint};
@@ -361,10 +367,14 @@ mod tests {
 
     fn build_mint_note(faucet_id: AccountId) -> MintNote {
         let asset = FungibleAsset::new(faucet_id, 50).unwrap();
-        let mut rng = RandomCoin::new(Word::empty());
+        let mut rng = EidosRandomCoin::new(Word::empty());
         MintNote::builder()
             .sender(owner())
-            .mint_storage(MintNoteStorage::new_private(Word::empty(), asset, NoteTag::default()))
+            .mint_storage(MintNoteStorage::new_private_output(
+                Word::empty(),
+                asset,
+                NoteTag::default(),
+            ))
             .generate_serial_number(&mut rng)
             .build()
             .unwrap()

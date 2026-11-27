@@ -5,6 +5,7 @@ pub(crate) mod test_utils;
 
 mod core;
 pub use core::{
+    CodePatch,
     ProvenTransaction,
     TransactionHeader,
     TransactionHeaderBuildError,
@@ -15,8 +16,17 @@ pub use core::{
 mod effects;
 pub use effects::{TransactionEffects, TransactionEffectsV1};
 
+mod summary;
+pub use summary::{TransactionSummary, TransactionSummaryV1};
+
 mod args;
-pub use args::{NoteArgument, TransactionArgs, TransactionArgsError, TransactionScript};
+pub use args::{
+    IesSealSeed,
+    NoteArgument,
+    TransactionArgs,
+    TransactionArgsError,
+    TransactionScript,
+};
 
 mod notes;
 pub use notes::{
@@ -55,3 +65,6 @@ pub use batch::{
 
 mod logs;
 pub use logs::{LogTopic, TransactionLog, TransactionLogDetails, TransactionLogs};
+
+mod public_logs;
+pub use public_logs::PublicTransactionLogs;

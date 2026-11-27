@@ -1,6 +1,7 @@
 //! Tests that an executed transaction can be proven and re-executed from its inputs alone.
 
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
@@ -14,9 +15,12 @@ use miden_protocol::account::{
     StorageMapKey,
     StorageMapWitness,
 };
+use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::asset::{AssetAmount, AssetId, AssetWitness, FungibleAsset};
 use miden_protocol::block::account_tree::AccountIdKey;
+use miden_protocol::block::code_tree::{CodeTreeRoot, CodeWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot, PartialNote};
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
@@ -26,8 +30,9 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::note::P2idNote;
 use miden_standards::tx_script::SendNotesTransactionScript;
@@ -40,6 +45,7 @@ use miden_tx::{
     TransactionMastStore,
 };
 
+use super::test_ies::{SealingAccount, execute_sealing_transaction, secret_key};
 use crate::{AccountState, Auth, MockChain};
 
 /// Tests that a transaction which uses FPI and a signature can be re-executed and proven from its
@@ -67,8 +73,8 @@ async fn executed_transaction_can_be_proven_and_reexecuted_from_its_inputs() -> 
                 TokenPolicyManager::builder()
                     .active_mint_policy(MintPolicy::allow_all())
                     .active_burn_policy(BurnPolicy::allow_all())
-                    .active_send_policy(TransferPolicy::empty_basic_blocklist())
-                    .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+                    .active_send_policy(SendPolicy::empty_basic_blocklist())
+                    .active_receive_policy(ReceivePolicy::empty_basic_blocklist())
                     .build(),
             ),
         AccountState::Exists,
@@ -137,6 +143,31 @@ async fn executed_transaction_can_be_proven_and_reexecuted_from_its_inputs() -> 
         )
         .await?;
     assert_eq!(reexecuted_tx.id(), executed_tx.id());
+
+    Ok(())
+}
+
+/// Tests that a transaction that encrypts with IES `seal` can be re-executed and proven from its
+/// inputs, whose transaction arguments carry the IES seal seed.
+#[tokio::test]
+async fn sealing_transaction_can_be_reexecuted_from_its_inputs() -> anyhow::Result<()> {
+    let recipients = [secret_key(1).public_key(), secret_key(2).public_key()];
+    let executed_tx = execute_sealing_transaction(&recipients, SealingAccount::Native).await?;
+    let tx_inputs = executed_tx.tx_inputs().clone();
+
+    let data_store = TransactionInputsDataStore::new(tx_inputs.clone());
+    let reexecuted_tx = TransactionExecutor::<'_, '_, _, UnreachableAuth>::new(&data_store)
+        .execute_transaction(
+            tx_inputs.account().id(),
+            tx_inputs.ref_block(),
+            tx_inputs.input_notes().clone(),
+            tx_inputs.tx_args().clone(),
+        )
+        .await?;
+    assert_eq!(reexecuted_tx.id(), executed_tx.id());
+
+    let proven_tx = LocalTransactionProver::default().prove(reexecuted_tx)?;
+    assert_eq!(proven_tx.id(), executed_tx.id());
 
     Ok(())
 }
@@ -230,6 +261,26 @@ impl DataStore for TransactionInputsDataStore {
     ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
         let note_script = self.tx_inputs.note_scripts().get(&script_root).cloned();
         async move { Ok(note_script) }
+    }
+
+    fn get_code_witnesses(
+        &self,
+        code_tree_root: CodeTreeRoot,
+        _procedure_roots: Vec<ProcedureRoot>,
+    ) -> impl FutureMaybeSend<Result<Vec<CodeWitness>, DataStoreError>> {
+        async move {
+            Err(DataStoreError::other(format!(
+                "code witnesses of code tree {code_tree_root} were requested again"
+            )))
+        }
+    }
+
+    /// Returns no code, because the transaction inputs do not contain code to register.
+    fn get_code_to_register(
+        &self,
+        _procedure_roots: BTreeSet<ProcedureRoot>,
+    ) -> impl FutureMaybeSend<Result<Vec<Arc<MastForest>>, DataStoreError>> {
+        async move { Ok(Vec::new()) }
     }
 }
 

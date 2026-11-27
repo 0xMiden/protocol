@@ -8,7 +8,6 @@ use alloc::vec::Vec;
 
 use miden_core::Felt;
 use miden_protocol::account::AccountId;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
@@ -26,6 +25,7 @@ use miden_standards::interop::eth::EthAddress;
 use miden_standards::note::costs::NoteConsumptionCost;
 use miden_standards::note::{BurnNote, NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
+use rand::{Rng, RngExt};
 
 use crate::costs::B2AGG_CONSUMPTION_CYCLES;
 use crate::note_script;
@@ -88,7 +88,7 @@ impl B2AggNote {
     ///
     /// # Errors
     /// Returns an error if note creation fails.
-    pub fn create<R: FeltRng>(
+    pub fn create<R: Rng>(
         destination_network: u32,
         destination_address: EthAddress,
         assets: NoteAssets,
@@ -106,7 +106,7 @@ impl B2AggNote {
 
         let metadata = PartialNoteMetadata::new(sender_account_id, NoteType::Public);
 
-        let recipient = NoteRecipient::new(rng.draw_word(), Self::script(), note_storage);
+        let recipient = NoteRecipient::new(rng.random(), Self::script(), note_storage);
 
         Ok(Note::with_attachments(assets, metadata, recipient, attachments))
     }

@@ -15,6 +15,7 @@ use super::{
 };
 use crate::Word;
 use crate::account::{AccountPatch, PartialAccount};
+use crate::block::code_tree::CodePatch;
 use crate::block::{BlockHeader, BlockNumber};
 use crate::transaction::TransactionInputs;
 use crate::utils::serde::{
@@ -71,6 +72,7 @@ impl ExecutedTransaction {
             tx_inputs.input_notes().commitment(),
             tx_outputs.output_notes().commitment(),
             tx_outputs.logs_commitment(),
+            tx_outputs.code_patch().commitment(),
         ));
 
         Self {
@@ -128,6 +130,11 @@ impl ExecutedTransaction {
     /// Returns the block number at which the transaction will expire.
     pub fn expiration_block_num(&self) -> BlockNumber {
         self.tx_outputs.expiration_block_num()
+    }
+
+    /// Returns the code patch of this transaction.
+    pub fn code_patch(&self) -> &CodePatch {
+        self.tx_outputs.code_patch()
     }
 
     /// Returns a reference to the transaction arguments.

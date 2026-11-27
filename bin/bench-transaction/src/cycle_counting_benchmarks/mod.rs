@@ -32,11 +32,13 @@ pub enum ExecutionBenchmark {
     ConsumeFaucetPolicyConfigNetwork,
     ConsumeFaucetMetadataConfigNetwork,
     ConsumeMinBurnAmountConfigNetwork,
+    ConsumeEncryptedAssetsIssuerKeyConfigNetwork,
     ConsumeAllowlistConfigNetwork,
     ConsumeBlocklistConfigNetwork,
     ConsumePauseConfigNetwork,
     ConsumeOwnerConfigNetwork,
     ConsumeRbacConfigNetwork,
+    ConsumeSupplyRestrictionConfigNetwork,
     ConsumeAuthorityConfigNetwork,
     ConsumeNetworkAccountConfigNetwork,
     ConsumeUpgradeNetwork,
@@ -83,11 +85,13 @@ impl ExecutionBenchmark {
             ExecutionBenchmark::ConsumeFaucetPolicyConfigNetwork,
             ExecutionBenchmark::ConsumeFaucetMetadataConfigNetwork,
             ExecutionBenchmark::ConsumeMinBurnAmountConfigNetwork,
+            ExecutionBenchmark::ConsumeEncryptedAssetsIssuerKeyConfigNetwork,
             ExecutionBenchmark::ConsumeAllowlistConfigNetwork,
             ExecutionBenchmark::ConsumeBlocklistConfigNetwork,
             ExecutionBenchmark::ConsumePauseConfigNetwork,
             ExecutionBenchmark::ConsumeOwnerConfigNetwork,
             ExecutionBenchmark::ConsumeRbacConfigNetwork,
+            ExecutionBenchmark::ConsumeSupplyRestrictionConfigNetwork,
             ExecutionBenchmark::ConsumeAuthorityConfigNetwork,
             ExecutionBenchmark::ConsumeNetworkAccountConfigNetwork,
             ExecutionBenchmark::ConsumeUpgradeNetwork,
@@ -187,6 +191,9 @@ impl fmt::Display for ExecutionBenchmark {
             ExecutionBenchmark::ConsumeMinBurnAmountConfigNetwork => {
                 write!(f, "consume MIN_BURN_AMOUNT_CONFIG note (network account)")
             },
+            ExecutionBenchmark::ConsumeEncryptedAssetsIssuerKeyConfigNetwork => {
+                write!(f, "consume ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG note (network account)")
+            },
             ExecutionBenchmark::ConsumeAllowlistConfigNetwork => {
                 write!(f, "consume ALLOWLIST_CONFIG note (network account)")
             },
@@ -201,6 +208,9 @@ impl fmt::Display for ExecutionBenchmark {
             },
             ExecutionBenchmark::ConsumeRbacConfigNetwork => {
                 write!(f, "consume RBAC_CONFIG note (network account)")
+            },
+            ExecutionBenchmark::ConsumeSupplyRestrictionConfigNetwork => {
+                write!(f, "consume SUPPLY_RESTRICTION_CONFIG note (network account)")
             },
             ExecutionBenchmark::ConsumeAuthorityConfigNetwork => {
                 write!(f, "consume AUTHORITY_CONFIG note (network account)")

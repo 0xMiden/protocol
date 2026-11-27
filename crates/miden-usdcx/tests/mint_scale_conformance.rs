@@ -28,8 +28,8 @@
 mod support;
 
 use anyhow::{Context, Result};
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{Account, AccountId, StorageMapKey, StorageSlotName};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{NoteId, NoteType};
 use miden_protocol::transaction::ExecutedTransaction;
 use miden_protocol::{Felt, Word};
@@ -133,8 +133,8 @@ fn nonce_key_of_payload(payload: &[u8]) -> Word {
     Word::from(bytes32_to_storage_map_key(&nonce))
 }
 
-fn note_rng(seed: u64) -> RandomCoin {
-    RandomCoin::new(Word::from([
+fn note_rng(seed: u64) -> EidosRandomCoin {
+    EidosRandomCoin::new(Word::from([
         Felt::from(seed as u32),
         Felt::from((seed >> 32) as u32),
         Felt::from(3u32),
@@ -335,8 +335,8 @@ async fn production_mint_delivers_the_circle_amount_unrescaled() -> Result<()> {
 
     let p2id_id = minted.output_notes().get_note(0).id();
     let recipient = committed(&pf.mock_chain, pf.recipient_id)?;
-    // Consuming policed xUSDC fires the receive callback, so the faucet
-    // must be attached as a foreign account for the kernel to run basic_blocklist::check_policy.
+    // Consuming policed xUSDC fires the receive callback, so the faucet must be attached as a
+    // foreign account for the kernel to run basic_blocklist::check_receive_policy.
     let faucet_foreign = pf
         .mock_chain
         .get_foreign_account_inputs(pf.faucet_id)

@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 
+use crate::block::code_tree::CodeTreeRoot;
 use crate::block::{BlockNumber, BlockSignatures, SignatureVerificationError, ValidatorConfig};
 use crate::protocol_config::NextProtocolConfig;
 use crate::{Felt, Hasher, Word, ZERO};
@@ -22,6 +23,8 @@ use crate::{Felt, Hasher, Word, ZERO};
 /// - `chain_commitment` is a commitment to an MMR of the entire chain where each block is a leaf.
 /// - `account_root` is a commitment to account database.
 /// - `nullifier_root` is a commitment to the nullifier database.
+/// - `code_tree_root` is the root of the [`CodeTree`](crate::block::code_tree::CodeTree) of all
+///   registered procedure roots.
 /// - `note_root` is a commitment to all notes created in the current block.
 /// - `transactions_commitment` is a commitment to the set of transaction IDs which affected
 ///   accounts in the block.
@@ -44,6 +47,7 @@ pub struct BlockHeader {
     chain_commitment: Word,
     account_root: Word,
     nullifier_root: Word,
+    code_tree_root: CodeTreeRoot,
     note_root: Word,
     transactions_commitment: Word,
     validator_config: ValidatorConfig,
@@ -64,7 +68,7 @@ impl BlockHeader {
     const VERSION_1: u8 = 1;
 
     /// The number of field elements in the preimage of [`BlockHeader::sub_commitment`].
-    const NUM_SUB_COMMITMENT_ELEMENTS: usize = 40;
+    const NUM_SUB_COMMITMENT_ELEMENTS: usize = 48;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -77,6 +81,7 @@ impl BlockHeader {
         chain_commitment: Word,
         account_root: Word,
         nullifier_root: Word,
+        code_tree_root: CodeTreeRoot,
         note_root: Word,
         transactions_commitment: Word,
         validator_config: ValidatorConfig,
@@ -94,6 +99,7 @@ impl BlockHeader {
             chain_commitment,
             account_root,
             nullifier_root,
+            code_tree_root,
             transactions_commitment,
             &validator_config,
             &fee_parameters,
@@ -107,7 +113,7 @@ impl BlockHeader {
         // produce the final hash. This is done to make the note_root easily accessible
         // without having to unhash the entire header. Having the note_root easily
         // accessible is useful when authenticating notes.
-        let commitment = Hasher::merge(&[sub_commitment, note_root]);
+        let commitment = Hasher::hash_double_word(&[sub_commitment, note_root]);
 
         Self {
             version,
@@ -117,6 +123,7 @@ impl BlockHeader {
             chain_commitment,
             account_root,
             nullifier_root,
+            code_tree_root,
             note_root,
             transactions_commitment,
             validator_config,
@@ -181,6 +188,11 @@ impl BlockHeader {
     /// Returns the nullifier database root.
     pub fn nullifier_root(&self) -> Word {
         self.nullifier_root
+    }
+
+    /// Returns the code tree root.
+    pub fn code_tree_root(&self) -> CodeTreeRoot {
+        self.code_tree_root
     }
 
     /// Returns the note root.
@@ -251,14 +263,19 @@ impl BlockHeader {
     ///     CHAIN_COMMITMENT,
     ///     ACCOUNT_ROOT,
     ///     NULLIFIER_ROOT,
+    ///     CODE_TREE_ROOT,
     ///     TRANSACTIONS_COMMITMENT,
     ///     PROTOCOL_CONFIG_COMMITMENT,
     ///     VALIDATOR_CONFIG_COMMITMENT,
     ///     NEXT_PROTOCOL_CONFIG_COMMITMENT,
     ///     [verification_base_fee, 0, 0, 0],
+    ///     EMPTY_WORD,
     ///     NOTE_ROOT,
     /// ]
     /// ```
+    ///
+    /// The empty word pads the sub commitment preimage to a multiple of the hasher rate, so that
+    /// the kernel can absorb it with full permutations.
     ///
     /// This is the canonical encoding of a header. It is the layout of the kernel's block data
     /// memory section and the order in which the header is provided to the kernel, so keep it in
@@ -276,6 +293,7 @@ impl BlockHeader {
             self.chain_commitment,
             self.account_root,
             self.nullifier_root,
+            self.code_tree_root,
             self.transactions_commitment,
             &self.validator_config,
             &self.fee_parameters,
@@ -292,15 +310,15 @@ impl BlockHeader {
 
     /// Validates that `parent` precedes and authorizes this block.
     ///
-    /// The `signatures` are positional with respect to the validator set committed to by `parent`
-    /// (see [`ValidatorConfig`]): the signature at index `i` must verify against the parent's
-    /// validator key at index `i`. Every validator in the parent's set must have signed.
+    /// The `signatures` are verified against the validator set committed to by `parent` (see
+    /// [`ValidatorConfig`]): at least a quorum of the parent's validators must have signed this
+    /// block, see [`BlockSignatures::verify_against`].
     ///
     /// # Errors
     ///
     /// Returns an error if the block is the genesis block (no parent), the parent's number or
-    /// commitment do not match, the number of signatures does not match the parent's validator
-    /// count, or a signature does not verify against its validator key.
+    /// commitment do not match, or the signatures do not verify against the parent's validator
+    /// set.
     pub(crate) fn validate_against_parent(
         &self,
         parent: &BlockHeader,
@@ -330,18 +348,10 @@ impl BlockHeader {
             });
         }
 
-        // Verify the signatures positionally against the parent's validator set using the shared,
-        // canonical verifier, which also enforces that every validator signed.
+        // Verify that a quorum of the parent's validator set signed this block.
         signatures
             .verify_against(self.commitment(), parent.validator_config())
-            .map_err(|err| match err {
-                SignatureVerificationError::SignatureCountMismatch { expected, actual } => {
-                    ParentValidationError::SignatureCountMismatch { expected, actual }
-                },
-                SignatureVerificationError::InvalidSignatureAtPosition { position } => {
-                    ParentValidationError::InvalidSignatureAtPosition { position }
-                },
-            })?;
+            .map_err(ParentValidationError::InvalidSignatures)?;
 
         Ok(())
     }
@@ -361,6 +371,7 @@ impl BlockHeader {
         chain_commitment: Word,
         account_root: Word,
         nullifier_root: Word,
+        code_tree_root: CodeTreeRoot,
         transactions_commitment: Word,
         validator_config: &ValidatorConfig,
         fee_parameters: &FeeParameters,
@@ -374,11 +385,13 @@ impl BlockHeader {
         elements.extend_from_slice(chain_commitment.as_elements());
         elements.extend_from_slice(account_root.as_elements());
         elements.extend_from_slice(nullifier_root.as_elements());
+        elements.extend_from_slice(code_tree_root.as_elements());
         elements.extend_from_slice(transactions_commitment.as_elements());
         elements.extend_from_slice(protocol_config_commitment.as_elements());
         elements.extend(validator_config.to_commitment());
         elements.extend(Self::compute_next_protocol_config_commitment(next_protocol_config));
         elements.extend([Felt::from(fee_parameters.verification_base_fee()), ZERO, ZERO, ZERO]);
+        elements.extend_from_slice(Word::empty().as_elements());
         elements
     }
 
@@ -396,8 +409,9 @@ impl BlockHeader {
     /// Builds a minimal block header with a controllable block number, previous-block commitment,
     /// and validator key set.
     ///
-    /// The remaining roots are zeroed except the note root and transaction commitment, which match
-    /// the empty [`BlockBody`](super::BlockBody) the block tests pair this header with, so the
+    /// The remaining roots are zeroed except the code tree root, which is the root of the empty
+    /// tree, and the note root and transaction commitment, which match the empty
+    /// [`BlockBody`](super::BlockBody) the block tests pair this header with, so the
     /// self-consistency checks in `SignedBlock::validate` and  `ProvenBlock::validate` pass.
     #[cfg(test)]
     pub(crate) fn new_dummy(
@@ -405,7 +419,9 @@ impl BlockHeader {
         prev_block_commitment: Word,
         validator_config: ValidatorConfig,
     ) -> Self {
+        use crate::block::code_tree::CodeTree;
         use crate::block::{BlockBody, FeeParameters};
+        use crate::crypto::merkle::smt::Smt;
 
         let body = BlockBody::default();
         let note_root = body.compute_block_note_tree().root();
@@ -417,6 +433,7 @@ impl BlockHeader {
             Word::empty(),
             Word::empty(),
             Word::empty(),
+            CodeTree::<Smt>::default().root(),
             note_root,
             transactions_commitment,
             validator_config,
@@ -469,13 +486,7 @@ impl FeeParameters {
 /// `From`, which preserves that type's specific error messages.
 #[derive(Debug)]
 pub(crate) enum ParentValidationError {
-    SignatureCountMismatch {
-        expected: usize,
-        actual: usize,
-    },
-    InvalidSignatureAtPosition {
-        position: usize,
-    },
+    InvalidSignatures(SignatureVerificationError),
     ParentNumberMismatch {
         expected: BlockNumber,
         parent: BlockNumber,
@@ -498,7 +509,6 @@ mod tests {
     use rand::random;
 
     use super::*;
-    use crate::utils::serde::{Deserializable, Serializable};
 
     /// Returns `header` with a protocol upgrade scheduled for block 42.
     fn with_scheduled_upgrade(header: &BlockHeader) -> BlockHeader {
@@ -511,6 +521,7 @@ mod tests {
             header.chain_commitment(),
             header.account_root(),
             header.nullifier_root(),
+            header.code_tree_root(),
             header.note_root(),
             header.transactions_commitment(),
             header.validator_config().clone(),
@@ -554,7 +565,7 @@ mod tests {
         let (signers, keys) = ValidatorConfig::random_with_signers(5);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1, 5);
-        let signatures = keys.sign_all(&signers, child.commitment());
+        let signatures = BlockSignatures::sign(&signers, child.commitment());
 
         child.validate_against_parent(&parent, &signatures).unwrap();
     }
@@ -564,62 +575,84 @@ mod tests {
         let (signers, keys) = ValidatorConfig::random_with_signers(1);
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         let child = child_of(&parent, 1, 1);
-        let signatures = keys.sign_all(&signers, child.commitment());
+        let signatures = BlockSignatures::sign(&signers, child.commitment());
 
         child.validate_against_parent(&parent, &signatures).unwrap();
     }
 
     #[test]
-    fn validate_against_parent_rejects_incomplete_signatures() {
+    fn validate_against_parent_accepts_quorum_of_signatures() {
         let (signers, keys) = ValidatorConfig::random_with_signers(3);
-        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        let keys = ValidatorConfig::new(keys.keys().to_vec(), 2).unwrap();
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys);
         let child = child_of(&parent, 1, 3);
-        // Only one of three validators signs, so the resulting set is too short to align
-        // positionally with the parent's validator keys. `BlockSignatures::new` does not check
-        // this -- only `verify_against` (called by `validate_against_parent`) does.
-        let signatures =
-            BlockSignatures::new(alloc::vec![signers[0].sign(child.commitment())]).unwrap();
+        let signatures = BlockSignatures::sign(&signers[..2], child.commitment());
+
+        child.validate_against_parent(&parent, &signatures).unwrap();
+    }
+
+    #[test]
+    fn validate_against_parent_rejects_fewer_signatures_than_quorum() {
+        let (signers, keys) = ValidatorConfig::random_with_signers(3);
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys);
+        let child = child_of(&parent, 1, 3);
+        // Only one of three validators signs while the parent's quorum is three.
+        let signatures = BlockSignatures::sign(&signers[..1], child.commitment());
 
         let result = child.validate_against_parent(&parent, &signatures);
         assert!(matches!(
             result,
-            Err(ParentValidationError::SignatureCountMismatch { expected: 3, actual: 1 })
-        ));
-    }
-
-    #[test]
-    fn validate_against_parent_rejects_signature_count_mismatch() {
-        let (_, keys) = ValidatorConfig::random_with_signers(3);
-        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
-        let child = child_of(&parent, 1, 3);
-
-        // A block signed by a validator set of a different size cannot align positionally with the
-        // parent's committed set. Deserialization does not check this, so build it directly.
-        let (other_signers, other_keys) = ValidatorConfig::random_with_signers(4);
-        let signatures = other_keys.sign_all(&other_signers, child.commitment());
-        let bytes = signatures.to_bytes();
-        let deserialized = BlockSignatures::read_from_bytes(&bytes).unwrap();
-
-        let result = child.validate_against_parent(&parent, &deserialized);
-        assert!(matches!(
-            result,
-            Err(ParentValidationError::SignatureCountMismatch { expected: 3, actual: 4 })
+            Err(ParentValidationError::InvalidSignatures(
+                SignatureVerificationError::QuorumNotMet { quorum: 3, actual: 1 }
+            ))
         ));
     }
 
     #[test]
     fn validate_against_parent_rejects_uncommitted_signatures() {
         let (_, keys) = ValidatorConfig::random_with_signers(3);
-        let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
+        let parent = BlockHeader::new_dummy(0, Word::empty(), keys);
         let child = child_of(&parent, 1, 3);
 
         // The child is signed by a full, valid validator set of the same size the parent never
-        // committed, so the signatures do not verify against the parent's validator keys.
-        let (impostor_signers, impostor_keys) = ValidatorConfig::random_with_signers(3);
-        let signatures = impostor_keys.sign_all(&impostor_signers, child.commitment());
+        // committed.
+        let (impostor_signers, _) = ValidatorConfig::random_with_signers(3);
+        let signatures = BlockSignatures::sign(&impostor_signers, child.commitment());
 
         let result = child.validate_against_parent(&parent, &signatures);
-        assert!(matches!(result, Err(ParentValidationError::InvalidSignatureAtPosition { .. })));
+        assert!(matches!(
+            result,
+            Err(ParentValidationError::InvalidSignatures(
+                SignatureVerificationError::SignerNotInValidatorSet { .. }
+            ))
+        ));
+    }
+
+    /// A block that lowers the quorum is itself still subject to the quorum its parent committed
+    /// to. The lowered quorum applies from the following block.
+    #[test]
+    fn validate_against_parent_applies_a_quorum_update_from_the_next_block() {
+        let (signers, full_quorum) = ValidatorConfig::random_with_signers(3);
+        let lowered_quorum = ValidatorConfig::new(full_quorum.keys().to_vec(), 2).unwrap();
+
+        let parent = BlockHeader::new_dummy(0, Word::empty(), full_quorum);
+        let child = BlockHeader::new_dummy(1, parent.commitment(), lowered_quorum.clone());
+        let grandchild = BlockHeader::new_dummy(2, child.commitment(), lowered_quorum);
+
+        let two_signers = BlockSignatures::sign(&signers[..2], child.commitment());
+        let result = child.validate_against_parent(&parent, &two_signers);
+        assert!(matches!(
+            result,
+            Err(ParentValidationError::InvalidSignatures(
+                SignatureVerificationError::QuorumNotMet { quorum: 3, actual: 2 }
+            ))
+        ));
+
+        let all_signers = BlockSignatures::sign(&signers, child.commitment());
+        child.validate_against_parent(&parent, &all_signers).unwrap();
+
+        let two_signers = BlockSignatures::sign(&signers[..2], grandchild.commitment());
+        grandchild.validate_against_parent(&child, &two_signers).unwrap();
     }
 
     #[test]
@@ -632,7 +665,7 @@ mod tests {
             parent.commitment(),
             ValidatorConfig::random_with_signers(3).1,
         );
-        let signatures = keys.sign_all(&signers, child.commitment());
+        let signatures = BlockSignatures::sign(&signers, child.commitment());
 
         let result = child.validate_against_parent(&parent, &signatures);
         assert!(matches!(result, Err(ParentValidationError::GenesisBlockHasNoParent { .. })));
@@ -644,7 +677,7 @@ mod tests {
         let parent = BlockHeader::new_dummy(0, Word::empty(), keys.clone());
         // Child claims to be block 2, but the parent is block 0.
         let child = child_of(&parent, 2, 3);
-        let signatures = keys.sign_all(&signers, child.commitment());
+        let signatures = BlockSignatures::sign(&signers, child.commitment());
 
         let result = child.validate_against_parent(&parent, &signatures);
         assert!(matches!(result, Err(ParentValidationError::ParentNumberMismatch { .. })));
@@ -657,7 +690,7 @@ mod tests {
         // Child does not link to the parent's commitment.
         let child =
             BlockHeader::new_dummy(1, Word::empty(), ValidatorConfig::random_with_signers(3).1);
-        let signatures = keys.sign_all(&signers, child.commitment());
+        let signatures = BlockSignatures::sign(&signers, child.commitment());
 
         let result = child.validate_against_parent(&parent, &signatures);
         assert!(matches!(result, Err(ParentValidationError::ParentCommitmentMismatch { .. })));

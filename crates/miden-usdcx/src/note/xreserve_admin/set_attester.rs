@@ -1,10 +1,10 @@
 use miden_protocol::account::AccountId;
-use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::vm::Package;
 use miden_protocol::{Felt, Word};
+use rand::Rng;
 
 use super::build_admin_note;
 
@@ -78,7 +78,7 @@ impl XReserveSetAttesterNote {
     /// `sender` is the admin party (an `ATTEST_ADMIN` role holder, for success), `faucet_id` the
     /// target faucet (PUBLIC), `storage` the typed [`XReserveSetAttesterNoteStorage`] payload.
     #[builder]
-    pub fn new<R: FeltRng>(
+    pub fn new<R: Rng>(
         sender: AccountId,
         faucet_id: AccountId,
         storage: XReserveSetAttesterNoteStorage,
@@ -90,7 +90,7 @@ impl XReserveSetAttesterNote {
     /// Convenience constructor over the raw `commitment` / `enabled` params. Retained (a thin
     /// delegator to the [`builder`](Self::builder)) because the frozen conformance suites pin this
     /// signature; new callers should prefer the typed builder.
-    pub fn create<R: FeltRng>(
+    pub fn create<R: Rng>(
         sender: AccountId,
         faucet_id: AccountId,
         commitment: Word,

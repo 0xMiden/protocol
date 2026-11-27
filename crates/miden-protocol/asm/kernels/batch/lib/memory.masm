@@ -20,16 +20,16 @@ use {
 # | 2                 | NUM_OUTPUT_NOTES_PTR    | number of entries in the note-id-sorted output-note list.            |
 # | 4..8196           | TX_TUPLES_PTR           | Layer 1 piped data: `[TX_ID, account_id_suffix, account_id_prefix,   |
 # |                   |                         | 0, 0]` per transaction (8 felts each, up to 1024 transactions).      |
-# | 8196..28676       | TX_HEADERS_PTR          | Layer 2 piped data: `[INIT, FINAL, INPUT_NOTES_COMMITMENT,           |
-# |                   |                         | OUTPUT_NOTES_COMMITMENT, LOGS_COMMITMENT]` (20 felts per             |
-# |                   |                         | transaction, up to 1024).                                            |
-# | 28676..36868      | INPUT_NOTES_PTR         | nullifier-sorted input-note list: `[NULLIFIER, NOTE_ID_OR_EMPTY]`    |
+# | 8196..32772       | TX_HEADERS_PTR          | Layer 2 piped data: `[INIT, FINAL, INPUT_NOTES_COMMITMENT,           |
+# |                   |                         | OUTPUT_NOTES_COMMITMENT, LOGS_COMMITMENT, CODE_PATCH_COMMITMENT]`    |
+# |                   |                         | (24 felts per transaction, up to 1024).                              |
+# | 32772..40964      | INPUT_NOTES_PTR         | nullifier-sorted input-note list: `[NULLIFIER, NOTE_ID_OR_EMPTY]`    |
 # |                   |                         | per note (8 felts each, up to 1024 notes).                           |
-# | 36868..40964      | INPUT_NOTE_FLAGS_PTR    | parallel input-note flags: `[erasure_state, is_consumed, 0, 0]` per  |
+# | 40964..45060      | INPUT_NOTE_FLAGS_PTR    | parallel input-note flags: `[erasure_state, is_consumed, 0, 0]` per  |
 # |                   |                         | note (4 felts each).                                                 |
-# | 40964..49156      | OUTPUT_NOTES_PTR        | note-id-sorted output-note list: `[NOTE_ID, 0, 0, 0, 0]` per note    |
+# | 45060..53252      | OUTPUT_NOTES_PTR        | note-id-sorted output-note list: `[NOTE_ID, 0, 0, 0, 0]` per note    |
 # |                   |                         | (8 felts each, up to 1024 notes).                                    |
-# | 49156..53252      | OUTPUT_NOTE_FLAGS_PTR   | parallel output-note flags: `[will_be_erased, is_created,            |
+# | 53252..57348      | OUTPUT_NOTE_FLAGS_PTR   | parallel output-note flags: `[will_be_erased, is_created,            |
 # |                   |                         | erased_by_input_note_idx, 0]` per note (4 felts each).               |
 #
 # +-------------------+-------------------------+----------------------------------------------------------------------+
@@ -68,13 +68,14 @@ const TX_TUPLE_FELT_LEN = 8
 # Number of words in a Layer 1 tuple (a TX_ID word plus an account-id word).
 pub const TX_TUPLE_NUM_WORDS = 2
 
-# Base of the Layer 2 piped data region. Per transaction, 20 felts:
-#   `[INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, LOGS_COMMITMENT]`.
+# Base of the Layer 2 piped data region. Per transaction, 24 felts:
+#   `[INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, LOGS_COMMITMENT,
+#   CODE_PATCH_COMMITMENT]`.
 # This must match the felt-sequence layout of `TransactionId::new`.
 const TX_HEADERS_PTR = 8196
 
 # Number of felts each transaction occupies in TX_HEADERS_PTR.
-pub const TX_HEADER_FELT_LEN = 20
+pub const TX_HEADER_FELT_LEN = 24
 
 # Number of words a transaction header occupies in TX_HEADERS_PTR.
 pub const TX_HEADER_NUM_WORDS = TX_HEADER_FELT_LEN / WORD_NUM_ELEMENTS
@@ -93,7 +94,7 @@ const TX_HEADER_OUTPUT_NOTES_OFFSET = 12
 # where the KEY word is the nullifier (the `sorted_array` lookup key) and the VALUE word is the
 # note id (for unauthenticated notes) or the empty word. The VALUE word doubles as the second half
 # of the `(nullifier, note_id_or_empty)` tuple hashed into INPUT_NOTES_COMMITMENT.
-pub const INPUT_NOTES_PTR = 28676
+pub const INPUT_NOTES_PTR = 32772
 
 # Number of felts each note occupies in INPUT_NOTES_PTR / OUTPUT_NOTES_PTR (KEY word + VALUE word).
 pub const NOTE_ENTRY_FELT_LEN = 8
@@ -108,7 +109,7 @@ pub const NOTE_ENTRY_VALUE_OFFSET = 4
 #   `[erasure_state, is_consumed, 0, 0]`
 # where `erasure_state` is an [`InputNoteErasureState`] and `is_consumed` is 0 or 1. Both are
 # reachable only through the accessors below.
-const INPUT_NOTE_FLAGS_PTR = 36868
+const INPUT_NOTE_FLAGS_PTR = 40964
 
 # Number of felts each note occupies in the flag arrays (one word).
 const NOTE_FLAGS_FELT_LEN = 4
@@ -144,13 +145,13 @@ type InputNoteFlags = struct {
 # Base of the note-id-sorted output-note list. Per note, an 8-felt sorted-array entry
 #   `[NOTE_ID, 0, 0, 0, 0]`
 # where the KEY word is the note id (the `sorted_array` lookup key); the VALUE word is unused.
-pub const OUTPUT_NOTES_PTR = 40964
+pub const OUTPUT_NOTES_PTR = 45060
 
 # Base of the parallel output-note flags array. Per note, one word
 #   `[will_be_erased, is_created, erased_by_input_note_idx, 0]`
 # where `erased_by_input_note_idx` is only meaningful when `will_be_erased` is 1, which is why the
 # two are read and written together by [`get_output_note_erasure`] / [`set_output_note_erasure`].
-const OUTPUT_NOTE_FLAGS_PTR = 49156
+const OUTPUT_NOTE_FLAGS_PTR = 53252
 
 # Felt offset of the `will_be_erased` flag within an output-note flag word.
 const OUTPUT_NOTE_WILL_BE_ERASED_OFFSET = 0

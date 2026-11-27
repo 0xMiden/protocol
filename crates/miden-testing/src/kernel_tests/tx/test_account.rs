@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_crypto::rand::{FeltRng, RandomCoin};
+use miden_crypto::rand::EidosRandomCoin;
 use miden_processor::{ExecutionError, Word};
 use miden_protocol::Hasher;
 use miden_protocol::account::auth::AuthScheme;
@@ -67,6 +67,8 @@ use miden_protocol::testing::add_component::AddComponent;
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
 use miden_protocol::transaction::memory::{
     CODE_UPGRADE_COMMITMENT_PTR,
+    NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR,
+    NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR,
     STORAGE_UPGRADE_COMMITMENT_PTR,
 };
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel, TransactionScript};
@@ -76,7 +78,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::{IncrNonceAuthComponent, MockAccountComponent};
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::{LocalTransactionProver, TransactionKernelError};
-use rand::random;
+use rand::{RngExt, random};
 
 use super::{Felt, StackInputs, ZERO};
 use crate::executor::CodeExecutor;
@@ -727,6 +729,33 @@ async fn validate_storage_rejects_unsupported_slot_type() -> anyhow::Result<()> 
     Ok(())
 }
 
+#[tokio::test]
+async fn recompute_storage_commitment_handles_empty_storage() -> anyhow::Result<()> {
+    let mock_tx = TestTransactionBuilder::with_existing_mock_account().build()?;
+    let expected_commitment = AccountStorage::new(Vec::new())?.to_commitment();
+    let code = format!(
+        "
+        use miden::tx_kernel_core::account
+        use miden::tx_kernel_core::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.1 push.{NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR} mem_store
+            push.0 push.{NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR} mem_store
+
+            exec.account::compute_storage_commitment
+            push.{expected_commitment}
+            assert_eqw.err=\"empty storage must have the canonical commitment\"
+        end
+        "
+    );
+
+    mock_tx.execute_code(&code).await?;
+
+    Ok(())
+}
+
 /// Tests that accessing an unknown slot fails with the expected error message.
 ///
 /// This tests both accounts with empty storage and non-empty storage.
@@ -737,9 +766,8 @@ async fn test_account_get_item_fails_on_unknown_slot() -> anyhow::Result<()> {
     let account_empty_storage = builder.add_existing_mock_account(Auth::IncrNonce)?;
     assert_eq!(account_empty_storage.storage().num_slots(), 0);
 
-    let account_non_empty_storage = builder.add_existing_mock_account(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account_non_empty_storage = builder
+        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     assert_eq!(account_non_empty_storage.storage().num_slots(), 2);
 
     let chain = builder.build()?;
@@ -840,9 +868,9 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
 
 /// Returns the requested number of distinct procedure roots sorted in ascending order.
 fn sorted_procedure_roots(num_procedures: usize) -> Vec<AccountProcedureRoot> {
-    let mut rng = RandomCoin::new([num_procedures as u32, 0, 0, 0].into());
+    let mut rng = EidosRandomCoin::new([num_procedures as u32, 0, 0, 0].into());
     let mut roots = (0..num_procedures as u32)
-        .map(|_| AccountProcedureRoot::from_raw(rng.draw_word()))
+        .map(|_| AccountProcedureRoot::from_raw(rng.random()))
         .collect::<Vec<_>>();
     roots.sort_unstable();
 
@@ -1315,9 +1343,8 @@ async fn test_account_upgrade_replaces_code(#[case] is_upgrade: bool) -> anyhow:
 #[tokio::test]
 async fn test_account_upgrade_with_signature_auth() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account = builder
+        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mock_chain = builder.build()?;
 
     let upgraded_code = upgraded_mock_account_code()?;
@@ -1866,9 +1893,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_mock_account_with_assets(
-        crate::Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [fungible_asset_for_account],
     )?;
 
@@ -2018,9 +2043,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_mock_account_with_assets(
-        crate::Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [fungible_asset_for_account],
     )?;
 
@@ -2046,12 +2069,9 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         @transaction_script
         pub proc main
             # create random note and move the asset into it
-            exec.util::create_default_note
-            # => [note_idx]
-
             push.{REMOVED_ASSET_VALUE}
             push.{REMOVED_ASSET_ID}
-            exec.util::move_asset_to_note
+            exec.util::create_default_note_with_moved_asset
             # => []
 
             # get the current asset balance
@@ -2113,9 +2133,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_mock_account_with_assets(
-        crate::Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [fungible_asset_for_account],
     )?;
 
@@ -2144,12 +2162,9 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         @transaction_script
         pub proc main
             # create default note and move the asset into it
-            exec.util::create_default_note
-            # => [note_idx]
-
             push.{REMOVED_ASSET_VALUE}
             push.{ASSET_ID}
-            exec.util::move_asset_to_note
+            exec.util::create_default_note_with_moved_asset
             # => []
 
             # get the current asset
@@ -2460,8 +2475,32 @@ async fn incrementing_nonce_twice_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `has_procedure` finds the auth procedure at index 0 and the sorted procedures after it, and
+/// rejects absent roots that sort before, after and in between the sorted procedures.
+///
+/// `select_root` receives the account's procedure roots, auth procedure first and the rest sorted.
+#[rstest::rstest]
+#[case::auth_procedure(|roots: &[Word]| roots[0], true)]
+#[case::first_sorted_procedure(|roots: &[Word]| roots[1], true)]
+#[case::last_sorted_procedure(|roots: &[Word]| roots[roots.len() - 1], true)]
+#[case::absent_root_smaller_than_all(|_: &[Word]| Word::empty(), false)]
+#[case::absent_root_larger_than_all(|_: &[Word]| Word::from([-Felt::ONE; 4]), false)]
+#[case::absent_root_between_sorted_procedures(
+    |roots: &[Word]| {
+        // the least significant element has the least weight in the sort order, so incrementing it
+        // places the root right after the first sorted procedure
+        let mut root = roots[1];
+        root[0] += Felt::ONE;
+        assert!(roots[1] < root && root < roots[2], "root must sort between two procedures");
+        root
+    },
+    false
+)]
 #[tokio::test]
-async fn test_has_procedure() -> anyhow::Result<()> {
+async fn test_has_procedure(
+    #[case] select_root: fn(&[Word]) -> Word,
+    #[case] expected_available: bool,
+) -> anyhow::Result<()> {
     // Create a standard account using the mock component
     let mock_component = MockAccountComponent::with_slots(AccountStorage::mock_storage_slots());
     let account = AccountBuilder::new(rand::random())
@@ -2470,34 +2509,31 @@ async fn test_has_procedure() -> anyhow::Result<()> {
         .build_existing()
         .unwrap();
 
-    let tx_script_code = r#"
+    let roots: Vec<Word> =
+        account.code().procedures().iter().map(|root| *root.mast_root()).collect();
+    let root = select_root(&roots);
+    assert_eq!(roots.contains(&root), expected_available, "test root does not match the case");
+
+    let tx_script_code = format!(
+        r#"
         use miden::core::sys
         use mock::account as mock_account
 
         @transaction_script
         pub proc main
-            # check that get_item procedure is available on the mock account
-            procref.mock_account::get_item
-            # => [GET_ITEM_ROOT]
+            push.{root}
+            # => [PROC_ROOT]
 
             call.mock_account::has_procedure
             # => [is_procedure_available, pad(15)]
 
-            # assert that the get_item is exposed
-            assert.err="get_item procedure should be exposed by the mock account"
-
-            # get some random word and assert that it is not exposed
-            push.5.3.15.686
-
-            call.mock_account::has_procedure
-            # => [is_procedure_available, pad(15)]
-
-            # assert that the procedure with some random root is not exposed
-            assertz.err="procedure with some random root should not be exposed by the mock account"
+            eq.{expected_available} assert.err="procedure should be reported as expected"
 
             exec.sys::truncate_stack
         end
-        "#;
+        "#,
+        expected_available = u8::from(expected_available),
+    );
 
     // Compile the transaction script using the testing assembler with mock account
     let tx_script = CodeBuilder::with_mock_packages()

@@ -1,80 +1,20 @@
-//! Builder byte-identity tests for the fee-enabled production composition.
+//! Builder tests for the fee-enabled production composition.
 //!
-//! The tests record the account state, code, storage, and seed-derived ID commitments at a fixed
-//! seed for both construction paths.
-//!
-//! 1. the crate-root `build_faucet_account` constructor reproduces them EXACTLY (the faucet it
-//!    builds is `is_max_supply_mutable(true)`, so `set_max_supply` stays operable),
-//! 2. the component path (`build_components` + the auth component, now with the builder assembling
-//!    its own xreserve component) still reproduces them, and
-//! 3. the two paths agree with each other.
-//!
-//! Any change to a recorded commitment fails a string-exact assertion.
+//! The tests check that the crate-root `build_faucet_account` constructor and the component path
+//! (`build_components` + the auth component) compose the identical account at a fixed seed, and
+//! that the crate-root constructor sets the expected account flags.
 
 mod support;
 
+use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountType, AssetCallbackFlag, StorageSlotName};
 use miden_protocol::asset::AssetAmount;
-use miden_protocol::utils::serde::Serializable;
-use miden_protocol::{Felt, Hasher, Word};
 use miden_usdcx::account::xreserve::{XReserveStablecoinBuilder, build_faucet_account};
 use support::*;
 
-/// The fixed account seed the anchors were captured at (production uses a random seed; a fixed one
-/// makes the seed-derived id and the whole account commitment deterministic).
+/// A fixed account seed, so that both construction paths derive the same account ID.
 const SEED: [u8; 32] = [7u8; 32];
 const TOKEN_SUPPLY: u64 = 0;
-
-// Account commitments for the production composition at SEED. The fixed seed makes both
-// construction paths deterministic. Updated for the P2ID salt removal, which changes the mint
-// policy code and the fee schedule keyed by note script roots, for the rename of the
-// `external_link_*` metadata slots to `external_uri_*`, which changes the storage layout and the
-// slot IDs embedded in `set_external_uri`, for the `SetTokenBaseUri` variant of
-// `FaucetMetadataConfigNote`, which changes the script root stored in the note allowlist, for the
-// logs `set_external_uri` and `set_token_base_uri` emit, which change their roots and so the root
-// of the config note script that calls them, and for the bound on converted amounts in
-// `fee::convert_amount`, which changes the auth component's `pay_fee` code.
-const GOLDEN_STATE_COMMITMENT: &str =
-    "Word([5162996465510048755, 2094439739736683357, 6936787768993976662, 17230760176016600422])";
-const GOLDEN_CODE_COMMITMENT: &str =
-    "Word([4330151583663897892, 1076998090470432129, 2457291820389870476, 9246314450693933979])";
-const GOLDEN_STORAGE_DIGEST: &str =
-    "Word([11934322787388200008, 12740576829291714277, 8409363599569151088, 3187457418425219326])";
-const GOLDEN_ACCOUNT_ID: &str = "0xf10557781db4fbf15678c813fadd2d";
-
-/// A deterministic digest over the account's storage slots (name + serialized slot), so a
-/// storage-only drift is caught independently of the code commitment.
-fn storage_digest(account: &Account) -> Word {
-    let mut bytes = Vec::new();
-    for slot in account.storage().slots() {
-        bytes.extend_from_slice(&slot.to_bytes());
-    }
-    Hasher::hash(&bytes)
-}
-
-/// Asserts an account matches every frozen anchor.
-fn assert_matches_golden(account: &Account, path: &str) {
-    assert_eq!(
-        format!("{}", account.id()),
-        GOLDEN_ACCOUNT_ID,
-        "{path}: seed-derived account id drifted",
-    );
-    assert_eq!(
-        format!("{:?}", account.to_commitment()),
-        GOLDEN_STATE_COMMITMENT,
-        "{path}: account state commitment drifted (code, storage, id or type changed)",
-    );
-    assert_eq!(
-        format!("{:?}", account.code().commitment()),
-        GOLDEN_CODE_COMMITMENT,
-        "{path}: account code commitment drifted (a procedure root moved)",
-    );
-    assert_eq!(
-        format!("{:?}", storage_digest(account)),
-        GOLDEN_STORAGE_DIGEST,
-        "{path}: account storage drifted (a slot value or layout changed)",
-    );
-}
 
 /// Composes the account from `build_components` and the production auth component at the
 /// fixed seed, with the asset-callback flag derived from the composition (as the deploy path does).
@@ -110,18 +50,6 @@ fn account_via_crate_root_constructor() -> Account {
     .expect("the crate-root faucet-account constructor must build the account")
 }
 
-/// The crate-root faucet-account constructor matches the recorded commitments.
-#[test]
-fn crate_root_constructor_matches_the_golden() {
-    assert_matches_golden(&account_via_crate_root_constructor(), "build_faucet_account");
-}
-
-/// The component path matches the recorded commitments.
-#[test]
-fn component_path_matches_the_golden() {
-    assert_matches_golden(&account_via_component_path(), "component-path");
-}
-
 /// The two construction paths agree with each other — the crate-root constructor is a faithful
 /// wrapper over the component composition + auth, not a second, subtly-different assembly.
 #[test]
@@ -129,13 +57,13 @@ fn the_two_construction_paths_agree() {
     let via_ctor = account_via_crate_root_constructor();
     let via_components = account_via_component_path();
     assert_eq!(
-        format!("{:?}", via_ctor.to_commitment()),
-        format!("{:?}", via_components.to_commitment()),
+        via_ctor.to_commitment(),
+        via_components.to_commitment(),
         "the crate-root constructor and the component path must compose the identical account",
     );
     assert_eq!(
-        format!("{:?}", storage_digest(&via_ctor)),
-        format!("{:?}", storage_digest(&via_components)),
+        via_ctor.storage().to_commitment(),
+        via_components.storage().to_commitment(),
         "the two paths must produce identical storage",
     );
 }

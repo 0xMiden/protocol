@@ -1,6 +1,5 @@
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::errors::tx_kernel::ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
@@ -14,6 +13,7 @@ use miden_standards::errors::standards::{
     ERR_FEE_CONVERSION_INFO_COMMITMENT_MISMATCH,
     ERR_FEE_CONVERSION_INFO_MISSING,
     ERR_FEE_CONVERSION_INFO_NOT_NATIVE,
+    ERR_FEE_INSUFFICIENT_BALANCE,
 };
 use miden_standards::note::TxFeeNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -21,7 +21,7 @@ use rstest::rstest;
 
 use super::{
     ECDSA_K256_KECCAK_AUTH_CYCLES,
-    FALCON_512_POSEIDON2_AUTH_CYCLES,
+    FALCON_512_EIDOS_AUTH_CYCLES,
     PAY_FEE_CYCLES,
     POST_AUTH_EPILOGUE_BASE_CYCLES,
     POST_AUTH_EPILOGUE_PER_NOTE_CYCLES,
@@ -78,7 +78,7 @@ async fn execute_fee_paying_tx(
 /// the native fee asset, and the paid amount covers the fee required for the actual number of
 /// cycles the transaction took. This is the regression guard for the cycle-estimate constants.
 #[rstest]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::falcon(AuthScheme::Falcon512Eidos)]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[tokio::test]
 async fn singlesig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
@@ -122,7 +122,7 @@ async fn singlesig_pays_fee_note(#[case] auth_scheme: AuthScheme) -> anyhow::Res
 #[tokio::test]
 async fn fee_note_serial_is_derivable() -> anyhow::Result<()> {
     let (executed_transaction, initial_nonce) =
-        execute_fee_paying_tx(AuthScheme::Falcon512Poseidon2).await?;
+        execute_fee_paying_tx(AuthScheme::Falcon512Eidos).await?;
 
     let output_note = executed_transaction.output_notes().get_note(0);
     let assets = output_note.assets();
@@ -149,9 +149,8 @@ async fn execute_with_conversion_entry(
     entry: (Word, Vec<Felt>),
 ) -> anyhow::Result<Result<ExecutedTransaction, miden_tx::TransactionExecutorError>> {
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mock_chain = builder.build()?;
 
     let (key, value) = entry;
@@ -212,9 +211,8 @@ async fn non_native_conversion_info_aborts(
 #[tokio::test]
 async fn no_fee_note_on_zero_fee_chain() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos })?;
     let mock_chain = builder.build()?;
 
     let executed_transaction =
@@ -225,16 +223,25 @@ async fn no_fee_note_on_zero_fee_chain() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Fee payment fails with the specific vault error when the account does not hold enough of the
-/// fee asset.
+/// Fee payment fails with the fee-specific error when the account does not hold enough of the fee
+/// asset, whether it holds none of it or less than the fee.
+#[rstest]
+#[case::no_fee_asset(None)]
+#[case::insufficient_balance(Some(1))]
 #[tokio::test]
-async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
+async fn fee_payment_fails_without_fee_asset(
+    #[case] fee_balance: Option<u64>,
+) -> anyhow::Result<()> {
     let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into()?;
+    let fee_assets = fee_balance
+        .map(|amount| FungibleAsset::new(fee_faucet_id, amount).map(Asset::from))
+        .transpose()?;
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
-    let account = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
+        fee_assets,
+    )?;
     let mock_chain = builder.build()?;
 
     let (args, advice_value) = commit_fee_conversion_info(
@@ -250,10 +257,7 @@ async fn fee_payment_fails_without_fee_asset() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(
-        result,
-        ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
-    );
+    assert_transaction_executor_error!(result, ERR_FEE_INSUFFICIENT_BALANCE);
 
     Ok(())
 }
@@ -265,9 +269,7 @@ async fn fee_payment_fails_without_conversion_info() -> anyhow::Result<()> {
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
     let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [fee_asset],
     )?;
     let mock_chain = builder.build()?;
@@ -283,7 +285,7 @@ async fn fee_payment_fails_without_conversion_info() -> anyhow::Result<()> {
 /// If this test fails, the constants in `miden::standards::auth::signature` /
 /// `miden::standards::fee` must be raised (and the mirrors above updated).
 #[rstest]
-#[case::falcon(AuthScheme::Falcon512Poseidon2, FALCON_512_POSEIDON2_AUTH_CYCLES)]
+#[case::falcon(AuthScheme::Falcon512Eidos, FALCON_512_EIDOS_AUTH_CYCLES)]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak, ECDSA_K256_KECCAK_AUTH_CYCLES)]
 #[tokio::test]
 async fn cycle_estimates_are_upper_bounds(
@@ -326,9 +328,7 @@ async fn post_auth_epilogue_estimate_covers_note_heavy_tx() -> anyhow::Result<()
 
     let mut builder = MockChain::builder().verification_base_fee(VERIFICATION_BASE_FEE);
     let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [fee_asset],
     )?;
     let mock_chain = builder.build()?;
@@ -346,7 +346,10 @@ async fn post_auth_epilogue_estimate_covers_note_heavy_tx() -> anyhow::Result<()
             call.::miden::standards::note::note_creator::create_note
             # => [note_idx, pad(21)]
 
-            drop dropw drop
+            exec.::miden::protocol::output_note::seal
+            # => [pad(21)]
+
+            dropw drop
             # => [pad(16)]
             ",
             note_type = NoteType::Private as u8,

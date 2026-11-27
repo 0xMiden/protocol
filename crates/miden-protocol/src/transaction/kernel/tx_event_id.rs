@@ -32,6 +32,8 @@ pub enum TransactionEventId {
 
     AccountBeforeAssetDeltaComputation = ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_ID,
     AccountOnAssetDeltaComputation = ACCOUNT_ON_ASSET_DELTA_COMPUTATION_ID,
+    AccountPushPatchCommitmentBodyBlockCount = ACCOUNT_PUSH_PATCH_COMMITMENT_BODY_BLOCK_COUNT_ID,
+    AccountPushDeltaCommitmentBodyBlockCount = ACCOUNT_PUSH_DELTA_COMMITMENT_BODY_BLOCK_COUNT_ID,
 
     AccountVaultBeforeGetAsset = ACCOUNT_VAULT_BEFORE_GET_ASSET_ID,
 
@@ -66,6 +68,8 @@ pub enum TransactionEventId {
 
     AuthRequest = AUTH_REQUEST_ID,
 
+    IesEcgfp5EidosSeal = IES_ECGFP5_EIDOS_SEAL_ID,
+
     PrologueStart = PROLOGUE_START_ID,
     PrologueEnd = PROLOGUE_END_ID,
 
@@ -96,8 +100,13 @@ impl TransactionEventId {
     ///
     /// The host enforces this: a privileged event emitted from a non-root context is rejected.
     pub fn is_privileged(&self) -> bool {
-        let is_unprivileged =
-            matches!(self, Self::AuthRequest | Self::InputNoteIndexLookup | Self::Unauthorized);
+        let is_unprivileged = matches!(
+            self,
+            Self::AuthRequest
+                | Self::InputNoteIndexLookup
+                | Self::IesEcgfp5EidosSeal
+                | Self::Unauthorized
+        );
         !is_unprivileged
     }
 
@@ -120,6 +129,12 @@ impl TransactionEventId {
                 &ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_NAME
             },
             Self::AccountOnAssetDeltaComputation => &ACCOUNT_ON_ASSET_DELTA_COMPUTATION_NAME,
+            Self::AccountPushPatchCommitmentBodyBlockCount => {
+                &ACCOUNT_PUSH_PATCH_COMMITMENT_BODY_BLOCK_COUNT_NAME
+            },
+            Self::AccountPushDeltaCommitmentBodyBlockCount => {
+                &ACCOUNT_PUSH_DELTA_COMMITMENT_BODY_BLOCK_COUNT_NAME
+            },
             Self::AccountVaultBeforeGetAsset => &ACCOUNT_VAULT_BEFORE_GET_ASSET_NAME,
             Self::AccountStorageBeforeSetItem => &ACCOUNT_STORAGE_BEFORE_SET_ITEM_NAME,
             Self::AccountStorageAfterSetItem => &ACCOUNT_STORAGE_AFTER_SET_ITEM_NAME,
@@ -139,6 +154,7 @@ impl TransactionEventId {
             Self::TxLogAdded => &TX_LOG_ADDED_NAME,
             Self::TxBeforeBlockWitnessLoad => &TX_BEFORE_BLOCK_WITNESS_LOAD_NAME,
             Self::AuthRequest => &AUTH_REQUEST_NAME,
+            Self::IesEcgfp5EidosSeal => &IES_ECGFP5_EIDOS_SEAL_NAME,
             Self::PrologueStart => &PROLOGUE_START_NAME,
             Self::PrologueEnd => &PROLOGUE_END_NAME,
             Self::NotesProcessingStart => &NOTES_PROCESSING_START_NAME,
@@ -196,6 +212,12 @@ impl TryFrom<EventId> for TransactionEventId {
             ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION_ID => {
                 Ok(TransactionEventId::AccountBeforeAssetDeltaComputation)
             },
+            ACCOUNT_PUSH_PATCH_COMMITMENT_BODY_BLOCK_COUNT_ID => {
+                Ok(TransactionEventId::AccountPushPatchCommitmentBodyBlockCount)
+            },
+            ACCOUNT_PUSH_DELTA_COMMITMENT_BODY_BLOCK_COUNT_ID => {
+                Ok(TransactionEventId::AccountPushDeltaCommitmentBodyBlockCount)
+            },
 
             ACCOUNT_VAULT_BEFORE_GET_ASSET_ID => Ok(TransactionEventId::AccountVaultBeforeGetAsset),
 
@@ -238,6 +260,8 @@ impl TryFrom<EventId> for TransactionEventId {
             TX_BEFORE_BLOCK_WITNESS_LOAD_ID => Ok(TransactionEventId::TxBeforeBlockWitnessLoad),
 
             AUTH_REQUEST_ID => Ok(TransactionEventId::AuthRequest),
+
+            IES_ECGFP5_EIDOS_SEAL_ID => Ok(TransactionEventId::IesEcgfp5EidosSeal),
 
             PROLOGUE_START_ID => Ok(TransactionEventId::PrologueStart),
             PROLOGUE_END_ID => Ok(TransactionEventId::PrologueEnd),

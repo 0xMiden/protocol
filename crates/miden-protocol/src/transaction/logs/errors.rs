@@ -7,6 +7,12 @@ use super::{TransactionLog, TransactionLogs};
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum TransactionLogError {
+    #[error("public logs exceed their aggregate resource limits")]
+    PublicLogsLimitExceeded,
+    #[error("public log entries do not match the ordered public transactions")]
+    PublicLogsAssociationMismatch,
+    #[error("public logs do not match the transaction commitments")]
+    PublicLogsCommitmentMismatch,
     /// An individual transaction log content exceeds its word limit.
     #[error(
         "log content has {0} words, exceeding the maximum of {max}",

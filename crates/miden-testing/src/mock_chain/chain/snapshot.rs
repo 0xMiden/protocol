@@ -6,8 +6,10 @@ use miden_objects::prost::Message;
 use miden_objects::{BuildUnchecked, DecodeMessage, Verify, proto};
 use miden_protocol::account::auth::AuthSecretKey;
 use miden_protocol::block::account_tree::AccountTree;
+use miden_protocol::block::code_tree::CodeTree;
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{BlockBody, BlockSignatures, Blockchain, ProvenBlock};
+use miden_protocol::code::ProcedureRoot;
 use miden_protocol::note::Nullifier;
 use miden_tx::auth::BasicAuthenticator;
 use proto::mock_chain as wire;
@@ -46,7 +48,7 @@ impl MockChain {
                 .map(|block| wire::ProvenBlock {
                     header: Some(block.header().into()),
                     body: Some(block.body().into()),
-                    signatures: block.signatures().as_signatures().iter().map(Into::into).collect(),
+                    signatures: block.signatures().as_slice().iter().map(Into::into).collect(),
                     proof: Some(block.proof().into()),
                 })
                 .collect(),
@@ -86,6 +88,11 @@ impl MockChain {
                 .map(|key| AuthSecretKey::EcdsaK256Keccak(key.clone()).into())
                 .collect(),
             protocol_config: Some((&self.protocol_config).into()),
+            code_tree_procedure_roots: self
+                .code_tree
+                .procedure_roots()
+                .map(|procedure_root| procedure_root.as_word().into())
+                .collect(),
         }
     }
 
@@ -97,12 +104,20 @@ impl MockChain {
         for block in snapshot.blocks.into_inner() {
             let header = block.header.build_unchecked()?;
             // Trust the saved body, including MockChainBuilder's unchecked genesis fixtures.
-            let body = BlockBody::new_unchecked(
-                block.body.updated_accounts.verify()?,
-                block.body.output_note_batches.verify()?,
-                block.body.created_nullifiers.map(Nullifier::from_raw),
-                block.body.transactions.build_unchecked()?,
-            );
+            let body = {
+                let embedded_headers = block.body.transactions.build_unchecked()?;
+                let embedded_logs = miden_objects::VerifyWith::verify_with(
+                    block.body.public_logs,
+                    embedded_headers.as_slice(),
+                )?;
+                BlockBody::new_unchecked(
+                    block.body.updated_accounts.verify()?,
+                    block.body.output_note_batches.verify()?,
+                    block.body.created_nullifiers.map(Nullifier::from_raw),
+                    embedded_headers,
+                    embedded_logs,
+                )
+            };
             let signatures = BlockSignatures::new(block.signatures.verify_infallible())?;
             let block = ProvenBlock::new_unchecked(header, body, signatures, block.proof);
             chain.push(block.header().commitment());
@@ -123,6 +138,13 @@ impl MockChain {
             .map(|entry| Ok((Nullifier::from_raw(entry.nullifier), entry.block_num.verify()?)))
             .collect::<anyhow::Result<Vec<_>>>()?;
         let nullifier_tree = NullifierTree::with_entries(nullifiers)?;
+        let code_tree = CodeTree::with_entries(
+            snapshot
+                .code_tree_procedure_roots
+                .into_inner()
+                .into_iter()
+                .map(ProcedureRoot::from_raw),
+        )?;
         let committed_accounts = snapshot
             .committed_accounts
             .verify()?
@@ -165,6 +187,7 @@ impl MockChain {
             blocks,
             account_tree,
             nullifier_tree,
+            code_tree,
             pending_transactions: snapshot.pending_transactions.build_unchecked()?,
             pending_batches: snapshot.pending_batches.build_unchecked()?,
             committed_accounts,

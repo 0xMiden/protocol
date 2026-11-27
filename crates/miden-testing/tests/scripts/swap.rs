@@ -1,17 +1,25 @@
 use anyhow::Context;
-use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
-use miden_protocol::note::{Note, NoteDetails, NoteId, NoteType};
+use miden_protocol::note::{
+    Note,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteDetails,
+    NoteId,
+    NoteType,
+};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
     AccountIdBuilder,
 };
 use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::{Felt, Word};
+use miden_standards::account::policies::MintPolicy;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::P2idNote;
+use miden_standards::note::{BurnNote, NetworkNoteExt, P2idNote, SwapNote};
 use miden_testing::{Auth, MockChain};
 
 use crate::prove_and_verify_transaction_complete;
@@ -40,12 +48,13 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
             push.{note_type}
             push.{tag}
             call.::miden::standards::note::note_creator::create_note
-            movdn.15 dropw dropw dropw drop drop drop
+            movdn.15 dropw dropw dropw drop drop drop dup
 
             push.{ASSET_VALUE}
             push.{ASSET_ID}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            dropw dropw dropw dropw
+            exec.output_note::seal
+            dropw dropw dropw drop drop drop
         end
         ",
         recipient = swap_note.recipient().digest(),
@@ -163,9 +172,8 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
 }
 
 // Consumes a SWAP note with a public payback without any off-band advice. The executor materializes
-// the payback recipient from the creator account ID embedded in SWAP storage and the SWAP's own
-// serial number, then registers it with the advice provider via `p2id::prepare_note ->
-// note::build_recipient`.
+// the payback recipient from the script root, serial number and storage embedded in SWAP storage,
+// which the script registers with the advice provider via `note::compute_and_store_recipient`.
 #[tokio::test]
 async fn consume_swap_note_public_payback_note_no_advice() -> anyhow::Result<()> {
     let payback_note_type = NoteType::Public;
@@ -291,6 +299,83 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Consumes a private SWAP note whose public payback is a BURN note for the requested asset with
+/// two attachments: the network account target that routes it to the issuing faucet, and a
+/// multi-word attachment. The payback must carry both attachments, so the faucet can consume it as
+/// a network note.
+#[tokio::test]
+async fn consume_swap_note_with_burn_payback_and_attachments() -> anyhow::Result<()> {
+    let offered_asset = FungibleAsset::mock(2000);
+
+    let mut builder = MockChain::builder();
+    let sender_account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
+        vec![offered_asset],
+    )?;
+
+    // The wallet creating a network note asks its target faucet for the fee via FPI, so the
+    // faucet must exist on chain and price BURN notes, which the network faucet helper does.
+    let faucet = builder.add_existing_network_faucet(
+        "BURN",
+        1_000_000,
+        sender_account.id(),
+        Some(500),
+        MintPolicy::allow_all(),
+        [],
+    )?;
+    let requested_asset = Asset::from(FungibleAsset::new(faucet.id(), 500)?);
+    let target_account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
+        vec![requested_asset],
+    )?;
+
+    // The BURN note gets the network account target for the asset's faucet appended to the
+    // multi-word attachment. Its sender is the consumer of the SWAP note, who creates the payback.
+    let multi_word_attachment = NoteAttachment::with_words(
+        NoteAttachmentScheme::new(42)?,
+        vec![Word::from([1, 2, 3, 4u32]), Word::from([5, 6, 7, 8u32])],
+    )?;
+    let expected_payback_note = Note::from(
+        BurnNote::builder()
+            .sender(target_account.id())
+            .asset(requested_asset)
+            .serial_number(Word::from([11, 12, 13, 14u32]))
+            .attachment(multi_word_attachment)
+            .build()?,
+    );
+    assert_eq!(expected_payback_note.attachments().num_attachments(), 2);
+
+    let swap_note = SwapNote::builder()
+        .sender(sender_account.id())
+        .offered_asset(offered_asset)
+        .requested_asset(requested_asset)
+        .note_type(NoteType::Private)
+        .payback_note_type(NoteType::Public)
+        .payback_recipient(expected_payback_note.recipient().clone())
+        .payback_tag(expected_payback_note.metadata().tag())
+        .payback_attachments(expected_payback_note.attachments().iter().cloned())
+        .serial_number(Word::from([21, 22, 23, 24u32]))
+        .build()?;
+    let mock_chain = builder.build()?;
+
+    // The mock chain holds no details of private notes, so the consumer provides the SWAP note.
+    let consume_swap_note_tx = mock_chain
+        .build_transaction(target_account.id())
+        .unauthenticated_input_note(Note::from(swap_note))
+        .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(faucet.id())?])
+        .build()?
+        .execute()
+        .await?;
+
+    let RawOutputNote::Full(payback_note) = consume_swap_note_tx.output_notes().get_note(0) else {
+        anyhow::bail!("public payback note must be a full output note");
+    };
+    assert_eq!(payback_note, &expected_payback_note);
+    assert!(payback_note.is_network_note());
+
+    Ok(())
+}
+
 /// Tests that a SWAP note offering asset A and requesting asset B can be matched against a SWAP
 /// note offering asset B and requesting asset A.
 #[tokio::test]
@@ -306,9 +391,7 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
     // CREATE ACCOUNT 1: Has asset A, wants asset B
     // --------------------------------------------------------------------------------------------
     let account_1 = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         vec![asset_a],
     )?;
 
@@ -319,9 +402,7 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
     // CREATE ACCOUNT 2: Has asset B, wants asset A
     // --------------------------------------------------------------------------------------------
     let account_2 = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         vec![asset_b],
     )?;
     let (swap_note_2, payback_note_2) =
@@ -332,9 +413,7 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
 
     // TODO: matcher account should be able to fill both SWAP notes without holding assets A & B
     let matcher_account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         vec![asset_a, asset_b],
     )?;
     // Initial matching account balance should have two assets.
@@ -394,15 +473,11 @@ fn setup_swap_test(payback_note_type: NoteType) -> anyhow::Result<SwapTestSetup>
 
     let mut builder = MockChain::builder();
     let sender_account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         vec![offered_asset],
     )?;
     let target_account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         vec![requested_asset],
     )?;
 

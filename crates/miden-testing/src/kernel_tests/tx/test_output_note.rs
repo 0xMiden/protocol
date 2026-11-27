@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
-use miden_protocol::crypto::rand::RandomCoin;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
     ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
@@ -86,7 +86,7 @@ async fn compute_note_id_matches_rust() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let asset = FungibleAsset::mock(150);
     let account = builder.add_existing_wallet_with_assets(Auth::IncrNonce, [asset])?;
-    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
 
     let expected_note = NoteBuilder::new(account.id(), rng)
         .note_type(NoteType::Public)
@@ -176,8 +176,6 @@ async fn test_create_note() -> anyhow::Result<()> {
     let metadata = PartialNoteMetadata::new(account_id, NoteType::Public).with_tag(tag);
     let expected_metadata_word =
         NoteMetadata::new(metadata, &NoteAttachments::default()).to_metadata_word();
-    let expected_note_attachment = NoteAttachments::default().to_commitment();
-
     assert_eq!(
         exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_OFFSET),
         expected_metadata_word,
@@ -187,8 +185,8 @@ async fn test_create_note() -> anyhow::Result<()> {
     assert_eq!(
         exec_output
             .get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ATTACHMENT_0_OFFSET),
-        expected_note_attachment,
-        "attachment must be stored at the correct memory location",
+        Word::empty(),
+        "an unused attachment slot must contain the empty-word sentinel",
     );
 
     assert_eq!(
@@ -273,7 +271,7 @@ async fn test_create_note_too_many_notes() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
-    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let mut rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
 
     let asset_1 = FungibleAsset::mock(100);
@@ -387,13 +385,19 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             exec.output_note::add_attachment_from_memory
             # => []
 
-            # compute the output notes commitment
+            push.4.3.2.1
+            # => [CALLER_WORD]
+
+            # Compute once with dirty asset commitments, then with the refreshed cache.
             exec.tx::get_output_notes_commitment
-            # => [OUTPUT_NOTES_COMMITMENT]
+            # => [OUTPUT_NOTES_COMMITMENT, CALLER_WORD]
+
+            exec.tx::get_output_notes_commitment
+            # => [OUTPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, CALLER_WORD]
 
             # truncate the stack
             exec.sys::truncate_stack
-            # => [OUTPUT_NOTES_COMMITMENT]
+            # => [OUTPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, CALLER_WORD]
         end
         ",
         NOTE_TYPE_PUBLIC = NoteType::Public as u8,
@@ -463,6 +467,8 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
     }
 
     assert_eq!(exec_output.get_stack_word(0), expected_output_notes_commitment);
+    assert_eq!(exec_output.get_stack_word(4), expected_output_notes_commitment);
+    assert_eq!(exec_output.get_stack_word(8), Word::from([1, 2, 3, 4u32]));
 
     Ok(())
 }
@@ -928,9 +934,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
     );
 
     let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [fungible_asset_0, fungible_asset_1],
     )?;
 
@@ -941,7 +945,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?)
         .asset(fungible_asset_0)
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([1, 2, 3, 4u32])))
         .build()?
         .into();
 
@@ -951,7 +955,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         .asset(fungible_asset_0)
         .asset(fungible_asset_1)
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([4, 3, 2, 1u32])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([4, 3, 2, 1u32])))
         .build()?
         .into();
 
@@ -1020,6 +1024,9 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
             assert_eq.err="number of assets in the note having asset_0 and asset_1 is incorrect"
             # => [note_idx]
 
+            exec.output_note::seal
+            # => []
+
             # truncate the stack
             exec.sys::truncate_stack
         end
@@ -1060,9 +1067,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Eidos },
         [FungibleAsset::mock(2000)],
     )?;
 
@@ -1073,7 +1078,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
         .target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?)
         .asset(FungibleAsset::mock(5))
         .note_type(NoteType::Public)
-        .generate_serial_number(&mut RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+        .generate_serial_number(&mut EidosRandomCoin::new(Word::from([1, 2, 3, 4u32])))
         .build()?
         .into();
 
@@ -1084,8 +1089,8 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
 
         @transaction_script
         pub proc main
-            # create an output note with one asset
-            {output_note} drop
+            # create and seal an output note with one asset
+            {output_note}
             # => []
 
             # get the recipient (the only existing note has 0'th index)
@@ -1111,7 +1116,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
             exec.sys::truncate_stack
         end
         "#,
-        output_note = create_output_note(&output_note),
+        output_note = create_sealed_output_note(&output_note),
         RECIPIENT = output_note.recipient().digest(),
         METADATA = output_note.metadata().to_metadata_word(),
     );
@@ -1227,11 +1232,11 @@ async fn test_get_assets() -> anyhow::Result<()> {
             exec.sys::truncate_stack
         end
         ",
-        create_note_0 = create_output_note(&p2any_note_0_assets),
+        create_note_0 = create_sealed_output_note(&p2any_note_0_assets),
         check_note_0 = check_assets_code(0, 0, &p2any_note_0_assets),
-        create_note_1 = create_output_note(&p2id_note_1_asset),
+        create_note_1 = create_sealed_output_note(&p2id_note_1_asset),
         check_note_1 = check_assets_code(1, 8, &p2id_note_1_asset),
-        create_note_2 = create_output_note(&p2id_note_2_assets),
+        create_note_2 = create_sealed_output_note(&p2id_note_2_assets),
         check_note_2 = check_assets_code(2, 16, &p2id_note_2_assets),
     );
 
@@ -1365,8 +1370,11 @@ async fn test_add_fifth_attachment_fails() -> anyhow::Result<()> {
             # => [note_idx]
 
             # add attachment 5 (should fail)
-            push.17.18.19.20 push.5
+            dup push.17.18.19.20 push.5
             exec.output_note::add_word_attachment
+            # => [note_idx]
+
+            exec.output_note::seal
             # => []
         end
         ";
@@ -1387,7 +1395,7 @@ async fn test_add_fifth_attachment_fails() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_add_word_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let attachment_word = Word::from([3, 4, 5, 6u32]);
     let attachment = NoteAttachment::with_word(NoteAttachmentScheme::MAX, attachment_word);
     let output_note = RawOutputNote::Full(
@@ -1403,13 +1411,16 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
-            call.::mock::account::create_note
-            # => [note_idx]
+            call.::mock::account::create_note dup
+            # => [note_idx, note_idx]
 
             push.{ATTACHMENT}
             push.{attachment_scheme}
-            # => [attachment_scheme, ATTACHMENT, note_idx]
+            # => [attachment_scheme, ATTACHMENT, note_idx, note_idx]
             exec.output_note::add_word_attachment
+            # => [note_idx]
+
+            exec.output_note::seal
             # => []
 
             # truncate the stack
@@ -1445,7 +1456,7 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let words = vec![Word::from([3, 4, 5, 6u32]); NoteAttachment::MAX_NUM_WORDS as usize];
     let attachment = NoteAttachment::with_words(NoteAttachmentScheme::new(42)?, words.clone())?;
     let output_note = RawOutputNote::Full(
@@ -1474,8 +1485,8 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
             push.{RECIPIENT}
             push.{note_type}
             push.{tag}
-            call.::mock::account::create_note
-            # => [note_idx]
+            call.::mock::account::create_note dup
+            # => [note_idx, note_idx]
 
             # Store attachment words to memory
             {store_attachment_words}
@@ -1483,8 +1494,11 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
             push.{attachment_ptr}
             push.{num_words}
             push.{attachment_scheme}
-            # => [attachment_scheme, num_words, ptr, note_idx]
+            # => [attachment_scheme, num_words, ptr, note_idx, note_idx]
             exec.output_note::add_attachment_from_memory
+            # => [note_idx]
+
+            exec.output_note::seal
             # => []
 
             # truncate the stack
@@ -1520,7 +1534,7 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_set_network_target_account_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let attachment = NetworkAccountTarget::new(
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
         NoteExecutionHint::on_block_slot(5, 32, 3),
@@ -1552,7 +1566,7 @@ async fn test_set_network_target_account_attachment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_network_note() -> anyhow::Result<()> {
     let sender = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let mut rng = RandomCoin::new(Word::from([9, 8, 7, 6u32]));
+    let mut rng = EidosRandomCoin::new(Word::from([9, 8, 7, 6u32]));
 
     // --- Valid network note ---
     let target_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET)?;
@@ -1645,7 +1659,7 @@ async fn test_network_note() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_write_attachment_commitments_to_memory() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
 
     let attachment_0 =
         NoteAttachment::with_word(NoteAttachmentScheme::new(1)?, Word::from([3, 4, 5, 6u32]));
@@ -1716,6 +1730,9 @@ async fn test_write_attachment_commitments_to_memory() -> anyhow::Result<()> {
             assert_eqw.err=\"attachment commitment 1 mismatch\"
             # => []
 
+            push.0 exec.output_note::seal
+            # => []
+
             # truncate the stack
             exec.sys::truncate_stack
         end
@@ -1751,7 +1768,7 @@ async fn test_write_attachment_commitments_to_memory() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_write_attachment_to_memory() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let rng = EidosRandomCoin::new(Word::from([1, 2, 3, 4u32]));
 
     let attachment0_word = Word::from([3, 4, 5, 6u32]);
     let attachment1_word0 = Word::from([7, 8, 9, 10u32]);
@@ -1848,6 +1865,9 @@ async fn test_write_attachment_to_memory() -> anyhow::Result<()> {
             assert_eqw.err="attachment 1 word 1 mismatch"
             # => []
 
+            push.0 exec.output_note::seal
+            # => []
+
             # truncate the stack
             exec.sys::truncate_stack
         end
@@ -1901,11 +1921,12 @@ async fn test_find_attachment(
     let scheme_0 = NoteAttachmentScheme::new(10)?;
     let scheme_1 = NoteAttachmentScheme::new(20)?;
 
-    let output_note = NoteBuilder::new(account.id(), RandomCoin::new(Word::from([1, 2, 3, 4u32])))
-        .note_type(NoteType::Public)
-        .attachment(NoteAttachment::with_word(scheme_0, word_0))
-        .attachment(NoteAttachment::with_word(scheme_1, word_1))
-        .build()?;
+    let output_note =
+        NoteBuilder::new(account.id(), EidosRandomCoin::new(Word::from([1, 2, 3, 4u32])))
+            .note_type(NoteType::Public)
+            .attachment(NoteAttachment::with_word(scheme_0, word_0))
+            .attachment(NoteAttachment::with_word(scheme_1, word_1))
+            .build()?;
 
     let spawn_note = builder.add_spawn_note([&output_note])?;
     let mut mock_chain = builder.build()?;
@@ -2133,12 +2154,12 @@ async fn test_private_output_sealed_by_note_script(
     let asset = FungibleAsset::mock(10);
     let attachment_word = Word::from([3, 4, 5, 6u32]);
     let attachment_scheme = NoteAttachmentScheme::new(10)?;
-    let expected_note = NoteBuilder::new(account.id(), RandomCoin::new(Word::empty()))
+    let expected_note = NoteBuilder::new(account.id(), EidosRandomCoin::new(Word::empty()))
         .note_type(NoteType::Private)
         .add_assets([asset])
         .attachment(NoteAttachment::with_word(attachment_scheme, attachment_word))
         .build()?;
-    let input_note = NoteBuilder::new(account.id(), RandomCoin::new(Word::empty()))
+    let input_note = NoteBuilder::new(account.id(), EidosRandomCoin::new(Word::empty()))
         .dynamically_linked_packages(CodeBuilder::mock_packages())
         .code(format!(
             "use miden::protocol::output_note
@@ -2278,6 +2299,21 @@ fn create_output_note(note: &Note) -> String {
             ASSET_VALUE = asset.to_value_word()
         ));
     }
+
+    create_note_code
+}
+
+/// Returns a `masm` code which creates an output note, adds some assets to it and seals it.
+///
+/// The calling script must import `miden::protocol::output_note`.
+fn create_sealed_output_note(note: &Note) -> String {
+    let mut create_note_code = create_output_note(note);
+    create_note_code.push_str(
+        "
+        exec.output_note::seal
+        # => []
+    ",
+    );
 
     create_note_code
 }

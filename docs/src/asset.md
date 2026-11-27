@@ -32,14 +32,14 @@ Native assets adhere to the Miden `Asset` model (encoding, issuance, storage). E
 
 ### Issuance
 
-Accounts that issue assets are referred to as faucets. They can issue either fungible or non-fungible assets as defined at asset creation. The faucet's code specifies the `Asset` minting conditions: i.e., how, when, and by whom these assets can be minted. Once minted, they can be transferred to other accounts using notes.
+Accounts that issue assets are referred to as faucets. They can issue either fungible or non-fungible assets as defined at asset creation. The faucet's code determines who can mint assets and under which conditions. Once minted, they can be transferred to other accounts using notes.
 
 <p style={{textAlign: 'center'}}>
     <img src={require('./img/asset/asset-issuance.png').default} style={{width: '70%'}} alt="Asset issuance"/>
 </p>
 
 :::tip
-An account can technically issue different types of assets simultaneously, for example, both a fungible and a non-fungible asset. It is highly recommended that accounts issue only one type of asset, in order to have a simple 1-to-1 relationship between faucets and asset types.
+An account can issue fungible and non-fungible assets simultaneously. Issuing one type per account keeps a simple 1-to-1 relationship between faucets and asset types.
 :::
 
 ### Encoding
@@ -129,6 +129,8 @@ Examples of such assets include ETH and various stablecoins (e.g. DAI, USDT, USD
 
 The native non-fungible asset is encoded by hashing arbitrary data into 32 bytes, which results in the asset value.
 
+The Eidos digest contains four 63-bit elements. The asset class uses the first two, giving 126 bits of support and a generic birthday collision-work ceiling of about `2^63` hash evaluations for assets from the same faucet. Finding any colliding pair is distinct from matching a particular existing asset class. The full asset value has 252 bits of support and a 126-bit generic collision-resistance ceiling; its 32-byte encoding does not provide 256 varying bits.
+
 - Asset ID: `[hash0, hash1, faucet_id_suffix | composition | version, faucet_id_prefix]`.
   - Its `composition` must be set to `None`.
 - Value: `[hash0, hash1, hash2, hash3]`.
@@ -141,7 +143,7 @@ Examples of such assets include NFTs like a DevCon ticket.
 
 [Accounts](./account) and [notes](note) have vaults used to store assets. Accounts use a sparse Merkle tree as a vault while notes use a simple list. This enables an account to store a practically unlimited number of assets while a note can only store up to 16 assets.
 
-Asset IDs are hashed before being used as keys in the underlying sparse Merkle tree. Hashing the raw key ensures a uniform leaf distribution: in particular, it prevents non-fungible assets issued by the same faucet from sharing an SMT leaf (their raw asset IDs share the fourth element - the faucet ID prefix - which the SMT uses to determine leaf membership).
+Asset IDs are hashed before being used as keys in the underlying sparse Merkle tree. This avoids placing every asset from one faucet in the same leaf, as would happen with their raw asset IDs. Eidos clears the high bit of each digest element, so hashed IDs occupy the lower `2^63` leaf positions in the depth-64 tree. Leaf-index collisions are still possible and are distinguished by retaining the full hashed keys in each leaf.
 
 <p style={{textAlign: 'center'}}>
     <img src={require('./img/asset/asset-storage.png').default} style={{width: '70%'}} alt="Asset storage"/>
@@ -153,40 +155,46 @@ Assets in Miden can be burned through various methods, such as rendering them un
 
 ### Callbacks
 
-Asset callbacks allow a faucet to execute custom logic whenever one of its assets is added to an account vault or to an output note. This gives asset issuers a mechanism to enforce policies on their assets. For example, maintaining a block list of accounts that are not allowed to receive the asset or globally pausing transfers of assets.
+Asset callbacks allow a faucet to execute custom logic whenever one of its assets is added to an account vault or an output note holding its assets is sealed. This gives asset issuers a mechanism to enforce policies on their assets. For example, maintaining a block list of accounts that are not allowed to receive the asset or globally pausing transfers of assets.
 
 #### How callbacks work
 
 Callbacks involve two parts: a **faucet-level capability flag** and **faucet-level callback procedures**.
 
-**Faucet callback flag.** Whether a faucet's assets trigger callbacks is an immutable single-bit flag of the faucet's account ID, fixed at account creation. When the flag is `Enabled`, the kernel checks for and invokes callbacks on the issuing faucet whenever one of its assets is added to a vault or note. When the flag is `Disabled`, callbacks are skipped entirely and no foreign-account read is performed. Because the flag lives in the account ID (which is carried in every asset ID) rather than in each asset, all assets issued by a faucet share the same callback behavior and cannot be fragmented.
+**Faucet callback flag.** Whether a faucet's assets trigger callbacks is an immutable single-bit flag of the faucet's account ID, fixed at account creation. When the flag is `Enabled`, the kernel checks for and invokes callbacks on the issuing faucet whenever one of its assets is added to a vault or an output note holding one of its assets is sealed. When the flag is `Disabled`, callbacks are skipped entirely and no foreign-account read is performed. Because the flag lives in the account ID (which is carried in every asset ID) rather than in each asset, all assets issued by a faucet share the same callback behavior and cannot be fragmented.
 
 **Faucet callback procedures.** A faucet registers callbacks by storing the procedure root (hash) of one if its public account procedures in a well-known storage slot. Two callbacks are supported:
 
 | Callback | Storage slot name | Triggered when |
 |---|---|---|
 | `on_before_asset_added_to_account` | `miden::protocol::faucet::callback::on_before_asset_added_to_account` | The asset is added to an account's vault (via `native_account::add_asset`). |
-| `on_before_asset_added_to_note` | `miden::protocol::faucet::callback::on_before_asset_added_to_note` | The asset is added to an output note (via `output_note::add_asset`). |
+| `on_before_note_sealed` | `miden::protocol::faucet::callback::on_before_note_sealed` | An output note holding at least one of the faucet's assets is sealed (via `output_note::seal`). |
 
 Account components that need to add callbacks to an account's storage should use the `AssetCallbacks` type, which provides an easy-to-use abstraction over these details.
 
 #### Callback interfaces
 
-The transaction kernel invokes the callback on the issuing faucet as a validation hook. The callback receives the asset ID and value for inspection. The callback either completes successfully or aborts the transaction.
+The transaction kernel invokes the callback on the issuing faucet. The callback either completes successfully or aborts the transaction, and the note callback can also return attachments for the note.
 
-The **account callback** receives:
+The callback cannot modify account or note state. The kernel aborts the transaction if the callback calls a state-changing kernel procedure, for example `native_account::set_item` or `output_note::add_asset`. Setting the expiration delta and emitting transaction logs is allowed.
+
+The **account callback** receives the asset ID and value of the asset being added:
 
 ```
 Inputs:  [ASSET_ID, ASSET_VALUE, pad(8)]
 Outputs: [pad(16)]
 ```
 
-The **note callback** receives the additional `note_idx` identifying which output note the asset is being added to:
+The **note callback** receives the index of the output note being sealed:
 
 ```
-Inputs:  [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
-Outputs: [pad(16)]
+Inputs:  [note_idx, pad(15)]
+Outputs: [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
 ```
+
+The kernel seals the note after its callbacks have run. Since a callback cannot modify the note, it reads the note's final assets and recipient itself (e.g. via `output_note::get_assets` and `output_note::get_recipient`). The kernel invokes the callback once per note and faucet, even if the note holds several assets of the faucet. When a note holds assets of several faucets with callbacks enabled, the callbacks run in the order in which each faucet first occurs among the note's assets.
+
+The note callback can return a list of up to 4 attachments for the note. Returned attachments are appended to the note in the callback order and, within one callback, in list order. Each list entry is two words, `[attachment_scheme, 0, 0, 0, ATTACHMENT_COMMITMENT]`, and `ATTACHMENT_LIST_COMMITMENT` is the sequential hash of the list's elements. The callback must put the list into the advice map under `ATTACHMENT_LIST_COMMITMENT` and each attachment's elements under its `ATTACHMENT_COMMITMENT`. A `num_attachments` of `0` means the callback returns no attachment, and then `ATTACHMENT_LIST_COMMITMENT` must be the empty word. `output_note::single_attachment_list` and `output_note::attachment_list_from_memory` build the list of one attachment or of a list in memory, put it into the advice map and return `[num_attachments, ATTACHMENT_LIST_COMMITMENT]`.
 
 Both callbacks are invoked via `dyncall`, so they must follow the convention of accepting and returning 16 stack elements (input + padding).
 
@@ -210,6 +218,6 @@ This means assets with callbacks enabled can still be used even if the faucet ha
 All data structures not following the Miden asset model that can be exchanged.
 :::
 
-Miden is flexible enough to support other `Asset` models. For example, developers can replicate Ethereum’s ERC20 pattern, where fungible `Asset` ownership is recorded in a single account. To transact, users send a note to that account, triggering updates in the global hashmap state.
+Miden is flexible enough to support other `Asset` models. For example, developers can replicate Ethereum's ERC20 pattern, where fungible `Asset` ownership is recorded in a single account. To transact, users send a note to that account, triggering updates in the global hashmap state.
 
 Alternative or programmable asset models that expose FPI-callable checks follow the same expiration delta rule as native asset callbacks; see [Foreign procedure invocation (FPI) and expiration](transaction#foreign-procedure-invocation-fpi-and-expiration).

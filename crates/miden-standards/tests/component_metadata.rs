@@ -14,6 +14,7 @@ use miden_standards::account::access::{
 };
 use miden_standards::account::auth::{
     AuthGuardedMultisig,
+    AuthHotColdGuardian,
     AuthMultisig,
     AuthMultisigSmart,
     AuthNetworkAccount,
@@ -34,15 +35,19 @@ use miden_standards::account::policies::{
     BurnAllowAll,
     BurnOwnerOnly,
     BurnPolicy,
+    EncryptedAssetsSendPolicy,
     MinBurnAmount,
     MintAllowAll,
     MintOwnerOnly,
     MintPolicy,
+    SupplyRestrictionManager,
+    SupplyRestrictionPolicy,
     TokenPolicyManager,
     TransferAllowAll,
 };
 use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
+use miden_standards::note::EncryptedAssetsIssuerKey;
 
 /// Returns each standard component's `NAME` paired with the metadata read from its package.
 fn components() -> Vec<(&'static str, AccountComponentMetadata)> {
@@ -53,6 +58,7 @@ fn components() -> Vec<(&'static str, AccountComponentMetadata)> {
         (PausableManager::NAME, PausableManager::component_metadata()),
         (RoleBasedAccessControl::NAME, RoleBasedAccessControl::component_metadata()),
         (AuthGuardedMultisig::NAME, AuthGuardedMultisig::component_metadata()),
+        (AuthHotColdGuardian::NAME, AuthHotColdGuardian::component_metadata()),
         (AuthMultisig::NAME, AuthMultisig::component_metadata()),
         (AuthMultisigSmart::NAME, AuthMultisigSmart::component_metadata()),
         (AuthNetworkAccount::NAME, AuthNetworkAccount::component_metadata()),
@@ -79,6 +85,10 @@ fn components() -> Vec<(&'static str, AccountComponentMetadata)> {
         (BasicAllowlist::NAME, BasicAllowlist::component_metadata()),
         (BasicBlocklist::NAME, BasicBlocklist::component_metadata()),
         (BlocklistManager::NAME, BlocklistManager::component_metadata()),
+        (EncryptedAssetsSendPolicy::NAME, EncryptedAssetsSendPolicy::component_metadata()),
+        (EncryptedAssetsIssuerKey::NAME, EncryptedAssetsIssuerKey::component_metadata()),
+        (SupplyRestrictionManager::NAME, SupplyRestrictionManager::component_metadata()),
+        (SupplyRestrictionPolicy::NAME, SupplyRestrictionPolicy::component_metadata()),
         (BasicConstantFeePolicy::NAME, BasicConstantFeePolicy::component_metadata()),
         (ConstantFeeManager::NAME, ConstantFeeManager::component_metadata()),
         (CodeInspection::NAME, CodeInspection::component_metadata()),

@@ -36,6 +36,9 @@ impl BuildUnchecked for TransactionHeader {
             input_notes,
             output_notes,
             self.logs_commitment,
+            miden_protocol::block::code_tree::CodePatchCommitment::from_raw(
+                self.code_patch_commitment,
+            ),
         )?;
         if header.id() != transmitted {
             return Err(TransactionHeaderBuildError::IdMismatch {
@@ -73,6 +76,16 @@ impl Verify for TxAccountUpdate {
     }
 }
 
+pub use proto::transaction::DecodedCodePatch as CodePatch;
+
+impl Verify for CodePatch {
+    type Verified = miden_protocol::block::code_tree::CodePatch;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        Ok(Self::Verified::new(alloc::sync::Arc::new(self.mast.verify()?))?)
+    }
+}
+
 pub use proto::transaction::DecodedProvenTransaction as ProvenTransaction;
 
 /// Checks transaction construction invariants, but not its proof or input-note authentication.
@@ -92,6 +105,7 @@ impl BuildUnchecked for ProvenTransaction {
             unwrap_infallible(self.expiration_block_num.verify()),
             self.proof,
             self.log_details.verify()?,
+            self.code_patch.verify()?,
         )?)
     }
 }

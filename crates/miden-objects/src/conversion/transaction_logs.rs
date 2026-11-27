@@ -1,5 +1,6 @@
 use miden_protocol::transaction::{
     LogTopic,
+    PublicTransactionLogs,
     TransactionLog,
     TransactionLogDetails,
     TransactionLogs,
@@ -12,6 +13,21 @@ impl From<LogTopic> for proto::transaction::LogTopic {
         Self {
             suffix: Some(value.suffix().into()),
             prefix: Some(value.prefix().into()),
+        }
+    }
+}
+
+impl From<&PublicTransactionLogs> for proto::transaction::PublicTransactionLogs {
+    fn from(value: &PublicTransactionLogs) -> Self {
+        Self {
+            entries: value
+                .entries()
+                .iter()
+                .map(|(id, logs)| proto::transaction::PublicTransactionLogEntry {
+                    transaction_id: Some((*id).into()),
+                    logs: Some(logs.into()),
+                })
+                .collect(),
         }
     }
 }

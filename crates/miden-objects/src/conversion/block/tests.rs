@@ -2,6 +2,7 @@ use alloc::vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::AccountUpdateDetails;
+use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::block::{BlockAccountUpdate, BlockBody, BlockHeader};
 use miden_protocol::transaction::{InputNotes, OrderedTransactionHeaders, TransactionHeader};
 use prost::Message;
@@ -20,6 +21,7 @@ fn block_body_and_transaction_header_roundtrip() {
         InputNotes::default(),
         vec![],
         Default::default(),
+        CodePatch::default().commitment(),
     )
     .unwrap();
     let account_update = BlockAccountUpdate::new(
@@ -33,6 +35,7 @@ fn block_body_and_transaction_header_roundtrip() {
         vec![],
         vec![],
         vec![OrderedTransactionHeaders::new_unchecked(vec![transaction])],
+        Default::default(),
     )
     .unwrap();
 

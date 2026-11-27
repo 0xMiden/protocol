@@ -235,7 +235,7 @@ end
 #!     BATCH_ID |-> [(tx_id_0, account_id_0_pair), (tx_id_1, account_id_1_pair), ...]
 #!     For each verified tx_id_i:
 #!       tx_id_i |-> [INIT_i, FINAL_i, INPUT_NOTES_COMMITMENT_i, OUTPUT_NOTES_COMMITMENT_i,
-#!                    LOGS_COMMITMENT_i]
+#!                    LOGS_COMMITMENT_i, CODE_PATCH_COMMITMENT_i]
 #!
 #! Outputs:
 #!   Operand stack: []
@@ -245,7 +245,8 @@ end
 #! - the `(tx_id, account_id)` tuple list piped from the advice map does not hash to `BATCH_ID`.
 #! - a transaction's header is not `TX_HEADER_FELT_LEN` felts long.
 #! - a transaction's `(INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT,
-#!   LOGS_COMMITMENT)` data piped from the advice map does not hash to its `tx_id`.
+#!   LOGS_COMMITMENT, CODE_PATCH_COMMITMENT)` data piped from the advice map does not hash to its
+#!   `tx_id`.
 #! - [`prepare_input_note_list`] or [`prepare_output_note_list`] fails to verify.
 #!
 #! TODO: verify that each transaction's reference block is contained in the chain MMR rooted at
@@ -276,7 +277,7 @@ pub proc prepare_batch(batch_id: BatchId)
     push.TX_TUPLES_PTR swap
     # => [num_words, tx_tuples_ptr, BATCH_ID]
 
-    # Pipe the tuples into memory, asserting their poseidon2 hash equals BATCH_ID.
+    # Pipe the tuples into memory, asserting their hash equals BATCH_ID.
     exec.mem::pipe_preimage_to_memory
     # => [end_ptr]
 
@@ -312,7 +313,7 @@ pub proc prepare_batch(batch_id: BatchId)
         dup.4 exec.memory::get_tx_header_ptr push.TX_HEADER_NUM_WORDS
         # => [num_words, tx_header_ptr, TX_ID, tx_index]
 
-        # Pipe the header into memory, asserting its poseidon2 hash equals TX_ID.
+        # Pipe the header into memory, asserting its hash equals TX_ID.
         exec.mem::pipe_preimage_to_memory
         # => [end_ptr, tx_index]
 

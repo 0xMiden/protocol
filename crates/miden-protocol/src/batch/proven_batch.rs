@@ -12,6 +12,7 @@ use crate::transaction::{
     InputNotes,
     OrderedTransactionHeaders,
     OutputNote,
+    PublicTransactionLogs,
     TransactionHeader,
 };
 use crate::vm::ExecutionProof;
@@ -41,6 +42,7 @@ pub struct ProvenBatch {
     output_notes: Vec<OutputNote>,
     batch_expiration_block_num: BlockNumber,
     transactions: OrderedTransactionHeaders,
+    public_logs: PublicTransactionLogs,
     proof: ExecutionProof,
 }
 
@@ -74,6 +76,7 @@ impl ProvenBatch {
         output_notes: Vec<OutputNote>,
         batch_expiration_block_num: BlockNumber,
         transactions: OrderedTransactionHeaders,
+        public_logs: PublicTransactionLogs,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenBatchError> {
         if proof.has_precompiles() {
@@ -115,6 +118,7 @@ impl ProvenBatch {
 
         validate_account_updates(&account_updates_by_id, transactions.as_slice())?;
         validate_notes(&input_notes, &output_notes)?;
+        public_logs.validate(transactions.as_slice().iter())?;
 
         let id =
             BatchId::from_ids(transactions.as_slice().iter().map(|tx| (tx.id(), tx.account_id())));
@@ -127,6 +131,7 @@ impl ProvenBatch {
             output_notes,
             batch_expiration_block_num,
             transactions,
+            public_logs,
             proof,
         )
     }
@@ -151,6 +156,7 @@ impl ProvenBatch {
         output_notes: Vec<OutputNote>,
         batch_expiration_block_num: BlockNumber,
         transactions: OrderedTransactionHeaders,
+        public_logs: PublicTransactionLogs,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenBatchError> {
         // Check that the batch expiration block number is greater than the reference block number.
@@ -170,6 +176,7 @@ impl ProvenBatch {
             output_notes,
             batch_expiration_block_num,
             transactions,
+            public_logs,
             proof,
         })
     }
@@ -245,12 +252,17 @@ impl ProvenBatch {
         &self.proof
     }
 
+    /// Returns the complete public transaction logs.
+    pub fn public_logs(&self) -> &PublicTransactionLogs {
+        &self.public_logs
+    }
+
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
     /// Consumes self and returns the contained [`OrderedTransactionHeaders`] of this batch.
-    pub fn into_transactions(self) -> OrderedTransactionHeaders {
-        self.transactions
+    pub fn into_transactions_and_logs(self) -> (OrderedTransactionHeaders, PublicTransactionLogs) {
+        (self.transactions, self.public_logs)
     }
 }
 
@@ -361,6 +373,7 @@ mod tests {
     use crate::account::{AccountId, AccountType, AccountUpdateDetails};
     use crate::batch::BatchAccountUpdate;
     use crate::block::BlockNumber;
+    use crate::block::code_tree::CodePatch;
     use crate::errors::ProvenBatchError;
     use crate::note::{Note, NoteHeader, NoteId};
     use crate::testing::account_id::{
@@ -400,6 +413,7 @@ mod tests {
             input_notes,
             output_notes,
             Word::empty(),
+            CodePatch::default().commitment(),
         )
         .unwrap()
     }
@@ -484,6 +498,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
+            Default::default(),
             dummy_execution_proof(),
         )
         .unwrap();
@@ -502,6 +517,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
+            Default::default(),
             dummy_execution_proof(),
         )
         .unwrap();
@@ -520,6 +536,7 @@ mod tests {
                 Vec::new(),
                 BlockNumber::from(2),
                 transaction_headers(),
+                Default::default(),
                 proof,
             )
             .unwrap_err();
@@ -541,6 +558,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
+            Default::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -574,6 +592,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
+            Default::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -602,6 +621,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
+            Default::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -622,6 +642,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
+            Default::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -664,6 +685,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
+            Default::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -709,6 +731,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
+            Default::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -740,6 +763,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
+            Default::default(),
             dummy_execution_proof(),
         )
         .unwrap();
@@ -757,6 +781,7 @@ mod tests {
             output_notes,
             BlockNumber::from(2),
             transaction_headers(),
+            Default::default(),
             dummy_execution_proof(),
         )
         .unwrap();
@@ -780,6 +805,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transactions,
+            Default::default(),
             dummy_execution_proof(),
         )
         .unwrap();
@@ -800,6 +826,7 @@ mod tests {
             Vec::new(),
             BlockNumber::from(2),
             transaction_headers(),
+            Default::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -823,6 +850,7 @@ mod tests {
             vec![output_note.clone(), output_note],
             BlockNumber::from(2),
             transaction_headers(),
+            Default::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -845,6 +873,7 @@ mod tests {
             output_notes,
             BlockNumber::from(2),
             transaction_headers(),
+            Default::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();

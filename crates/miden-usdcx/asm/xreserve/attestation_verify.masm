@@ -5,7 +5,7 @@
 
 use miden::protocol::active_account
 use miden::core::crypto::dsa::ecdsa_k256_keccak
-use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::hashes::eidos
 use miden::core::word
 use miden::standards::utils
 use {XRESERVE_ATTESTERS_SLOT, ATTESTER_ENABLED_MARKER} from xreserve::attester_admin
@@ -29,7 +29,7 @@ const NATIVE_SCALARS_FELTS = SIGNATURE_SCALAR_LIMBS + SIGNATURE_SCALAR_LIMBS
 # ERRORS
 # =================================================================================================
 
-# The candidate pubkey's Poseidon2 commitment is not enabled in xReserveAttesters.
+# The candidate pubkey's Eidos commitment is not enabled in xReserveAttesters.
 const ERR_XRESERVE_DISALLOWED_PUB_KEY = "deposit attester pubkey commitment is not allowlisted"
 
 # A signature scalar limb read out of the attested signature region is not a valid u32, so it
@@ -91,18 +91,18 @@ pub proc verify_attestation
     # => []
 end
 
-#! Poseidon2 over the 16 u32-LE-packed affine-coordinate limbs: the attester-allowlist map key.
+#! Eidos over the 16 u32-LE-packed affine-coordinate limbs: the attester-allowlist map key.
 #!
 #! Inputs:  [pubkey_ptr]
 #! Outputs: [PUBKEY_COMMITMENT]
 #!
 #! Where:
 #! - pubkey_ptr is the word-aligned memory address of the 16 packed pubkey felts.
-#! - PUBKEY_COMMITMENT is the Poseidon2 commitment Word.
+#! - PUBKEY_COMMITMENT is the Eidos commitment Word.
 #!
 #! Invocation: exec
 pub proc pubkey_commitment
-    push.PUBKEY_FELTS swap exec.poseidon2::hash_elements
+    push.PUBKEY_FELTS swap exec.eidos::hash_elements
     # => [PUBKEY_COMMITMENT]
 end
 
@@ -119,7 +119,7 @@ end
 #! Outputs: []
 #!
 #! Where:
-#! - PUBKEY_COMMITMENT is the Poseidon2 commitment of the 16 pubkey limbs at pubkey_ptr, which is
+#! - PUBKEY_COMMITMENT is the Eidos commitment of the 16 pubkey limbs at pubkey_ptr, which is
 #!   both the allowlist key and the PK_COMM the verifier binds the advice-supplied key to.
 #! - intent_ptr / intent_num_bytes are the payload extent the attester signed.
 #! - pubkey_ptr / signature_ptr are the hash-verified pubkey and signature regions.
@@ -146,7 +146,7 @@ proc verify_signature
     # => [scalars_ptr, scalars_end, PUBKEY_COMMITMENT, intent_ptr, intent_num_bytes, pubkey_ptr,
     #     signature_ptr]
 
-    push.NATIVE_SCALARS_FELTS locaddr.NATIVE_SCALARS_LOC exec.poseidon2::hash_elements
+    push.NATIVE_SCALARS_FELTS locaddr.NATIVE_SCALARS_LOC exec.eidos::hash_elements
     # => [SCALARS_COMMITMENT, scalars_ptr, scalars_end, PUBKEY_COMMITMENT, intent_ptr,
     #     intent_num_bytes, pubkey_ptr, signature_ptr]
 

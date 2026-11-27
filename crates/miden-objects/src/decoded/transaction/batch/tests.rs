@@ -13,6 +13,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::block::BlockHeader;
+use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::crypto::merkle::mmr::{Mmr, PartialMmr};
 use miden_protocol::testing::dummy_execution_proof;
 use miden_protocol::transaction::{
@@ -20,6 +21,7 @@ use miden_protocol::transaction::{
     OutputNote,
     PartialBlockchain,
     ProvenTransaction,
+    PublicTransactionLogs,
     TransactionLogDetails,
     TxAccountUpdate,
 };
@@ -58,6 +60,7 @@ fn proposal() -> ProposedBatch {
         header.block_num() + 1,
         dummy_execution_proof(),
         TransactionLogDetails::Private(Word::empty()),
+        CodePatch::default(),
     )
     .unwrap();
     // A dummy proof is deliberate: structural decoding must not perform proof verification.
@@ -66,16 +69,21 @@ fn proposal() -> ProposedBatch {
 }
 
 fn proven(proposal: &ProposedBatch) -> ProvenBatch {
-    ProvenBatch::new(
-        proposal.reference_block_header().commitment(),
-        proposal.reference_block_header().block_num(),
-        proposal.account_updates().values().cloned(),
-        proposal.input_notes().clone(),
-        proposal.output_notes().to_vec(),
-        proposal.batch_expiration_block_num(),
-        proposal.transaction_headers(),
-        dummy_execution_proof(),
-    )
+    {
+        let embedded_headers = proposal.transaction_headers();
+        let embedded_logs = PublicTransactionLogs::from_batch(proposal).unwrap();
+        ProvenBatch::new(
+            proposal.reference_block_header().commitment(),
+            proposal.reference_block_header().block_num(),
+            proposal.account_updates().values().cloned(),
+            proposal.input_notes().clone(),
+            proposal.output_notes().to_vec(),
+            proposal.batch_expiration_block_num(),
+            embedded_headers,
+            embedded_logs,
+            dummy_execution_proof(),
+        )
+    }
     .unwrap()
 }
 
@@ -129,4 +137,16 @@ fn proven_batch_rejects_changed_proposal_fields() {
             "{error}"
         );
     }
+}
+
+#[test]
+fn embedded_logs_roundtrip_requires_present_empty_collection() {
+    let proposal = proposal();
+    let batch = proven(&proposal);
+    let mut wire: proto::transaction::ProvenBatch = (&batch).into();
+    assert!(wire.public_logs.as_ref().unwrap().entries.is_empty());
+    assert_eq!(wire.clone().decode_and_build_unchecked().unwrap(), batch);
+    wire.public_logs = None;
+    let error = wire.decode_fields().unwrap_err();
+    assert!(alloc::format!("{error}").contains("public_logs"), "{error}");
 }

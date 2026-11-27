@@ -2,9 +2,9 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountId, AccountType};
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::Note;
 use miden_standards::errors::standards::{
     ERR_NOTE_ACTIVE_ACCOUNT_IS_NOT_NETWORK_TARGET_ACCOUNT,
@@ -32,7 +32,7 @@ fn rbac_config_note(
     sender: AccountId,
     account: AccountId,
     config: RbacConfig,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
 ) -> anyhow::Result<Note> {
     let note = RbacConfigNote::builder()
         .sender(sender)
@@ -53,7 +53,7 @@ fn malformed_rbac_config_note(
     sender: AccountId,
     target: AccountId,
     storage: Vec<Felt>,
-    rng: &mut RandomCoin,
+    rng: &mut EidosRandomCoin,
 ) -> anyhow::Result<Note> {
     let note = NoteBuilder::new(sender, rng)
         .script(RbacConfigNote::script())
@@ -92,7 +92,7 @@ async fn grant_then_revoke_dispatch() -> anyhow::Result<()> {
     let minter = role("MINTER");
 
     let (account, mock_chain) = create_rbac_chain(admin)?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let grant = rbac_config_note(
         admin,
@@ -122,7 +122,7 @@ async fn set_role_admin_dispatch() -> anyhow::Result<()> {
     let mint_admin = role("MINT_ADMIN");
 
     let (account, mock_chain) = create_rbac_chain(admin)?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let note = rbac_config_note(
         admin,
@@ -148,7 +148,7 @@ async fn renounce_dispatch() -> anyhow::Result<()> {
     let minter = role("MINTER");
 
     let (account, mock_chain) = create_rbac_chain(admin)?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let grant = rbac_config_note(
         admin,
@@ -176,7 +176,7 @@ async fn renounce_dispatch() -> anyhow::Result<()> {
 async fn unknown_variant_fails() -> anyhow::Result<()> {
     let admin = test_account_id(41);
     let (account, mock_chain) = create_rbac_chain(admin)?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     // variant 99 is not a known action
     let note = malformed_rbac_config_note(admin, account.id(), vec![Felt::from(99u32)], &mut rng)?;
@@ -196,7 +196,7 @@ async fn unknown_variant_fails() -> anyhow::Result<()> {
 async fn wrong_storage_item_count_fails() -> anyhow::Result<()> {
     let admin = test_account_id(41);
     let (account, mock_chain) = create_rbac_chain(admin)?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     // GrantRole variant (0) but only one storage item instead of the expected four
     let note = malformed_rbac_config_note(admin, account.id(), vec![Felt::from(0u32)], &mut rng)?;
@@ -220,7 +220,7 @@ async fn unauthorized_sender_grant_fails() -> anyhow::Result<()> {
     let member = test_account_id(46);
 
     let (account, mock_chain) = create_rbac_chain(admin)?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let note = rbac_config_note(
         outsider,
@@ -249,7 +249,7 @@ async fn decoy_account_cannot_consume_note_of_another_account() -> anyhow::Resul
     let member = test_account_id(42);
 
     let (decoy, mock_chain) = create_rbac_chain(admin)?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     // The note's intended target. It need not be built: the note only references its ID.
     let target = AccountId::builder().account_type(AccountType::Public).build_with_seed([9; 32]);
@@ -283,7 +283,7 @@ async fn private_note_cannot_dispatch_the_action() -> anyhow::Result<()> {
     let member = test_account_id(42);
 
     let (account, mock_chain) = create_rbac_chain(admin)?;
-    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(100u32); 4].into());
 
     let note = rbac_config_note(
         admin,

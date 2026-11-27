@@ -3,12 +3,12 @@
 //!
 //! The suite covers the note itself: that each variant dispatches to the matching procedure, and
 //! that the script's own guards reject malformed storage. The allowlist semantics (the
-//! `check_policy` predicate, the noop cases) and the `Authority` rejection of an unauthorized
+//! policy predicates, the noop cases) and the `Authority` rejection of an unauthorized
 //! sender are covered by the parent [`super`] suite.
 
-use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{AccountId, AccountType, StorageMapKey};
 use miden_protocol::block::account_tree::AccountIdKey;
+use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
@@ -42,7 +42,7 @@ fn allowlist_config_note(
     config: AllowlistConfig,
     rng_seed: u32,
 ) -> anyhow::Result<Note> {
-    let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(rng_seed); 4].into());
     let note = AllowlistConfigNote::builder()
         .sender(sender)
         .target(faucet_id)
@@ -64,7 +64,7 @@ fn malformed_allowlist_config_note(
     storage: Vec<Felt>,
     rng_seed: u32,
 ) -> anyhow::Result<Note> {
-    let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
+    let mut rng = EidosRandomCoin::new([Felt::from(rng_seed); 4].into());
     let note = NoteBuilder::new(sender, &mut rng)
         .script(AllowlistConfigNote::script())
         .note_storage(storage)?
