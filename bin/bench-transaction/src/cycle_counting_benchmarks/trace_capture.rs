@@ -80,7 +80,7 @@ async fn build_trace_summary(tx_inputs: TransactionInputs) -> Result<TraceLenSum
         script_mast_store,
         account_procedure_index_map,
         tx_args.ies_seal_seed().cloned(),
-        tx_args.ies_prepared_public_keys().clone(),
+        tx_args.prepare_ies_public_keys(),
     )
     .context("failed to construct transaction prover host")?;
 

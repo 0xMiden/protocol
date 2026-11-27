@@ -5,6 +5,8 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
+use miden_objects::prost::Message;
+use miden_objects::{BuildUnchecked, DecodeMessage, proto};
 use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceError;
 use miden_protocol::account::auth::AuthScheme;
@@ -35,7 +37,12 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
 };
-use miden_protocol::transaction::{ExecutedTransaction, OutputNote, RawOutputNote};
+use miden_protocol::transaction::{
+    ExecutedTransaction,
+    OutputNote,
+    RawOutputNote,
+    TransactionWitness,
+};
 use miden_protocol::utils::FeltSliceExt;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -163,6 +170,29 @@ async fn public_note_gets_no_encrypted_assets_attachment() -> anyhow::Result<()>
     let output_note = executed_tx.output_notes().get_note(0);
     assert!(output_note.attachments().is_empty());
     assert_eq!(output_note.id(), note.id());
+
+    Ok(())
+}
+
+/// Tests that a prover proves the send of a private note from its witness serialized to protobuf,
+/// as a remote prover receives it. The witness carries only the issuer's public key, from which the
+/// prover rebuilds the preprocessed tables.
+#[tokio::test]
+async fn private_note_proves_from_serialized_witness() -> anyhow::Result<()> {
+    let (_, result) =
+        send_note(NoteType::Private, Vec::new(), issuer_key_slots(), RecipientPreimage::Expected)
+            .await?;
+    let executed_tx = result?;
+    let witness = TransactionWitness::from(executed_tx.clone());
+
+    let encoded = proto::transaction::TransactionWitness::from(&witness).encode_to_vec();
+    let decoded = proto::transaction::TransactionWitness::decode(encoded.as_slice())?
+        .decode_fields()?
+        .build_unchecked()?;
+    assert_eq!(decoded, witness);
+
+    let proven_tx = LocalTransactionProver::default().prove(decoded)?;
+    assert_eq!(proven_tx.id(), executed_tx.id());
 
     Ok(())
 }

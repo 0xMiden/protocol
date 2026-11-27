@@ -62,6 +62,7 @@ use crate::{
     ACCOUNT_UPDATE_MAX_SIZE,
     Felt,
     MAX_ACCOUNTS_PER_BATCH,
+    MAX_IES_PREPARED_KEYS_PER_TX,
     MAX_INPUT_NOTES_PER_BATCH,
     MAX_INPUT_NOTES_PER_TX,
     MAX_NOTE_STORAGE_ITEMS,
@@ -1000,6 +1001,17 @@ impl PartialBlockchainError {
     pub fn untracked_block(block_num: BlockNumber) -> Self {
         Self::UntrackedBlock { block_num }
     }
+}
+
+// TRANSACTION ARGS ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum TransactionArgsError {
+    #[error(
+        "transaction arguments cannot hold more than {MAX_IES_PREPARED_KEYS_PER_TX} IES public keys"
+    )]
+    TooManyIesPublicKeys,
 }
 
 // TRANSACTION INPUT ERROR

@@ -390,7 +390,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
             tx_args = tx_args.with_ies_seal_seed(ies_seal_seed);
         }
         for prepared_key in self.ies_prepared_public_keys {
-            tx_args = tx_args.with_ies_prepared_public_key(prepared_key);
+            tx_args = tx_args.with_ies_prepared_public_key(prepared_key)?;
         }
         tx_args.extend_advice_inputs(self.advice_inputs);
         tx_args.extend_output_note_recipients(

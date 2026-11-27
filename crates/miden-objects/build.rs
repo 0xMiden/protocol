@@ -144,6 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".transaction.AuthSignature",
             ".transaction.BoundSignature",
             ".transaction.IesSealSeed",
+            ".transaction.IesPublicKey",
             ".transaction.TransactionArgs",
             ".transaction.NoteArgument",
             ".transaction.TransactionScript",
@@ -242,6 +243,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ".transaction.IesSealSeed.seed",
         quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
             miden_protocol::transaction::IesSealSeed
+        >)])
+        .to_string(),
+    );
+    prost.field_attribute(
+        ".transaction.IesPublicKey.key",
+        quote!(#[proto_decode(bytes = crate::decoded::primitives::Canonical<
+            miden_protocol::crypto::ecdh::ecgfp5::PublicKey
         >)])
         .to_string(),
     );
