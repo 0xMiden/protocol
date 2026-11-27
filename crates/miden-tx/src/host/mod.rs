@@ -11,6 +11,12 @@ pub use link_map::{LinkMap, MemoryViewer};
 mod account_procedures;
 pub use account_procedures::AccountProcedureIndexMap;
 
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the transaction kernel does not load the code patch yet")
+)]
+mod code_patch;
+
 pub(crate) mod note_builder;
 use miden_core_lib::handlers::ecgfp5_eidos::ECGFP5_EIDOS_SEAL_EVENT_NAME;
 use miden_protocol::CoreLibrary;
