@@ -11,15 +11,11 @@
 //!   helpers + auth-gated admin component(s) that maintain the storage. Primitives are not transfer
 //!   policies by themselves; they are consumed by policy variants.
 
-use alloc::format;
-use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
 use thiserror::Error;
 
-use crate::code_builder::CodeBuilder;
 use crate::note::EncryptedAssetsIssuerKey;
 
 mod allow_all;
@@ -44,16 +40,6 @@ pub use supply_restriction::{
 };
 pub use supply_restriction_policy::SupplyRestrictionPolicy;
 
-// CONSTANTS
-// ================================================================================================
-
-/// The name of the component generated for merged policies.
-const MERGED_POLICY_NAME: &str = "miden::standards::faucets::policies::transfer::merged_policy";
-
-/// The library path of the component generated for merged policies.
-const MERGED_POLICY_LIBRARY_PATH: &str =
-    "miden::standards::components::faucets::policies::transfer::merged_policy";
-
 // TRANSFER POLICY ERROR
 // ================================================================================================
 
@@ -66,15 +52,6 @@ pub enum TransferPolicyError {
         "custom transfer policy root must match a procedure root in one of the provided components"
     )]
     RootNotInComponents,
-
-    /// No policies were supplied to [`SendPolicy::merge`] or [`ReceivePolicy::merge`].
-    #[error("merge of transfer policies requires at least one policy")]
-    MergeOfNoPolicies,
-
-    /// The same policy was supplied to [`SendPolicy::merge`] or [`ReceivePolicy::merge`] more than
-    /// once.
-    #[error("transfer policy {0} is merged more than once")]
-    DuplicateRoot(AccountProcedureRoot),
 }
 
 // SEND POLICY
@@ -210,9 +187,15 @@ impl SendPolicy {
 
     /// Returns a send policy that attaches the
     /// [`EncryptedAssetsAttachment`](crate::note::EncryptedAssetsAttachment), encrypted to
-    /// `issuer_key`, to every private output note holding the faucet's assets, so the issuer can
-    /// track them. Public notes get no attachment. A private note may hold only one asset, since
-    /// the attachment would show the assets of other faucets to the issuer.
+    /// `issuer_key`, to every private output note holding the faucet's assets that an account
+    /// other than the faucet creates, so the issuer can track them. Public notes and the notes the
+    /// faucet creates itself, e.g. the notes it mints, get no attachment. A private note with an
+    /// attachment may hold only one asset, since the attachment would show the assets of other
+    /// faucets to the issuer.
+    ///
+    /// Since the notes the faucet mints get no attachment, the policy should only be used on a
+    /// faucet whose mint policy lets only the issuer mint, e.g.
+    /// [`MintPolicy::owner_only`](crate::account::policies::MintPolicy::owner_only).
     ///
     /// Resolves to [`EncryptedAssetsSendPolicy::send_root`] and ships the companion
     /// [`EncryptedAssetsSendPolicy`] component and `issuer_key` as the component that installs
@@ -220,15 +203,14 @@ impl SendPolicy {
     /// manager installs the components of a policy root once, so registering this policy again
     /// with another key keeps the first key.
     ///
-    /// A private note seals only if the transaction's advice map holds its recipient preimage, so
-    /// a note whose creator knows only its recipient digest cannot hold the faucet's assets. A
-    /// MINT note with a private output note holds only that digest: the faucet mints it only if
-    /// the transaction supplies the preimage, so a network faucet cannot. The same holds for the
-    /// private payback note of a SWAP note that requests the faucet's asset. The transaction
-    /// arguments must also carry an [`IesSealSeed`](miden_protocol::transaction::IesSealSeed).
+    /// A private note of another account seals only if the transaction's advice map holds its
+    /// recipient preimage, so an account that knows only a note's recipient digest cannot create
+    /// it holding the faucet's assets, e.g. the private payback note of a SWAP note that requests
+    /// the faucet's asset. The transaction arguments must also carry an
+    /// [`IesSealSeed`](miden_protocol::transaction::IesSealSeed).
     ///
-    /// [`Self::merge`] drops the attachment, so a policy that combines other checks with this one
-    /// executes them and then `exec`s `encrypted_assets::check_send_policy`, as a custom policy.
+    /// A custom policy that composes other checks with this one `exec`s them and then
+    /// `encrypted_assets::check_send_policy`, so that its attachment list is the output.
     pub fn with_encrypted_assets(issuer_key: EncryptedAssetsIssuerKey) -> Self {
         Self {
             root: EncryptedAssetsSendPolicy::send_root(),
@@ -253,27 +235,6 @@ impl SendPolicy {
         I::Item: Into<AccountComponent>,
     {
         let components = custom_policy_components(root, components)?;
-        Ok(Self { root, components })
-    }
-
-    /// Returns a send policy that accepts an output note only if all of the provided `policies`
-    /// accept it. The policies are invoked in the provided order, each with the send policy inputs.
-    /// The merged policy returns no attachment, so it drops the attachments that the `policies`
-    /// return.
-    ///
-    /// Only the merged policy is registered with a [`super::TokenPolicyManager`], not the
-    /// individual `policies`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - `policies` is empty.
-    /// - `policies` contains the same policy root more than once.
-    pub fn merge(
-        policies: impl IntoIterator<Item = SendPolicy>,
-    ) -> Result<Self, TransferPolicyError> {
-        let (root, components) =
-            merge_policies(policies.into_iter().map(|policy| (policy.root, policy.components)))?;
         Ok(Self { root, components })
     }
 
@@ -416,25 +377,6 @@ impl ReceivePolicy {
         Ok(Self { root, components })
     }
 
-    /// Returns a receive policy that accepts an asset only if all of the provided `policies` accept
-    /// it. The policies are invoked in the provided order, each with the receive policy inputs.
-    ///
-    /// Only the merged policy is registered with a [`super::TokenPolicyManager`], not the
-    /// individual `policies`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - `policies` is empty.
-    /// - `policies` contains the same policy root more than once.
-    pub fn merge(
-        policies: impl IntoIterator<Item = ReceivePolicy>,
-    ) -> Result<Self, TransferPolicyError> {
-        let (root, components) =
-            merge_policies(policies.into_iter().map(|policy| (policy.root, policy.components)))?;
-        Ok(Self { root, components })
-    }
-
     /// Returns the procedure root of the policy this descriptor resolves to.
     pub fn root(&self) -> AccountProcedureRoot {
         self.root
@@ -476,147 +418,4 @@ where
         return Err(TransferPolicyError::RootNotInComponents);
     }
     Ok(components)
-}
-
-/// Merges policies, given by their root and companion components, into a policy that invokes all of
-/// them in order. Returns the root of the merged policy and the components it needs. A single
-/// policy is returned unchanged.
-fn merge_policies(
-    policies: impl IntoIterator<Item = (AccountProcedureRoot, Vec<AccountComponent>)>,
-) -> Result<(AccountProcedureRoot, Vec<AccountComponent>), TransferPolicyError> {
-    let mut roots = Vec::new();
-    let mut components = Vec::new();
-    for (root, policy_components) in policies {
-        if roots.contains(&root) {
-            return Err(TransferPolicyError::DuplicateRoot(root));
-        }
-        roots.push(root);
-        components.extend(policy_components);
-    }
-
-    match roots.as_slice() {
-        [] => Err(TransferPolicyError::MergeOfNoPolicies),
-        [root] => Ok((*root, components)),
-        roots => {
-            let (root, component) = merged_policy_component(roots);
-            components.push(component);
-            Ok((root, components))
-        },
-    }
-}
-
-/// Assembles the component whose only procedure calls the policies at `roots` in order, and returns
-/// it together with the root of that procedure.
-///
-/// The policies are called rather than executed inline, so each one gets a call frame with only the
-/// policy inputs and is the caller that the kernel authenticates. They are called by root because
-/// the packages of custom policies may define conflicting paths.
-fn merged_policy_component(
-    roots: &[AccountProcedureRoot],
-) -> (AccountProcedureRoot, AccountComponent) {
-    // TODO(#4226): Collect the attachments returned by the policies once the callback can return
-    // multiple attachments.
-    let calls: String = roots
-        .iter()
-        .map(|root| {
-            format!(
-                "
-                # => [policy_inputs(16)]
-
-                repeat.4 dupw.3 end
-                # => [policy_inputs(16), policy_inputs(16)]
-
-                call.{root}
-                # => [policy_outputs(16), policy_inputs(16)]
-
-                repeat.4 dropw end
-                # => [policy_inputs(16)]
-                "
-            )
-        })
-        .collect();
-
-    let code = CodeBuilder::default()
-        .compile_component_code(
-            MERGED_POLICY_LIBRARY_PATH,
-            format!(
-                "
-                #! Inputs:  [policy_inputs(16)]
-                #! Outputs: [pad(16)]
-                @account_procedure
-                pub proc check_policies(policy_inputs: [felt; 16])
-                    {calls}
-                    # => [policy_inputs(16)]
-
-                    repeat.4 dropw end
-                    # => [pad(16)]
-                end
-                "
-            ),
-        )
-        .expect("calls of procedures by root should always assemble");
-    let root = code
-        .procedure_roots()
-        .next()
-        .expect("merged policy code should export the check_policies procedure");
-
-    let metadata = AccountComponentMetadata::new(MERGED_POLICY_NAME)
-        .with_description("Transfer policy invoking all merged policies in order");
-    let component = AccountComponent::new(code, vec![], metadata)
-        .expect("component without storage slots should be valid");
-
-    (root, component)
-}
-
-// TESTS
-// ================================================================================================
-
-#[cfg(test)]
-mod tests {
-    use assert_matches::assert_matches;
-
-    use super::*;
-
-    #[test]
-    fn merge_of_single_policy_returns_it_unchanged() -> anyhow::Result<()> {
-        let merged = SendPolicy::merge([SendPolicy::empty_basic_blocklist()])?;
-        assert_eq!(merged.root(), BasicBlocklist::send_root());
-        assert_eq!(merged.components, SendPolicy::empty_basic_blocklist().components);
-
-        let merged = ReceivePolicy::merge([ReceivePolicy::empty_basic_blocklist()])?;
-        assert_eq!(merged.root(), BasicBlocklist::receive_root());
-        assert_eq!(merged.components, ReceivePolicy::empty_basic_blocklist().components);
-
-        Ok(())
-    }
-
-    #[test]
-    fn merge_root_commits_to_policy_order() -> anyhow::Result<()> {
-        let policies = [SendPolicy::empty_basic_blocklist(), SendPolicy::allow_all()];
-        let reversed_policies = [SendPolicy::allow_all(), SendPolicy::empty_basic_blocklist()];
-
-        let merged = SendPolicy::merge(policies.clone())?;
-        assert_eq!(merged.root(), SendPolicy::merge(policies)?.root());
-        assert_ne!(merged.root(), SendPolicy::merge(reversed_policies)?.root());
-
-        Ok(())
-    }
-
-    #[test]
-    fn merge_rejects_empty_input() {
-        assert_matches!(SendPolicy::merge([]), Err(TransferPolicyError::MergeOfNoPolicies));
-        assert_matches!(ReceivePolicy::merge([]), Err(TransferPolicyError::MergeOfNoPolicies));
-    }
-
-    #[test]
-    fn merge_rejects_duplicate_policies() {
-        assert_matches!(
-            SendPolicy::merge([SendPolicy::allow_all(), SendPolicy::allow_all()]),
-            Err(TransferPolicyError::DuplicateRoot(root)) if root == TransferAllowAll::send_root()
-        );
-        assert_matches!(
-            ReceivePolicy::merge([ReceivePolicy::allow_all(), ReceivePolicy::allow_all()]),
-            Err(TransferPolicyError::DuplicateRoot(root)) if root == TransferAllowAll::receive_root()
-        );
-    }
 }

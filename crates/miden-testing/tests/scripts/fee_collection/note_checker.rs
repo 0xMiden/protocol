@@ -3,13 +3,11 @@ use std::collections::BTreeSet;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{AccountComponent, AccountId};
+use miden_protocol::account::AccountId;
 use miden_protocol::asset::{AssetAmount, AssetId};
 use miden_protocol::note::{Note, NoteId};
 use miden_protocol::transaction::InputNote;
 use miden_standards::account::fees::FeePolicy;
-use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::{NoteConsumptionStatus, ReclaimError};
 use miden_testing::MockChain;
 use miden_tx::auth::UnreachableAuth;
@@ -24,6 +22,7 @@ use miden_tx::{
 use rstest::rstest;
 
 use super::{FEE_AMOUNT, Sponsorship, Test, fee_asset, fee_faucet_id, other_asset};
+use crate::scripts::policy_component;
 
 /// A custom fee policy charging `fee_amount` of the fee faucet's asset for every note.
 ///
@@ -57,12 +56,7 @@ fn flat_fee_policy(fee_amount: u64) -> anyhow::Result<FeePolicy> {
         fee_asset_id = AssetId::new_fungible(fee_faucet_id()?).to_word(),
     );
 
-    let code = CodeBuilder::default().compile_component_code(POLICY_NAME, &masm_source)?;
-    let root = code
-        .get_procedure_root_by_path(format!("{POLICY_NAME}::compute_note_fee").as_str())
-        .expect("flat fee policy should export compute_note_fee");
-    let component =
-        AccountComponent::new(code, vec![], AccountComponentMetadata::mock(POLICY_NAME))?;
+    let (root, component) = policy_component(POLICY_NAME, "compute_note_fee", vec![], masm_source)?;
 
     Ok(FeePolicy::custom(root, [component])?)
 }

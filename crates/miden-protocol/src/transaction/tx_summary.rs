@@ -7,13 +7,6 @@ use crate::block::code_tree::CodePatch;
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionSummaryError;
 use crate::transaction::{InputNote, InputNotes, RawOutputNotes};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{Felt, WORD_SIZE, Word};
 
 // TRANSACTION SUMMARY
@@ -225,11 +218,11 @@ impl TransactionSummary {
         let metadata = TransactionSummaryMetadata::try_from_element(elements[Self::METADATA_IDX])?;
 
         let user_params_end = Self::USER_PARAMS_IDX + TransactionSummaryUserParams::NUM_ELEMENTS;
-        let user_params = elements[Self::USER_PARAMS_IDX..user_params_end]
-            .try_into()
-            .expect("preimage length was validated above");
+        let user_params = TransactionSummaryUserParams::try_from(
+            &elements[Self::USER_PARAMS_IDX..user_params_end],
+        )?;
 
-        Ok((metadata, TransactionSummaryUserParams::new(user_params)))
+        Ok((metadata, user_params))
     }
 }
 
@@ -371,15 +364,23 @@ impl TransactionSummaryUserParams {
     }
 }
 
-impl Serializable for TransactionSummaryUserParams {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.elements.write_into(target);
-    }
-}
+impl TryFrom<&[Felt]> for TransactionSummaryUserParams {
+    type Error = TransactionSummaryError;
 
-impl Deserializable for TransactionSummaryUserParams {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        Ok(Self::new(source.read()?))
+    /// # Errors
+    ///
+    /// Returns an error if `elements` does not contain exactly
+    /// [`TransactionSummaryUserParams::NUM_ELEMENTS`] elements.
+    fn try_from(elements: &[Felt]) -> Result<Self, Self::Error> {
+        let elements =
+            elements
+                .try_into()
+                .map_err(|_| TransactionSummaryError::InvalidUserParamsLength {
+                    actual: elements.len(),
+                    expected: Self::NUM_ELEMENTS,
+                })?;
+
+        Ok(Self::new(elements))
     }
 }
 
@@ -388,6 +389,8 @@ impl Deserializable for TransactionSummaryUserParams {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use assert_matches::assert_matches;
 
     use super::*;
@@ -496,6 +499,19 @@ mod tests {
         assert_matches!(
             TransactionSummaryMetadata::try_from_element(out_of_range),
             Err(TransactionSummaryError::MetadataOutOfRange(_))
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::too_short(TransactionSummaryUserParams::NUM_ELEMENTS - 1)]
+    #[case::too_long(TransactionSummaryUserParams::NUM_ELEMENTS + 1)]
+    fn tx_summary_user_params_reject_wrong_length(#[case] num_elements: usize) {
+        let elements = vec![ONE; num_elements];
+
+        assert_matches!(
+            TransactionSummaryUserParams::try_from(elements.as_slice()),
+            Err(TransactionSummaryError::InvalidUserParamsLength { actual, expected })
+                if actual == num_elements && expected == TransactionSummaryUserParams::NUM_ELEMENTS
         );
     }
 

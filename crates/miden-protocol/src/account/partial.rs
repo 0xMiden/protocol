@@ -1,4 +1,3 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_core::{Felt, ZERO};
@@ -14,13 +13,6 @@ use crate::account::{
 use crate::asset::{AssetWitness, PartialVault};
 use crate::crypto::SequentialCommit;
 use crate::errors::{AccountError, PartialAssetVaultError};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 /// A partial representation of an account.
 ///
@@ -257,32 +249,5 @@ impl SequentialCommit for PartialAccount {
 
     fn to_commitment(&self) -> Self::Commitment {
         AccountHeader::from(self).to_commitment()
-    }
-}
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for PartialAccount {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write(self.id);
-        target.write(self.nonce);
-        target.write(&self.code);
-        target.write(&self.partial_storage);
-        target.write(&self.partial_vault);
-        target.write(self.seed);
-    }
-}
-
-impl Deserializable for PartialAccount {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let account_id = source.read()?;
-        let nonce = source.read()?;
-        let account_code = source.read()?;
-        let partial_storage = source.read()?;
-        let partial_vault = source.read()?;
-        let seed: Option<Word> = source.read()?;
-
-        PartialAccount::new(account_id, nonce, account_code, partial_storage, partial_vault, seed)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
