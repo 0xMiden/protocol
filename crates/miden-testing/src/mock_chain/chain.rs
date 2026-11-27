@@ -411,23 +411,9 @@ impl MockChain {
         ValidatorConfig::from_signers(&self.validator_secret_keys)
     }
 
-    /// Signs `commitment` with every validator secret key, ordering the resulting signatures to
-    /// align positionally with [`Self::validator_config`].
+    /// Signs `commitment` with every validator secret key.
     fn sign_block(&self, commitment: Word) -> BlockSignatures {
-        let signatures = self
-            .validator_config()
-            .keys()
-            .iter()
-            .map(|key| {
-                let signer = self
-                    .validator_secret_keys
-                    .iter()
-                    .find(|sk| &sk.public_key() == key)
-                    .expect("a signer should exist for every validator key");
-                signer.sign(commitment)
-            })
-            .collect();
-        BlockSignatures::new(signatures).expect("signature count same as validator key count")
+        BlockSignatures::sign(&self.validator_secret_keys, commitment)
     }
 
     /// Returns the latest [`ProvenBlock`] in the chain.
@@ -1422,7 +1408,7 @@ mod tests {
     #[case::maximum(ValidatorConfig::MAX_VALIDATORS)]
     fn supplied_validator_signing_keys(#[case] key_count: usize) -> anyhow::Result<()> {
         let mut keys: Vec<SigningKey> = (0..key_count).map(|_| random_secret_key()).collect();
-        // Reverse canonical order to exercise positional signature ordering.
+        // Reverse canonical order to check the config does not depend on the input order.
         keys.sort_by_key(|key| core::cmp::Reverse(key.public_key().to_bytes()));
         let expected_config = ValidatorConfig::from_signers(&keys);
         let mut chain = MockChain::builder().validator_signing_keys(keys.clone()).build()?;

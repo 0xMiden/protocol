@@ -76,8 +76,15 @@ message BlockCodePatch {
   primitives.MastForest mast = 1;
 }
 
+// A validator's signature over a block header and the public key of the validator that produced
+// it; authenticity is checked by its consumer.
+message ValidatorSignature {
+  primitives.PublicKey public_key = 1;
+  primitives.Signature signature = 2;
+}
+
 message SignedBlock {
   BlockHeader header = 1;
   BlockBody body = 2;
-  repeated primitives.Signature signatures = 3;
+  repeated ValidatorSignature signatures = 3;
 }

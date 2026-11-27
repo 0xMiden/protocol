@@ -1,13 +1,6 @@
 use crate::Word;
 use crate::account::storage::slot::StorageSlotId;
 use crate::account::{StorageMap, StorageSlotContent, StorageSlotName, StorageSlotType};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 /// An individual storage slot in [`AccountStorage`](crate::account::AccountStorage).
 ///
@@ -105,28 +98,5 @@ impl StorageSlot {
     /// Consumes self and returns the underlying parts.
     pub fn into_parts(self) -> (StorageSlotName, StorageSlotContent) {
         (self.name, self.content)
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for StorageSlot {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write(&self.name);
-        target.write(&self.content);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.name.get_size_hint() + self.content().get_size_hint()
-    }
-}
-
-impl Deserializable for StorageSlot {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let name: StorageSlotName = source.read()?;
-        let content: StorageSlotContent = source.read()?;
-
-        Ok(Self::new(name, content))
     }
 }

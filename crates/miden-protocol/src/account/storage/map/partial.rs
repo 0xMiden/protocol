@@ -1,18 +1,10 @@
 use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::vec::Vec;
 
 use miden_crypto::Word;
 use miden_crypto::merkle::smt::{LeafIndex, PartialSmt, SMT_DEPTH, SmtLeaf, SmtProof};
 use miden_crypto::merkle::{InnerNodeInfo, MerkleError};
 
 use crate::account::{StorageMap, StorageMapKey, StorageMapWitness};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 /// A partial representation of a [`StorageMap`], containing only proofs for a subset of the
 /// key-value pairs.
@@ -206,30 +198,6 @@ impl PartialStorageMap {
         self.partial_smt.add_proof(SmtProof::from(witness))?;
 
         Ok(())
-    }
-}
-
-impl Serializable for PartialStorageMap {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write(&self.partial_smt);
-        target.write_usize(self.entries.len());
-        target.write_many(self.entries.keys());
-    }
-}
-
-impl Deserializable for PartialStorageMap {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let partial_smt: PartialSmt = source.read()?;
-        let num_entries: usize = source.read()?;
-        let keys = source
-            .read_many_iter::<StorageMapKey>(num_entries)?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Self::try_from_parts(partial_smt, keys).map_err(|err| {
-            DeserializationError::InvalidValue(format!(
-                "failed to construct partial storage map from supplied keys: {err}"
-            ))
-        })
     }
 }
 

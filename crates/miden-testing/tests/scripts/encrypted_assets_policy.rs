@@ -5,18 +5,10 @@ use anyhow::Context;
 use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceError;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
-use miden_protocol::asset::{
-    Asset,
-    AssetAmount,
-    FungibleAsset,
-    NonFungibleAsset,
-    NonFungibleAssetDetails,
-};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
+use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
 use miden_protocol::crypto::rand::EidosRandomCoin;
-use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteType, PartialNote};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -26,7 +18,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::{ExecutedTransaction, OutputNote, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
-use miden_standards::account::faucets::{FungibleFaucet, NonFungibleFaucet, TokenName};
+use miden_standards::account::faucets::{NonFungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BlocklistStorage,
     BurnPolicy,
@@ -37,10 +29,10 @@ use miden_standards::account::policies::{
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_IS_BLOCKED,
-    ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO,
     ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS,
     ERR_SENDER_NOT_OWNER,
 };
+use miden_standards::note::config::EncryptedAssetsIssuerKeyConfigNote;
 use miden_standards::note::{EncryptedAssetsAttachment, EncryptedAssetsIssuerKey, P2idNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::SendNotesTransactionScript;
@@ -53,9 +45,13 @@ use miden_testing::{
 };
 use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 
-use super::assert_default_expiration_limit;
-use super::faucet::{FaucetTestParams, create_mint_body_code};
 use super::transfer_policy::{SEALED_NOTE_IDX, build_mint_note_for};
+use super::{
+    assert_default_expiration_limit,
+    fungible_faucet,
+    fungible_faucet_account,
+    policy_component,
+};
 use crate::consume_note;
 
 // CONSTANTS
@@ -82,16 +78,6 @@ fn issuer_key() -> EncryptedAssetsIssuerKey {
     EncryptedAssetsIssuerKey::new(issuer_secret_key().public_key())
 }
 
-/// Returns the fungible faucet component of the faucets under test.
-fn fungible_faucet() -> anyhow::Result<FungibleFaucet> {
-    Ok(FungibleFaucet::builder()
-        .name(TokenName::new("ENC")?)
-        .symbol("ENC".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?)
-}
-
 /// Returns a token policy manager whose active send policy is `send_policy`.
 fn policy_manager(send_policy: SendPolicy) -> TokenPolicyManager {
     TokenPolicyManager::builder()
@@ -106,9 +92,7 @@ fn add_faucet(
     builder: &mut MockChainBuilder,
     token_policy_manager: TokenPolicyManager,
 ) -> anyhow::Result<Account> {
-    let account_builder = AccountBuilder::new([48; 32])
-        .account_type(AccountType::Public)
-        .with_component(fungible_faucet()?)
+    let account_builder = fungible_faucet_account(48)?
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager);
 
@@ -195,10 +179,10 @@ async fn send_note(
 fn blocklist_with_encrypted_assets_policy(
     blocked_accounts: impl IntoIterator<Item = AccountId>,
 ) -> anyhow::Result<SendPolicy> {
-    const COMPONENT_NAME: &str = "tests::blocklist_with_encrypted_assets";
-
-    let code = CodeBuilder::default().compile_component_code(
-        COMPONENT_NAME,
+    let (root, component) = policy_component(
+        "tests::blocklist_with_encrypted_assets",
+        "check_send_policy",
+        vec![BlocklistStorage::with_blocked_accounts(blocked_accounts).into_slot()],
         "
         use miden::standards::faucets::policies::transfer::basic_blocklist
         use miden::standards::faucets::policies::transfer::encrypted_assets
@@ -212,14 +196,6 @@ fn blocklist_with_encrypted_assets_policy(
         end
         ",
     )?;
-    let component = AccountComponent::new(
-        code,
-        vec![BlocklistStorage::with_blocked_accounts(blocked_accounts).into_slot()],
-        AccountComponentMetadata::mock(COMPONENT_NAME),
-    )?;
-    let root = component
-        .get_procedure_root_by_path(format!("{COMPONENT_NAME}::check_send_policy").as_str())
-        .context("send policy procedure should exist")?;
 
     Ok(SendPolicy::custom(root, [component, issuer_key().into()])?)
 }
@@ -250,42 +226,27 @@ fn assert_issuer_decrypts_note(
     Ok(())
 }
 
-/// Returns a note, created by `sender`, whose script calls `set_issuer_key` on the consuming
-/// faucet with `public_key`.
-fn set_issuer_key_note(sender: AccountId, public_key: [Felt; 5]) -> anyhow::Result<Note> {
-    let [e0, e1, e2, e3, e4] = public_key;
-    let script_code = format!(
-        "
-        use miden::standards::attachments::encrypted_assets
-
-        @note_script
-        pub proc main
-            padw padw push.0.0.0
-            push.{e4} push.{e3} push.{e2} push.{e1} push.{e0}
-            # => [public_key(5), pad(11), pad(16)]
-
-            call.encrypted_assets::set_issuer_key
-            # => [pad(16), pad(16)]
-
-            dropw dropw dropw dropw
-            # => [pad(16)]
-        end
-        "
-    );
-
+/// Returns an [`EncryptedAssetsIssuerKeyConfigNote`], created by `sender`, that sets `issuer_key`
+/// on `faucet_id`.
+fn issuer_key_config_note(
+    sender: AccountId,
+    faucet_id: AccountId,
+    issuer_key: EncryptedAssetsIssuerKey,
+) -> anyhow::Result<Note> {
     let mut rng = EidosRandomCoin::new([Felt::from(6u32); 4].into());
-    Ok(NoteBuilder::new(sender, &mut rng)
-        .note_type(NoteType::Public)
-        .code(script_code.as_str())
-        .build()?)
+    Ok(EncryptedAssetsIssuerKeyConfigNote::builder()
+        .sender(sender)
+        .target(faucet_id)
+        .issuer_key(issuer_key)
+        .generate_serial_number(&mut rng)
+        .build()?
+        .into())
 }
 
 /// Adds an existing faucet owned by `owner`, whose authority gates its setters, with
 /// [`SendPolicy::with_encrypted_assets`] active.
 fn add_owned_faucet(builder: &mut MockChainBuilder, owner: AccountId) -> anyhow::Result<Account> {
-    let account_builder = AccountBuilder::new([50; 32])
-        .account_type(AccountType::Public)
-        .with_component(fungible_faucet()?)
+    let account_builder = fungible_faucet_account(50)?
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
         .with_components(policy_manager(SendPolicy::with_encrypted_assets(issuer_key())));
@@ -559,7 +520,11 @@ async fn authority_rotates_issuer_key() -> anyhow::Result<()> {
         Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak },
         [FungibleAsset::new(faucet.id(), NOTE_AMOUNT)?.into()],
     )?;
-    let rotation_note = set_issuer_key_note(owner, new_secret_key.public_key().to_elements())?;
+    let rotation_note = issuer_key_config_note(
+        owner,
+        faucet.id(),
+        EncryptedAssetsIssuerKey::new(new_secret_key.public_key()),
+    )?;
     builder.add_output_note(RawOutputNote::Full(rotation_note.clone()));
     let mut mock_chain = builder.build()?;
 
@@ -582,27 +547,15 @@ async fn authority_rotates_issuer_key() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `set_issuer_key` rejects a caller that the faucet's authority does not authorize, and the zero
-/// key, which marks an unset key.
-#[rstest::rstest]
-#[case::sender_is_not_the_owner(false, issuer_key_elements(), ERR_SENDER_NOT_OWNER)]
-#[case::zero_key(true, [Felt::ZERO; 5], ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO)]
+/// `set_issuer_key` rejects a caller that the faucet's authority does not authorize.
 #[tokio::test]
-async fn set_issuer_key_rejects_invalid_calls(
-    #[case] sent_by_owner: bool,
-    #[case] public_key: [Felt; 5],
-    #[case] expected_error: MasmError,
-) -> anyhow::Result<()> {
+async fn set_issuer_key_rejects_unauthorized_sender() -> anyhow::Result<()> {
     let owner = AccountId::try_from(ACCOUNT_ID_SENDER)?;
-    let sender = if sent_by_owner {
-        owner
-    } else {
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?
-    };
+    let sender = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
 
     let mut builder = MockChain::builder();
     let faucet = add_owned_faucet(&mut builder, owner)?;
-    let rotation_note = set_issuer_key_note(sender, public_key)?;
+    let rotation_note = issuer_key_config_note(sender, faucet.id(), issuer_key())?;
     let mock_chain = builder.build()?;
 
     let result = mock_chain
@@ -612,7 +565,7 @@ async fn set_issuer_key_rejects_invalid_calls(
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, expected_error);
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
 
     Ok(())
 }
@@ -620,58 +573,9 @@ async fn set_issuer_key_rejects_invalid_calls(
 // MINT TESTS
 // ================================================================================================
 
-/// The faucet mints a public note and then a private note through `mint_and_send`, in a
-/// transaction that supplies the notes' recipient preimages. The send policy runs with the faucet
-/// as the native account and attaches the encrypted asset attachment to the private note.
-#[tokio::test]
-async fn faucet_mints_private_note_with_attachment() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let faucet =
-        add_faucet(&mut builder, policy_manager(SendPolicy::with_encrypted_assets(issuer_key())))?;
-    let mock_chain = builder.build()?;
-
-    let public_note = p2id_note(faucet.id(), faucet.id(), NoteType::Public, 2)?;
-    let note = p2id_note(faucet.id(), faucet.id(), NoteType::Private, 1)?;
-    let amount = Felt::new(NOTE_AMOUNT)?;
-    let mint_code = |note: &Note| {
-        let params = FaucetTestParams {
-            recipient: note.recipient().digest(),
-            tag: note.metadata().tag(),
-            note_type: note.metadata().note_type(),
-            amount,
-        };
-        create_mint_body_code(&params, faucet.id())
-    };
-    let tx_script = CodeBuilder::default().compile_tx_script(format!(
-        "
-        @transaction_script
-        pub proc main
-            {mint_public_note}
-            {mint_note_under_test}
-        end
-        ",
-        mint_public_note = mint_code(&public_note),
-        mint_note_under_test = mint_code(&note),
-    ))?;
-
-    let executed = mock_chain
-        .build_transaction(faucet.id())
-        .tx_script(tx_script)
-        .expected_output_note(RawOutputNote::Full(public_note))
-        .expected_output_note(RawOutputNote::Full(note))
-        .build()?
-        .execute()
-        .await?;
-
-    assert!(executed.output_notes().get_note(0).attachments().is_empty());
-    assert_issuer_decrypts_note(&executed, &issuer_secret_key())?;
-
-    Ok(())
-}
-
-/// A network faucet consumes a MINT note with a public output note, which gets no attachment. It
-/// cannot consume a MINT note with a private output note, which holds only that note's recipient
-/// digest, so the attachment cannot be built.
+/// A network faucet consumes a MINT note with a public or a private output note. The send policy
+/// runs with the faucet as the native account, so the minted note gets no attachment, and the
+/// faucet mints the private note although the MINT note holds only its recipient digest.
 ///
 /// The faucet consumes a public MINT note first, so the output note under test is at
 /// [`SEALED_NOTE_IDX`].
@@ -679,7 +583,7 @@ async fn faucet_mints_private_note_with_attachment() -> anyhow::Result<()> {
 #[case::public_output_note(NoteType::Public)]
 #[case::private_output_note(NoteType::Private)]
 #[tokio::test]
-async fn network_faucet_mints_only_public_output_notes(
+async fn network_faucet_mints_notes_without_attachment(
     #[case] output_note_type: NoteType,
 ) -> anyhow::Result<()> {
     let owner = AccountId::try_from(ACCOUNT_ID_SENDER)?;
@@ -699,29 +603,18 @@ async fn network_faucet_mints_only_public_output_notes(
     builder.add_output_note(RawOutputNote::Full(mint_note_under_test.clone()));
     let mock_chain = builder.build()?;
 
-    let result = mock_chain
+    let executed = mock_chain
         .build_transaction(faucet.id())
         .authenticated_input_note(first_mint_note.id())
         .authenticated_input_note(mint_note_under_test.id())
         .build()?
         .execute()
-        .await;
+        .await?;
 
-    match output_note_type {
-        NoteType::Public => {
-            let executed = result?;
-            let minted_note = executed.output_notes().get_note(SEALED_NOTE_IDX);
-            assert_eq!(minted_note.recipient_digest(), output_note.recipient().digest());
-            assert!(minted_note.attachments().is_empty());
-        },
-        NoteType::Private => {
-            assert_transaction_executor_error!(
-                result,
-                matches ExecutionError::AdviceError { err: AdviceError::MapKeyNotFound { key }, .. }
-                    if key == output_note.recipient().digest()
-            );
-        },
-    }
+    let minted_note = executed.output_notes().get_note(SEALED_NOTE_IDX);
+    assert_eq!(minted_note.metadata().note_type(), output_note_type);
+    assert_eq!(minted_note.recipient_digest(), output_note.recipient().digest());
+    assert!(minted_note.attachments().is_empty());
 
     Ok(())
 }

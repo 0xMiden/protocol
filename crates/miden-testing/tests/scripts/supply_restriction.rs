@@ -734,6 +734,54 @@ fn push_asset(asset: Asset) -> String {
     format!("push.{} push.{}", asset.to_value_word(), asset.to_id_word())
 }
 
+/// Builds a note that adds `amount` of the faucet's asset, and an asset of another faucet, to the
+/// vault of the account.
+fn receive_note(faucet_id: AccountId, account_id: AccountId, amount: u32) -> anyhow::Result<Note> {
+    let note = P2idNote::builder()
+        .sender(faucet_id)
+        .target(account_id)
+        .assets([
+            Asset::from(FungibleAsset::new(faucet_id, amount.into())?),
+            FungibleAsset::mock(100),
+        ])
+        .serial_number(rand::rng().random())
+        .build()?;
+    Ok(note.into())
+}
+
+/// Builds a note with `amount` of the faucet's asset that moves `forwarded` of it directly to a new
+/// output note and the rest to the vault of the consuming account.
+fn forward_note(faucet_id: AccountId, amount: u32, forwarded: u32) -> anyhow::Result<Note> {
+    let forwarded_asset = push_asset(FungibleAsset::new(faucet_id, forwarded.into())?.into());
+    let script = CodeBuilder::with_mock_packages().compile_note_script(format!(
+        "
+        use miden::protocol::active_note
+        use miden::standards::wallets::basic
+        use mock::util
+
+        @note_script
+        pub proc main
+            dropw
+            # => [pad(16)]
+
+            {forwarded_asset} exec.active_note::remove_asset dropw
+            # => [pad(16)]
+
+            {forwarded_asset} exec.util::create_default_note_with_asset
+            # => [pad(16)]
+
+            exec.basic::move_note_assets_to_account
+            # => [pad(16)]
+        end
+        "
+    ))?;
+    let note = NoteBuilder::new(faucet_id, rand::rng())
+        .add_assets([FungibleAsset::new(faucet_id, amount.into())?.into()])
+        .script(script)
+        .build()?;
+    Ok(note)
+}
+
 /// A holder can send its balance except for the frozen and confiscated amounts, summed up over all
 /// notes of the transaction.
 #[rstest]
@@ -853,37 +901,79 @@ async fn policy_does_not_rely_on_the_balance_while_sealing(
     Ok(())
 }
 
-/// The policy checks the initial balance of the transaction. A holder whose entire initial balance
-/// is frozen can therefore not receive assets and send them on in the same transaction, even though
-/// the received assets are not frozen. It can send them in the next transaction.
+/// Amounts received in input notes count towards the amount that a holder can send in the same
+/// transaction, summed up over all input notes and without the assets of other faucets. What the
+/// holder must keep is exactly the restricted amount, even if its initial balance does not cover
+/// it.
+#[rstest]
+#[case::up_to_received(40, 40, [4, 6], 10, true)]
+#[case::more_than_received(40, 40, [4, 6], 11, false)]
+#[case::up_to_uncovered_restriction(100, 150, [50, 30], 30, true)]
+#[case::more_than_uncovered_restriction(100, 150, [50, 30], 31, false)]
 #[tokio::test]
-async fn restricted_holder_cannot_send_assets_received_in_same_transaction() -> anyhow::Result<()> {
-    const RECEIVED: u32 = 10;
+async fn received_amounts_can_be_sent_in_same_transaction(
+    #[case] balance: u32,
+    #[case] frozen: u32,
+    #[case] received: [u32; 2],
+    #[case] sent: u32,
+    #[case] is_accepted: bool,
+) -> anyhow::Result<()> {
+    let (mut holder, [note_0, note_1]) =
+        Holder::with_notes(balance, frozen, 0, |faucet_id, account_id| {
+            let note = |amount: u32| receive_note(faucet_id, account_id, amount);
+            Ok([note(received[0])?, note(received[1])?])
+        })
+        .await?;
 
-    let (mut holder, [note]) = Holder::with_notes(40, 40, 0, |faucet_id, account_id| {
-        let note = P2idNote::builder()
-            .sender(faucet_id)
-            .target(account_id)
-            .assets(vec![FungibleAsset::new(faucet_id, RECEIVED.into())?])
-            .serial_number(rand::rng().random())
-            .build()?;
-        Ok([note.into()])
+    let result = holder.execute(&holder.send(sent)?, [note_0, note_1]).await?;
+
+    if is_accepted {
+        holder.commit(&result?)?;
+        assert_eq!(
+            holder.balance()?,
+            AssetAmount::from(balance + received.iter().sum::<u32>() - sent)
+        );
+    } else {
+        assert_transaction_executor_error!(
+            result,
+            ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE
+        );
+    }
+
+    Ok(())
+}
+
+/// Assets that an input note moves directly to an output note, without the vault, are restricted
+/// like any other transfer.
+#[rstest]
+#[case::up_to_received(40, 40, 10, 10, true)]
+#[case::received_partially_frozen(40, 41, 10, 10, false)]
+#[case::up_to_uncovered_restriction(100, 150, 80, 30, true)]
+#[case::more_than_uncovered_restriction(100, 150, 80, 31, false)]
+#[tokio::test]
+async fn direct_transfers_between_notes_are_restricted(
+    #[case] balance: u32,
+    #[case] frozen: u32,
+    #[case] received: u32,
+    #[case] forwarded: u32,
+    #[case] is_accepted: bool,
+) -> anyhow::Result<()> {
+    let (mut holder, [note]) = Holder::with_notes(balance, frozen, 0, |faucet_id, _| {
+        Ok([forward_note(faucet_id, received, forwarded)?])
     })
     .await?;
-    let send = holder.send(RECEIVED)?;
 
-    // receiving and sending in one transaction fails
-    let result = holder.execute(&send, [note.clone()]).await?;
-    assert_transaction_executor_error!(
-        result,
-        ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE
-    );
+    let result = holder.execute("nop", [note]).await?;
 
-    // receiving in one transaction and sending in the next one succeeds
-    let receive_tx = holder.execute("nop", [note]).await??;
-    holder.commit(&receive_tx)?;
-
-    holder.execute(&send, []).await??;
+    if is_accepted {
+        holder.commit(&result?)?;
+        assert_eq!(holder.balance()?, AssetAmount::from(balance + received - forwarded));
+    } else {
+        assert_transaction_executor_error!(
+            result,
+            ERR_SUPPLY_RESTRICTION_TRANSFER_EXCEEDS_UNRESTRICTED_BALANCE
+        );
+    }
 
     Ok(())
 }

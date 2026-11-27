@@ -195,6 +195,19 @@ impl crate::BuildUnchecked for BlockBody {
     }
 }
 
+pub use proto::blockchain::DecodedValidatorSignature as ValidatorSignature;
+
+/// Returns the signature and the key it is attributed to; authenticity is not established here.
+impl Verify for ValidatorSignature {
+    type Verified = miden_protocol::block::ValidatorSignature;
+    type Error = core::convert::Infallible;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        let public_key = unwrap_infallible(self.public_key.verify());
+        let signature = unwrap_infallible(self.signature.verify());
+        Ok(Self::Verified::new(public_key, signature))
+    }
+}
+
 pub use proto::blockchain::DecodedSignedBlock as SignedBlock;
 
 /// Checks header/body consistency but does not authenticate against a trusted parent.
