@@ -14,6 +14,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::batch::BatchAccountUpdate;
 use miden_protocol::block::code_tree::CodePatch;
+use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
 use miden_protocol::note::{Note, NoteType, PartialNote, PartialNoteMetadata};
 use miden_protocol::testing::dummy_execution_proof;
 use miden_protocol::transaction::{
@@ -103,7 +104,9 @@ fn transaction_args_roundtrip_normalizes_note_args_order(
         dummy_word(8),
         account_code_upgrade,
         Some(IesSealSeed::new([10; 32])),
-    );
+    )
+    .with_ies_public_key(SecretKey::from_bytes(&[11; 40])?.public_key())?
+    .with_ies_public_key(SecretKey::from_bytes(&[12; 40])?.public_key())?;
 
     let message = proto::transaction::TransactionArgs::from(&args);
     // The debug output of the message leaves the seed out.

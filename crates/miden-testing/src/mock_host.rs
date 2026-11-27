@@ -70,6 +70,7 @@ impl<'store> MockHost<'store> {
                 &TransactionEventId::AccountPushDeltaCommitmentBodyBlockCount,
                 &TransactionEventId::InputNoteIndexLookup,
                 &TransactionEventId::IesEcgfp5EidosSeal,
+                &TransactionEventId::IesEcgfp5EidosSealPreprocessed,
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,
             ]

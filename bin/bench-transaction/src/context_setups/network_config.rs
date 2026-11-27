@@ -24,7 +24,7 @@ use miden_protocol::account::{
     RoleSymbol,
 };
 use miden_protocol::asset::AssetAmount;
-use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
+use miden_protocol::crypto::ecdh::ecgfp5::{PreparedPublicKey, SecretKey};
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
@@ -279,8 +279,9 @@ pub fn tx_consume_encrypted_assets_issuer_key_config_note_network() -> Result<Mo
         .max_supply(AssetAmount::new(1_000_000)?)
         .build()?;
 
-    let initial_issuer_key =
-        EncryptedAssetsIssuerKey::new(SecretKey::from_bytes(&[7; 40])?.public_key());
+    let initial_issuer_key = EncryptedAssetsIssuerKey::new(&PreparedPublicKey::new(
+        SecretKey::from_bytes(&[7; 40])?.public_key(),
+    ));
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::allow_all())
@@ -301,8 +302,9 @@ pub fn tx_consume_encrypted_assets_issuer_key_config_note_network() -> Result<Mo
         AccountState::Exists,
     )?;
 
-    let new_issuer_key =
-        EncryptedAssetsIssuerKey::new(SecretKey::from_bytes(&[8; 40])?.public_key());
+    let new_issuer_key = EncryptedAssetsIssuerKey::new(&PreparedPublicKey::new(
+        SecretKey::from_bytes(&[8; 40])?.public_key(),
+    ));
     let note: Note = EncryptedAssetsIssuerKeyConfigNote::builder()
         .sender(owner.id())
         .target(account.id())

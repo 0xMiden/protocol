@@ -207,7 +207,9 @@ impl SendPolicy {
     /// recipient preimage, so an account that knows only a note's recipient digest cannot create
     /// it holding the faucet's assets, e.g. the private payback note of a SWAP note that requests
     /// the faucet's asset. The transaction arguments must also carry an
-    /// [`IesSealSeed`](miden_protocol::transaction::IesSealSeed).
+    /// [`IesSealSeed`](miden_protocol::transaction::IesSealSeed) and the issuer's
+    /// [`PreparedPublicKey`](miden_protocol::crypto::ecdh::ecgfp5::PreparedPublicKey), see
+    /// [`TransactionArgs::with_ies_prepared_public_key`](miden_protocol::transaction::TransactionArgs::with_ies_prepared_public_key).
     ///
     /// A custom policy that composes other checks with this one `exec`s them and then
     /// `encrypted_assets::check_send_policy`, so that its attachment list is the output.

@@ -113,6 +113,11 @@ message IesSealSeed {
   bytes seed = 1;
 }
 
+message IesPublicKey {
+  // The canonical 40-byte encoding of the EcGFp5 public key.
+  bytes key = 1;
+}
+
 message TransactionArgs {
   optional TransactionScript tx_script = 1;
   primitives.Word tx_script_args = 2;
@@ -123,6 +128,9 @@ message TransactionArgs {
   repeated note.NoteRecipient output_note_recipients = 7;
   repeated BoundSignature signatures = 8;
   optional IesSealSeed ies_seal_seed = 9;
+  // The public keys of the IES `seal_preprocessed` recipients, from which the host rebuilds their
+  // preprocessed tables. At most `MAX_IES_PREPARED_KEYS_PER_TX` distinct keys.
+  repeated IesPublicKey ies_public_keys = 10;
 }
 
 message LogTopic {

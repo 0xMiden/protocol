@@ -1,15 +1,19 @@
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::fmt;
 
 use miden_crypto::merkle::InnerNodeInfo;
 
 use super::script::TransactionScript;
 use super::{Felt, IesSealSeed, Word};
-use crate::EMPTY_WORD;
 use crate::account::AccountCodeUpgrade;
 use crate::account::auth::BoundSignature;
+use crate::crypto::ecdh::ecgfp5::{PreparedPublicKey, PublicKey};
+use crate::errors::TransactionArgsError;
 use crate::note::{NoteId, NoteRecipient};
 use crate::vm::{AdviceInputs, AdviceMap};
+use crate::{EMPTY_WORD, MAX_IES_PREPARED_KEYS_PER_TX};
 
 // TRANSACTION ARGUMENTS
 // ================================================================================================
@@ -38,6 +42,9 @@ use crate::vm::{AdviceInputs, AdviceMap};
 /// - IES seal seed: the [`IesSealSeed`] from which the host derives the ephemeral secrets of the
 ///   IES `seal` requests. Use a fresh seed for every transaction and reuse it only to re-execute or
 ///   prove that transaction. Executing a transaction that seals without a seed fails.
+/// - IES public keys: the public keys of the recipients of the IES `seal_preprocessed` requests,
+///   with their [`PreparedPublicKey`]s, from which the host answers the requests. At most
+///   [`MAX_IES_PREPARED_KEYS_PER_TX`] keys.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransactionArgs {
     tx_script: Option<TransactionScript>,
@@ -49,6 +56,7 @@ pub struct TransactionArgs {
     auth_args: Word,
     account_code_upgrade: Option<AccountCodeUpgrade>,
     ies_seal_seed: Option<IesSealSeed>,
+    ies_prepared_public_keys: PreparedPublicKeys,
 }
 
 impl TransactionArgs {
@@ -93,6 +101,7 @@ impl TransactionArgs {
             auth_args,
             account_code_upgrade,
             ies_seal_seed,
+            ies_prepared_public_keys: PreparedPublicKeys::default(),
         }
     }
 
@@ -152,6 +161,44 @@ impl TransactionArgs {
     pub fn with_ies_seal_seed(mut self, ies_seal_seed: IesSealSeed) -> Self {
         self.ies_seal_seed = Some(ies_seal_seed);
         self
+    }
+
+    /// Returns new [`TransactionArgs`] with the provided [`PreparedPublicKey`] added, from which
+    /// the host answers the IES `seal_preprocessed` requests to its public key.
+    ///
+    /// Building a [`PreparedPublicKey`] takes over a second, so build it once per recipient and
+    /// share it across transactions. Only its public key is serialized: a host built from
+    /// deserialized arguments rebuilds the tables, see [`Self::prepare_ies_public_keys`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the arguments already hold [`MAX_IES_PREPARED_KEYS_PER_TX`] other
+    /// public keys. A key that the arguments already hold counts once.
+    pub fn with_ies_prepared_public_key(
+        mut self,
+        prepared_key: Arc<PreparedPublicKey>,
+    ) -> Result<Self, TransactionArgsError> {
+        self.ies_prepared_public_keys
+            .insert(prepared_key.public_key(), Some(prepared_key))?;
+        Ok(self)
+    }
+
+    /// Returns new [`TransactionArgs`] with the provided public key added, for whose
+    /// [`PreparedPublicKey`] the host answers the IES `seal_preprocessed` requests to it.
+    ///
+    /// Unlike [`Self::with_ies_prepared_public_key`], this leaves building the tables, which takes
+    /// over a second, to [`Self::prepare_ies_public_keys`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the arguments already hold [`MAX_IES_PREPARED_KEYS_PER_TX`] other
+    /// public keys. A key that the arguments already hold counts once.
+    pub fn with_ies_public_key(
+        mut self,
+        public_key: PublicKey,
+    ) -> Result<Self, TransactionArgsError> {
+        self.ies_prepared_public_keys.insert(public_key, None)?;
+        Ok(self)
     }
 
     // PUBLIC ACCESSORS
@@ -219,6 +266,30 @@ impl TransactionArgs {
         self.ies_seal_seed.as_ref()
     }
 
+    /// Returns the public keys of the IES `seal_preprocessed` recipients, see
+    /// [`Self::with_ies_prepared_public_key`] and [`Self::with_ies_public_key`].
+    pub fn ies_public_keys(&self) -> impl Iterator<Item = PublicKey> + '_ {
+        self.ies_prepared_public_keys.0.values().map(|(public_key, _)| *public_key)
+    }
+
+    /// Returns the [`PreparedPublicKey`]s of the IES `seal_preprocessed` recipients, keyed by
+    /// [`PreparedPublicKey::to_commitment`].
+    ///
+    /// Builds the tables of the keys added without them, e.g. by deserialization, which takes over
+    /// a second per key.
+    pub fn prepare_ies_public_keys(&self) -> BTreeMap<Word, Arc<PreparedPublicKey>> {
+        self.ies_prepared_public_keys
+            .0
+            .values()
+            .map(|(public_key, prepared_key)| {
+                let prepared_key = prepared_key
+                    .clone()
+                    .unwrap_or_else(|| Arc::new(PreparedPublicKey::new(*public_key)));
+                (prepared_key.to_commitment(), prepared_key)
+            })
+            .collect()
+    }
+
     // STATE MUTATORS
     // --------------------------------------------------------------------------------------------
 
@@ -266,6 +337,53 @@ impl TransactionArgs {
 impl Default for TransactionArgs {
     fn default() -> Self {
         Self::new(AdviceMap::default())
+    }
+}
+
+// PREPARED PUBLIC KEYS
+// ================================================================================================
+
+/// The public keys of the IES `seal_preprocessed` recipients of [`TransactionArgs`], keyed by
+/// [`PublicKey::to_commitment`], each with its [`PreparedPublicKey`] if the caller provided it.
+#[derive(Clone, Default)]
+struct PreparedPublicKeys(BTreeMap<Word, (PublicKey, Option<Arc<PreparedPublicKey>>)>);
+
+impl PreparedPublicKeys {
+    /// Adds the public key, or provides the prepared key of a public key that is already held.
+    fn insert(
+        &mut self,
+        public_key: PublicKey,
+        prepared_key: Option<Arc<PreparedPublicKey>>,
+    ) -> Result<(), TransactionArgsError> {
+        let commitment = public_key.to_commitment();
+        if let Some((_, held_prepared_key)) = self.0.get_mut(&commitment) {
+            if held_prepared_key.is_none() {
+                *held_prepared_key = prepared_key;
+            }
+            return Ok(());
+        }
+        if self.0.len() >= MAX_IES_PREPARED_KEYS_PER_TX {
+            return Err(TransactionArgsError::TooManyIesPublicKeys);
+        }
+        self.0.insert(commitment, (public_key, prepared_key));
+        Ok(())
+    }
+}
+
+/// Compares the public keys, which determine the tables.
+impl PartialEq for PreparedPublicKeys {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.keys().eq(other.0.keys())
+    }
+}
+
+impl Eq for PreparedPublicKeys {}
+
+impl fmt::Debug for PreparedPublicKeys {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list()
+            .entries(self.0.values().map(|(public_key, _)| public_key))
+            .finish()
     }
 }
 

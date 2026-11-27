@@ -4,8 +4,10 @@
 #! the notes that carry it.
 #!
 #! The attachment encrypts the note's details, from which the issuer recomputes the note's ID and
-#! nullifier, to the issuer's public key with `miden::protocol::ies::ecgfp5_eidos::seal`. The
-#! plaintext of a note with n assets is `3 + 2n` words, with the assets in note order:
+#! nullifier, to the issuer's public key with
+#! `miden::protocol::ies::ecgfp5_eidos::seal_preprocessed`, using the preprocessed tables of the key
+#! that the faucet commits to. The plaintext of a note with n assets is `3 + 2n` words, with the
+#! assets in note order:
 #!
 #! [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSET_ID_0, ASSET_VALUE_0, ...,
 #!  ASSET_ID_{n-1}, ASSET_VALUE_{n-1}]
@@ -44,6 +46,10 @@ pub const ISSUER_KEY_HEAD_SLOT = word("miden::standards::attachments::encrypted_
 #! The value slot that holds the tail of the issuer's EcGFp5 public key, its fifth element
 #! [public_key_4, 0, 0, 0].
 pub const ISSUER_KEY_TAIL_SLOT = word("miden::standards::attachments::encrypted_assets::issuer_key_tail")
+
+#! The value slot that holds the commitment to the preprocessed tables of the issuer's public key,
+#! PREPARED_ISSUER_KEY, which is Rust's `PreparedPublicKey::to_commitment`.
+pub const PREPARED_ISSUER_KEY_SLOT = word("miden::standards::attachments::encrypted_assets::prepared_issuer_key")
 
 # Layouts
 
@@ -87,13 +93,14 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO = "issuer public key for encrypted as
 #!
 #! A public note gets no attachment and the procedure returns attachment scheme 0 and the empty
 #! word. For a private note, the procedure encrypts the note's details to the issuer public key
-#! stored in the active account's issuer key slots, inserts the attachment into the advice map
-#! under its commitment and returns its scheme and commitment. Since it reads the issuer key, it
-#! also applies the default expiration delta. Faucets call it from their `on_before_note_sealed`
-#! callback.
+#! whose preprocessed tables the active account's PREPARED_ISSUER_KEY_SLOT commits to, inserts the
+#! attachment into the advice map under its commitment and returns its scheme and commitment. Since
+#! it reads the issuer key, it also applies the default expiration delta. Faucets call it from their
+#! `on_before_note_sealed` callback.
 #!
 #! The note's recipient preimage must be in the advice map, and the transaction arguments must
-#! provide an IES seal seed.
+#! provide an IES seal seed and the issuer's prepared public key, see
+#! `TransactionArgs::with_ies_prepared_public_key` in Rust.
 #!
 #! Inputs:
 #!   Operand stack: [note_idx]
@@ -119,9 +126,9 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO = "issuer public key for encrypted as
 #! - the note index does not point to an output note.
 #! - the note is private and:
 #!   - the advice map has no preimage for its recipient, or the preimage does not hash to it.
-#!   - the active account has no issuer key slots or no issuer public key in them.
-#!   - the issuer public key is not a valid EcGFp5 public key.
-#!   - the transaction arguments provide no IES seal seed.
+#!   - the active account has no PREPARED_ISSUER_KEY_SLOT or no issuer key in it.
+#!   - the transaction arguments provide no IES seal seed, or no prepared public key with the
+#!     PREPARED_ISSUER_KEY.
 #!
 #! Invocation: exec
 pub proc new(note_idx: OutputNoteIndex) -> (NoteAttachmentScheme, NoteAttachmentCommitment)
@@ -172,17 +179,20 @@ pub proc get_issuer_key() -> ecgfp5::PointEncoding
     # => [public_key(5), pad(11)]
 end
 
-#! Replaces the issuer's EcGFp5 public key in the native account's issuer key slots, gated by
-#! the account-wide `Authority` component.
+#! Replaces the issuer's EcGFp5 public key and the commitment to its preprocessed tables in the
+#! native account's issuer key slots, gated by the account-wide `Authority` component.
 #!
-#! Attachments built before the rotation stay encrypted to the previous key. The key is checked to
-#! be a valid EcGFp5 public key only when `new` encrypts to it.
+#! Attachments built before the rotation stay encrypted to the previous key. `new` encrypts to the
+#! key that PREPARED_ISSUER_KEY commits to, so the authority must compute it from public_key with
+#! Rust's `PreparedPublicKey`, which nothing checks onchain.
 #!
-#! Inputs:  [public_key(5), pad(11)]
+#! Inputs:  [public_key(5), PREPARED_ISSUER_KEY, pad(7)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
 #! - public_key is the new EcGFp5 public key in increasing coefficient order.
+#! - PREPARED_ISSUER_KEY is the commitment to the preprocessed tables of public_key, Rust's
+#!   `PreparedPublicKey::to_commitment`.
 #!
 #! Panics if:
 #! - the caller is not authorized per the installed `Authority` component.
@@ -190,31 +200,35 @@ end
 #!
 #! Invocation: call
 @account_procedure
-pub proc set_issuer_key(public_key: ecgfp5::PointEncoding)
+pub proc set_issuer_key(public_key: ecgfp5::PointEncoding, prepared_issuer_key: eidos::Digest)
     exec.authority::assert_authorized
-    # => [public_key(5), pad(11)]
+    # => [public_key(5), PREPARED_ISSUER_KEY, pad(7)]
 
     dupw exec.word::eqz dup.5 eq.0 and
-    # => [is_zero, public_key(5), pad(11)]
+    # => [is_zero, public_key(5), PREPARED_ISSUER_KEY, pad(7)]
 
     assertz.err=ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO
-    # => [public_key(5), pad(11)]
+    # => [public_key(5), PREPARED_ISSUER_KEY, pad(7)]
 
     push.ISSUER_KEY_HEAD_SLOT[0..2] exec.native_account::set_item dropw
-    # => [public_key_4, pad(15)]
+    # => [public_key_4, PREPARED_ISSUER_KEY, pad(11)]
 
     push.0.0.0 movup.3
-    # => [public_key_4, 0, 0, 0, pad(15)]
+    # => [public_key_4, 0, 0, 0, PREPARED_ISSUER_KEY, pad(11)]
 
     push.ISSUER_KEY_TAIL_SLOT[0..2] exec.native_account::set_item dropw
+    # => [PREPARED_ISSUER_KEY, pad(12)]
+
+    push.PREPARED_ISSUER_KEY_SLOT[0..2] exec.native_account::set_item dropw
     # => [pad(16)]
 end
 
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Encrypts the details of the output note with the provided index to the issuer's public key and
-#! inserts the attachment into the advice map under its commitment.
+#! Encrypts the details of the output note with the provided index to the issuer's public key,
+#! using its preprocessed tables, and inserts the attachment into the advice map under its
+#! commitment.
 #!
 #! Inputs:  [note_idx]
 #! Outputs: [attachment_scheme, ATTACHMENT_COMMITMENT]
@@ -226,8 +240,9 @@ end
 #!
 #! Panics if:
 #! - the advice map has no preimage for the note's recipient, or it does not hash to the recipient.
-#! - the active account has no issuer public key, or the key is not a valid EcGFp5 public key.
-#! - the transaction arguments provide no IES seal seed.
+#! - the active account has no `PREPARED_ISSUER_KEY_SLOT`, or no issuer key in it.
+#! - the transaction arguments provide no IES seal seed, or no prepared public key with the
+#!   PREPARED_ISSUER_KEY.
 #!
 #! Invocation: exec
 @locals(432)
@@ -267,11 +282,16 @@ proc encrypt_note_details(note_idx: OutputNoteIndex) -> (NoteAttachmentScheme, N
     movup.3 locaddr.ENCRYPT_NOTE_DETAILS_PLAINTEXT_LOC
     # => [plaintext_ptr, plaintext_len, context_ptr, context_len, envelope_ptr, plaintext_len]
 
-    exec.get_issuer_public_key
-    # => [public_key(5), plaintext_ptr, plaintext_len, context_ptr, context_len, envelope_ptr,
-    #     plaintext_len]
+    push.PREPARED_ISSUER_KEY_SLOT[0..2] exec.active_account::get_item
+    # => [PREPARED_ISSUER_KEY, plaintext_ptr, plaintext_len, context_ptr, context_len,
+    #     envelope_ptr, plaintext_len]
 
-    exec.ecgfp5_eidos::seal
+    # an unset key reads as the empty word
+    dupw exec.word::eqz assertz.err=ERR_ENCRYPTED_ASSETS_ISSUER_KEY_MISSING
+    # => [PREPARED_ISSUER_KEY, plaintext_ptr, plaintext_len, context_ptr, context_len,
+    #     envelope_ptr, plaintext_len]
+
+    exec.ecgfp5_eidos::seal_preprocessed
     # => [plaintext_len]
 
     # the attachment is the envelope

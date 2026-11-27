@@ -7,6 +7,7 @@ Below we describe how to benchmark Miden transactions.
 The following transactions are benchmarked:
 
 - **P2ID notes**: Consume single P2ID notes, consume two P2ID notes, and create single P2ID note - each with both Falcon and ECDSA signing
+- **Encrypted assets**: Create a private P2ID note with ECDSA signing that holds the asset of a faucet whose send policy encrypts the note's details to the issuer key
 - **CLAIM notes (agglayer bridge-in)**: Consume CLAIM note for L1-to-Miden bridging and L2-to-Miden bridging
 - **B2AGG note (agglayer bridge-out)**: Consume B2AGG note for Miden-to-AggLayer bridging
 - **Network-account note consumption**: one scenario per standard note script and execution path, consumed in the canonical network-account transaction (see below)
@@ -65,7 +66,7 @@ Cycle counts and elapsed time are measured separately:
   The same pass rebuilds the `ExecutionTrace` for each scenario. It records the AIR row totals (`core_rows`, `chiplets_rows`, `eidos_compression_rows`, and `byte_pair_lookup_rows`) and the per-chiplet breakdown (`hasher_rows`, `bitwise_rows`, `memory_rows`, `kernel_rom_rows`, and `ace_rows`).
 
   Results are stored in [`bench-tx.json`](bench-tx.json).
-- Elapsed-time benchmarks cover single- and two-note P2ID consumption with Falcon or ECDSA authentication, CLAIM consumption from L1 or L2, and B2AGG consumption. Each scenario has two measurements:
+- Elapsed-time benchmarks cover single- and two-note P2ID consumption with Falcon or ECDSA authentication, private P2ID creation with encrypted assets, CLAIM consumption from L1 or L2, and B2AGG consumption. Each scenario has two measurements:
 
   - `Execute transaction`: initial transaction execution.
   - `Execute and prove transaction`: initial execution followed by prover replay and proof generation.

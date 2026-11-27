@@ -177,6 +177,31 @@
       }
     }
   },
+  "create private P2ID note with encrypted assets and ECDSA signing": {
+    "provenance": "producer_measured",
+    "prologue": 2358,
+    "total_cycles": 45588,
+    "notes_processing": 35,
+    "note_execution": [],
+    "tx_script_processing": 34677,
+    "epilogue": {
+      "total": 8518,
+      "auth_procedure": 6055
+    },
+    "trace": {
+      "core_rows": 45634,
+      "chiplets_rows": 7678,
+      "eidos_compression_rows": 73696,
+      "byte_pair_lookup_rows": 65536,
+      "chiplets_shape": {
+        "hasher_rows": 4528,
+        "bitwise_rows": 160,
+        "memory_rows": 2988,
+        "kernel_rom_rows": 1,
+        "ace_rows": 0
+      }
+    }
+  },
   "consume CLAIM note (L1 to Miden)": {
     "provenance": "producer_measured",
     "prologue": 5417,

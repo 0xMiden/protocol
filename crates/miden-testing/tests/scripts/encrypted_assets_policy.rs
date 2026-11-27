@@ -1,13 +1,15 @@
 //! Tests for the encrypted assets send policy ([`SendPolicy::with_encrypted_assets`]) and the
 //! [`EncryptedAssetsIssuerKey`] component that installs the issuer key on the faucet.
 
+use std::sync::{Arc, LazyLock};
+
 use anyhow::Context;
 use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceError;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
-use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
+use miden_protocol::crypto::ecdh::ecgfp5::{PreparedPublicKey, SecretKey};
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::note::{Note, NoteType, PartialNote};
 use miden_protocol::testing::account_id::{
@@ -73,9 +75,14 @@ fn issuer_key_elements() -> [Felt; 5] {
     issuer_secret_key().public_key().to_elements()
 }
 
+/// The prepared public key of [`issuer_secret_key`], which is built once since that takes over a
+/// second.
+static ISSUER_PREPARED_KEY: LazyLock<Arc<PreparedPublicKey>> =
+    LazyLock::new(|| Arc::new(PreparedPublicKey::new(issuer_secret_key().public_key())));
+
 /// Returns the issuer key holding the public key of [`issuer_secret_key`].
 fn issuer_key() -> EncryptedAssetsIssuerKey {
-    EncryptedAssetsIssuerKey::new(issuer_secret_key().public_key())
+    EncryptedAssetsIssuerKey::new(&ISSUER_PREPARED_KEY)
 }
 
 /// Returns a token policy manager whose active send policy is `send_policy`.
@@ -120,12 +127,14 @@ fn p2id_note(
 /// Executes a transaction in which `wallet` sends an empty private note and then `note`, which
 /// holds the asset of `faucet_id`, at [`SEALED_NOTE_IDX`].
 ///
-/// The transaction expects `note`, which puts its recipient preimage into the advice map.
+/// The transaction expects `note`, which puts its recipient preimage into the advice map, and its
+/// arguments hold `prepared_key`, the prepared public key of the faucet's issuer key.
 async fn execute_send(
     mock_chain: &MockChain,
     wallet: &Account,
     faucet_id: AccountId,
     note: &Note,
+    prepared_key: &Arc<PreparedPublicKey>,
 ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
     let empty_note = NoteBuilder::new(wallet.id(), EidosRandomCoin::new(Word::empty()))
         .note_type(NoteType::Private)
@@ -140,6 +149,7 @@ async fn execute_send(
         .send_notes_script(&send_script)
         .foreign_accounts([mock_chain.get_foreign_account_inputs(faucet_id)?])
         .expected_output_note(RawOutputNote::Full(note.clone()))
+        .ies_prepared_public_key(Arc::clone(prepared_key))
         .build()?
         .execute()
         .await)
@@ -166,7 +176,8 @@ async fn send_note(
     builder.add_account(wallet.clone())?;
     let mock_chain = builder.build()?;
 
-    let result = execute_send(&mock_chain, &wallet, faucet.id(), &note).await?;
+    let result =
+        execute_send(&mock_chain, &wallet, faucet.id(), &note, &ISSUER_PREPARED_KEY).await?;
 
     Ok((note, result))
 }
@@ -313,7 +324,8 @@ async fn send_policy_rejects_private_note_with_other_assets() -> anyhow::Result<
         .serial_number(Word::from([1u32; 4]))
         .build()?
         .into();
-    let result = execute_send(&mock_chain, &wallet, faucet.id(), &note).await?;
+    let result =
+        execute_send(&mock_chain, &wallet, faucet.id(), &note, &ISSUER_PREPARED_KEY).await?;
 
     assert_transaction_executor_error!(result, ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS);
 
@@ -354,7 +366,8 @@ async fn send_policy_rejects_private_note_with_two_assets_of_the_faucet() -> any
         .serial_number(Word::from([1u32; 4]))
         .build()?
         .into();
-    let result = execute_send(&mock_chain, &wallet, faucet.id(), &note).await?;
+    let result =
+        execute_send(&mock_chain, &wallet, faucet.id(), &note, &ISSUER_PREPARED_KEY).await?;
 
     assert_transaction_executor_error!(result, ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS);
 
@@ -449,7 +462,8 @@ async fn set_send_policy_switches_the_attachment(
     );
 
     let note = p2id_note(wallet.id(), faucet.id(), NoteType::Private, 1)?;
-    let executed = execute_send(&mock_chain, &wallet, faucet.id(), &note).await??;
+    let executed =
+        execute_send(&mock_chain, &wallet, faucet.id(), &note, &ISSUER_PREPARED_KEY).await??;
 
     if expects_attachment {
         assert_issuer_decrypts_note(&executed, &issuer_secret_key())?;
@@ -513,6 +527,7 @@ async fn issuer_key_component_returns_public_key() -> anyhow::Result<()> {
 async fn authority_rotates_issuer_key() -> anyhow::Result<()> {
     let owner = AccountId::try_from(ACCOUNT_ID_SENDER)?;
     let new_secret_key = SecretKey::from_bytes(&[8; 40])?;
+    let new_prepared_key = Arc::new(PreparedPublicKey::new(new_secret_key.public_key()));
 
     let mut builder = MockChain::builder();
     let faucet = add_owned_faucet(&mut builder, owner)?;
@@ -523,7 +538,7 @@ async fn authority_rotates_issuer_key() -> anyhow::Result<()> {
     let rotation_note = issuer_key_config_note(
         owner,
         faucet.id(),
-        EncryptedAssetsIssuerKey::new(new_secret_key.public_key()),
+        EncryptedAssetsIssuerKey::new(&new_prepared_key),
     )?;
     builder.add_output_note(RawOutputNote::Full(rotation_note.clone()));
     let mut mock_chain = builder.build()?;
@@ -531,7 +546,8 @@ async fn authority_rotates_issuer_key() -> anyhow::Result<()> {
     consume_note(&mut mock_chain, faucet.id(), &rotation_note).await?;
 
     let note = p2id_note(wallet.id(), faucet.id(), NoteType::Private, 1)?;
-    let executed = execute_send(&mock_chain, &wallet, faucet.id(), &note).await??;
+    let executed =
+        execute_send(&mock_chain, &wallet, faucet.id(), &note, &new_prepared_key).await??;
 
     assert_issuer_decrypts_note(&executed, &new_secret_key)?;
     let sent_note = executed.output_notes().get_note(SEALED_NOTE_IDX);

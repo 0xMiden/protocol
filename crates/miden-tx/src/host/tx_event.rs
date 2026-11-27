@@ -183,6 +183,8 @@ pub(crate) enum TransactionEvent {
 
     IesEcgfp5EidosSeal(IesSealRequest),
 
+    IesEcgfp5EidosSealPreprocessed(IesSealPreprocessedRequest),
+
     LinkMapSet {
         advice_mutation: Vec<AdviceMutation>,
     },
@@ -610,6 +612,16 @@ impl TransactionEvent {
                 }))
             },
 
+            TransactionEventId::IesEcgfp5EidosSealPreprocessed => {
+                // Expected stack state:
+                // [event, PLAINTEXT_DIGEST, CONTEXT_DIGEST, PREPARED_KEY_COMMITMENT]
+                Some(TransactionEvent::IesEcgfp5EidosSealPreprocessed(IesSealPreprocessedRequest {
+                    prepared_key_commitment: process.get_stack_word(9),
+                    plaintext_digest: process.get_stack_word(1),
+                    context_digest: process.get_stack_word(5),
+                }))
+            },
+
             TransactionEventId::LinkMapSet => Some(TransactionEvent::LinkMapSet {
                 advice_mutation: LinkMap::handle_set_event(process),
             }),
@@ -757,6 +769,23 @@ pub(crate) struct IesSealRequest {
 impl fmt::Debug for IesSealRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IesSealRequest").finish_non_exhaustive()
+    }
+}
+
+/// An IES `seal_preprocessed` request of `miden::protocol::ies::ecgfp5_eidos::seal_preprocessed`.
+pub(crate) struct IesSealPreprocessedRequest {
+    /// The commitment to the preprocessed tables of the recipient public key.
+    pub(super) prepared_key_commitment: Word,
+    /// The digest of the plaintext.
+    pub(super) plaintext_digest: Word,
+    /// The digest of the IES context.
+    pub(super) context_digest: Word,
+}
+
+/// Leaves out the digests, which let anyone who sees them check guesses of a plaintext.
+impl fmt::Debug for IesSealPreprocessedRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IesSealPreprocessedRequest").finish_non_exhaustive()
     }
 }
 

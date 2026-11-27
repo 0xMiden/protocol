@@ -12,6 +12,7 @@ pub enum ExecutionBenchmark {
     ConsumeTwoP2IDEcdsa,
     CreateSingleP2IDFalcon,
     CreateSingleP2IDEcdsa,
+    CreatePrivateP2IDEncryptedAssetsEcdsa,
     ConsumeClaimNoteL1ToMiden,
     ConsumeClaimNoteL2ToMiden,
     ConsumeB2AggNote,
@@ -65,6 +66,7 @@ impl ExecutionBenchmark {
             ExecutionBenchmark::ConsumeTwoP2IDEcdsa,
             ExecutionBenchmark::CreateSingleP2IDFalcon,
             ExecutionBenchmark::CreateSingleP2IDEcdsa,
+            ExecutionBenchmark::CreatePrivateP2IDEncryptedAssetsEcdsa,
             ExecutionBenchmark::ConsumeClaimNoteL1ToMiden,
             ExecutionBenchmark::ConsumeClaimNoteL2ToMiden,
             ExecutionBenchmark::ConsumeB2AggNote,
@@ -130,6 +132,9 @@ impl fmt::Display for ExecutionBenchmark {
             },
             ExecutionBenchmark::CreateSingleP2IDEcdsa => {
                 write!(f, "create single P2ID note with ECDSA signing")
+            },
+            ExecutionBenchmark::CreatePrivateP2IDEncryptedAssetsEcdsa => {
+                write!(f, "create private P2ID note with encrypted assets and ECDSA signing")
             },
             ExecutionBenchmark::ConsumeClaimNoteL1ToMiden => {
                 write!(f, "consume CLAIM note (L1 to Miden)")

@@ -362,6 +362,7 @@ where
             tx_inputs.collect_block_commitments(),
             self.source_manager.clone(),
             tx_inputs.tx_args().ies_seal_seed().cloned(),
+            tx_inputs.tx_args().prepare_ies_public_keys(),
         )
         .map_err(|err| TransactionExecutorError::TransactionHostCreationFailed(Box::new(err)))?;
 

@@ -52,6 +52,12 @@ impl From<&TransactionArgs> for proto::transaction::TransactionArgs {
             output_note_recipients: value.output_note_recipients().iter().map(Into::into).collect(),
             signatures: value.signatures().iter().map(Into::into).collect(),
             ies_seal_seed: value.ies_seal_seed().map(Into::into),
+            ies_public_keys: value
+                .ies_public_keys()
+                .map(|public_key| proto::transaction::IesPublicKey {
+                    key: Serializable::to_bytes(&public_key),
+                })
+                .collect(),
         }
     }
 }

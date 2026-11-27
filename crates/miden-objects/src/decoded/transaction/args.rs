@@ -53,7 +53,7 @@ impl Verify for TransactionArgs {
                 return Err(TransactionArgsError::DuplicateNoteArgument(id).into());
             }
         }
-        Ok(Self::Verified::from_parts(
+        let mut tx_args = Self::Verified::from_parts(
             tx_script,
             self.tx_script_args,
             note_args,
@@ -63,7 +63,14 @@ impl Verify for TransactionArgs {
             self.auth_args,
             self.account_code_upgrade.verify()?,
             self.ies_seal_seed.verify()?,
-        ))
+        );
+        // only the public keys are decoded: the host rebuilds their tables
+        for public_key in self.ies_public_keys.into_inner() {
+            tx_args = tx_args
+                .with_ies_public_key(public_key.key.into_inner())
+                .map_err(VerificationError::new)?;
+        }
+        Ok(tx_args)
     }
 }
 

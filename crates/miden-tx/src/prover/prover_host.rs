@@ -10,6 +10,7 @@ use miden_protocol::account::{AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::ecdh::ecgfp5::PreparedPublicKey;
 use miden_protocol::transaction::{
     IesSealSeed,
     InputNote,
@@ -51,6 +52,7 @@ where
     /// # Errors
     ///
     /// Returns an error if the host cannot be created.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         account: &PartialAccount,
         input_notes: InputNotes<InputNote>,
@@ -59,6 +61,7 @@ where
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
         ies_seal_seed: Option<IesSealSeed>,
+        ies_prepared_public_keys: BTreeMap<Word, Arc<PreparedPublicKey>>,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
             account,
@@ -68,6 +71,7 @@ where
             scripts_mast_store,
             acct_procedure_index_map,
             ies_seal_seed,
+            ies_prepared_public_keys,
         )?;
 
         Ok(Self { base_host })
@@ -246,6 +250,10 @@ where
 
             TransactionEvent::IesEcgfp5EidosSeal(request) => {
                 self.base_host.on_ies_seal_requested(request)
+            },
+
+            TransactionEvent::IesEcgfp5EidosSealPreprocessed(request) => {
+                self.base_host.on_ies_seal_preprocessed_requested(request)
             },
 
             TransactionEvent::LinkMapSet { advice_mutation } => Ok(advice_mutation),

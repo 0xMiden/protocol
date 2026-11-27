@@ -16,6 +16,7 @@ use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
+use miden_protocol::crypto::ecdh::ecgfp5::PreparedPublicKey;
 use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{IesSealSeed, RawOutputNote, TransactionArgs, TransactionScript};
 use miden_standards::account::auth::{FeeConversionInfo, commit_fee_conversion_info};
@@ -89,6 +90,7 @@ pub struct MockTransactionBuilder<'chain> {
     note_args: BTreeMap<NoteId, Word>,
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
     ies_seal_seed: Option<IesSealSeed>,
+    ies_prepared_public_keys: Vec<Arc<PreparedPublicKey>>,
     note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     code_to_register: Vec<Arc<MastForest>>,
     source_manager: Option<Arc<dyn SourceManagerSync>>,
@@ -123,6 +125,7 @@ impl<'chain> MockTransactionBuilder<'chain> {
             note_args: BTreeMap::new(),
             signatures: Vec::new(),
             ies_seal_seed: Some(IesSealSeed::new([0; 32])),
+            ies_prepared_public_keys: Vec::new(),
             note_scripts: BTreeMap::new(),
             code_to_register: Vec::new(),
             source_manager: None,
@@ -317,6 +320,13 @@ impl<'chain> MockTransactionBuilder<'chain> {
         self
     }
 
+    /// Adds a prepared public key to the transaction arguments, from which the host answers the
+    /// requests of `miden::protocol::ies::ecgfp5_eidos::seal_preprocessed` to it.
+    pub fn ies_prepared_public_key(mut self, prepared_key: Arc<PreparedPublicKey>) -> Self {
+        self.ies_prepared_public_keys.push(prepared_key);
+        self
+    }
+
     /// Adds a note script to the mock transaction for testing.
     pub fn add_note_script(mut self, script: NoteScript) -> Self {
         self.note_scripts.insert(script.root(), script);
@@ -378,6 +388,9 @@ impl<'chain> MockTransactionBuilder<'chain> {
         }
         if let Some(ies_seal_seed) = self.ies_seal_seed {
             tx_args = tx_args.with_ies_seal_seed(ies_seal_seed);
+        }
+        for prepared_key in self.ies_prepared_public_keys {
+            tx_args = tx_args.with_ies_prepared_public_key(prepared_key)?;
         }
         tx_args.extend_advice_inputs(self.advice_inputs);
         tx_args.extend_output_note_recipients(

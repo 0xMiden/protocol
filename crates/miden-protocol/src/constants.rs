@@ -31,6 +31,14 @@ pub const MAX_OUTPUT_NOTES_PER_TX: usize = MAX_INPUT_NOTES_PER_TX;
 /// requests exceeds the default advice size budget of the VM.
 pub const MAX_IES_SEAL_REQUESTS_PER_TX: u32 = 512;
 
+/// The maximum number of IES recipient public keys whose preprocessed tables the arguments of a
+/// single transaction can provide.
+///
+/// A host that receives the arguments serialized rebuilds the tables of each key, which takes over
+/// a second and about 4 MiB, so the limit bounds that work for a remote prover. A transaction
+/// needs one key per issuer whose assets it sends privately under the encrypted assets policy.
+pub const MAX_IES_PREPARED_KEYS_PER_TX: usize = 4;
+
 /// The minimum proof security level used by the Miden prover & verifier.
 pub const MIN_PROOF_SECURITY_LEVEL: u32 = 96;
 

@@ -49,8 +49,9 @@ static ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG_SCRIPT: LazyLock<NoteScript> = LazyLoc
 /// An EncryptedAssetsIssuerKeyConfig note: rotates the [`EncryptedAssetsIssuerKey`] of the faucet
 /// that consumes it by calling its `set_issuer_key` procedure.
 ///
-/// The new key is carried in the note's storage as the elements of its public key (see the
-/// [`Note`] conversion below). Because the storage is fixed at note creation and bound into the
+/// The new key is carried in the note's storage as the elements of the commitment to its
+/// preprocessed tables followed by the elements of its public key (see the [`Note`] conversion
+/// below). Because the storage is fixed at note creation and bound into the
 /// note commitment, the authorized party is the note sender: the consuming faucet's
 /// `set_issuer_key` procedure authorizes the sender through the account-wide
 /// [`Authority`](crate::account::access::Authority) component.
@@ -125,11 +126,12 @@ impl EncryptedAssetsIssuerKeyConfigNote {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// Number of storage items of an EncryptedAssetsIssuerKeyConfig note: the elements of the new
-    /// issuer public key.
+    /// Number of storage items of an EncryptedAssetsIssuerKeyConfig note: the elements of the
+    /// commitment to the preprocessed tables of the new issuer public key, followed by the elements
+    /// of the key.
     ///
     /// Must be kept in sync with `NUM_STORAGE_ITEMS` in the note script, which asserts the count.
-    pub const NUM_STORAGE_ITEMS: usize = 5;
+    pub const NUM_STORAGE_ITEMS: usize = 9;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -218,8 +220,14 @@ impl From<EncryptedAssetsIssuerKeyConfigNote> for Note {
         // execution; the new issuer key lives in the note storage.
         let metadata = PartialNoteMetadata::new(note.sender, NoteType::Public)
             .with_tag(NoteTag::with_account_target(note.target));
-        let storage = NoteStorage::new(note.issuer_key.public_key().to_elements().to_vec())
-            .expect("number of storage items should not exceed max storage items");
+        let storage = NoteStorage::new(
+            note.issuer_key
+                .prepared_key_commitment()
+                .into_iter()
+                .chain(note.issuer_key.public_key().to_elements())
+                .collect(),
+        )
+        .expect("number of storage items should not exceed max storage items");
         let recipient = NoteRecipient::new(
             note.serial_number,
             EncryptedAssetsIssuerKeyConfigNote::script(),
@@ -245,7 +253,7 @@ impl NoteConsumptionCost for EncryptedAssetsIssuerKeyConfigNote {
 #[cfg(test)]
 mod tests {
     use miden_protocol::account::AccountType;
-    use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
+    use miden_protocol::crypto::ecdh::ecgfp5::{PreparedPublicKey, SecretKey};
     use miden_protocol::crypto::rand::EidosRandomCoin;
 
     use super::*;
@@ -258,7 +266,9 @@ mod tests {
     }
 
     fn issuer_key() -> anyhow::Result<EncryptedAssetsIssuerKey> {
-        Ok(EncryptedAssetsIssuerKey::new(SecretKey::from_bytes(&[8; 40])?.public_key()))
+        Ok(EncryptedAssetsIssuerKey::new(&PreparedPublicKey::new(
+            SecretKey::from_bytes(&[8; 40])?.public_key(),
+        )))
     }
 
     /// The builder produces a public, asset-less note tagged for the managed faucet.
@@ -307,7 +317,8 @@ mod tests {
         Ok(())
     }
 
-    /// Storage is the elements of the issuer public key.
+    /// Storage is the elements of the commitment to the preprocessed tables of the issuer public
+    /// key, followed by the elements of the key.
     #[test]
     fn storage_layout() -> anyhow::Result<()> {
         let issuer_key = issuer_key()?;
@@ -320,7 +331,11 @@ mod tests {
             .build()?;
 
         let built = Note::from(note);
-        assert_eq!(built.storage().items(), issuer_key.public_key().to_elements());
+        assert_eq!(
+            built.storage().items()[..4],
+            *issuer_key.prepared_key_commitment().as_elements()
+        );
+        assert_eq!(built.storage().items()[4..], issuer_key.public_key().to_elements());
         assert_eq!(
             built.storage().items().len(),
             EncryptedAssetsIssuerKeyConfigNote::NUM_STORAGE_ITEMS
