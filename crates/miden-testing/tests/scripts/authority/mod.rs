@@ -36,6 +36,7 @@ use miden_testing::{
 };
 use rstest::rstest;
 
+use super::fungible_faucet_account;
 use super::pausable::{
     ADMIN_ID,
     NON_OWNER_ID,
@@ -87,16 +88,7 @@ fn add_rbac_faucet(
     procedure_roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
     seed: u8,
 ) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("SYM")?)
-        .symbol("SYM".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
-    let account_builder = AccountBuilder::new([seed; 32])
-        .account_type(AccountType::Public)
-        .with_component(faucet)
+    let account_builder = fungible_faucet_account(seed)?
         .with_components(AccessControl::Rbac { admin, procedure_roles })
         .with_component(Pausable::unpaused())
         .with_component(PausableManager);

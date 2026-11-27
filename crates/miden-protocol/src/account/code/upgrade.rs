@@ -2,13 +2,7 @@ use alloc::vec::Vec;
 
 use crate::account::AccountCode;
 use crate::crypto::utils::{bytes_to_elements_with_padding, padded_elements_to_bytes};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
+use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
 use crate::{ACCOUNT_CODE_UPGRADE_ADVICE_DOMAIN, Felt, Hasher, WORD_SIZE, Word};
 
 // ACCOUNT CODE UPGRADE
@@ -106,22 +100,6 @@ impl AccountCodeUpgrade {
         })?;
 
         AccountCode::read_from_bytes(&bytes).map(Self::new)
-    }
-}
-
-impl Serializable for AccountCodeUpgrade {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.code.write_into(target);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.code.get_size_hint()
-    }
-}
-
-impl Deserializable for AccountCodeUpgrade {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        AccountCode::read_from(source).map(Self::new)
     }
 }
 

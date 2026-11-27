@@ -1,5 +1,4 @@
 use alloc::collections::BTreeSet;
-use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
@@ -16,13 +15,7 @@ use crate::note::{
     NoteRecipient,
     PartialNote,
 };
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
+use crate::utils::serde::Serializable;
 use crate::{Felt, Hasher, MAX_OUTPUT_NOTES_PER_TX, Word};
 
 // OUTPUT NOTE COLLECTION
@@ -137,31 +130,6 @@ impl<N> IntoIterator for OutputNoteCollection<N> {
     }
 }
 
-// SERIALIZATION
-// ------------------------------------------------------------------------------------------------
-
-impl<N: Serializable> Serializable for OutputNoteCollection<N> {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        // assert is OK here because we enforce max number of notes in the constructor
-        assert!(self.notes.len() <= u16::MAX.into());
-        target.write_u16(self.notes.len() as u16);
-        target.write_many(&self.notes);
-    }
-}
-
-impl<N> Deserializable for OutputNoteCollection<N>
-where
-    N: Deserializable,
-    for<'a> &'a NoteHeader: From<&'a N>,
-    for<'a> NoteId: From<&'a N>,
-{
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let num_notes = source.read_u16()?;
-        let notes = source.read_many_iter::<N>(num_notes.into())?.collect::<Result<_, _>>()?;
-        Self::new(notes).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 // RAW OUTPUT NOTES
 // ================================================================================================
 
@@ -188,9 +156,6 @@ pub enum RawOutputNote {
 }
 
 impl RawOutputNote {
-    const FULL: u8 = 0;
-    const PARTIAL: u8 = 1;
-
     /// The assets contained in the note.
     pub fn assets(&self) -> &NoteAssets {
         match self {
@@ -300,41 +265,6 @@ impl<'note> From<&'note RawOutputNote> for &'note NoteHeader {
     }
 }
 
-impl Serializable for RawOutputNote {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        match self {
-            Self::Full(note) => {
-                target.write(Self::FULL);
-                target.write(note);
-            },
-            Self::Partial(note) => {
-                target.write(Self::PARTIAL);
-                target.write(note);
-            },
-        }
-    }
-
-    fn get_size_hint(&self) -> usize {
-        // Serialized size of the enum tag.
-        let tag_size = 0u8.get_size_hint();
-
-        match self {
-            Self::Full(note) => tag_size + note.get_size_hint(),
-            Self::Partial(note) => tag_size + note.get_size_hint(),
-        }
-    }
-}
-
-impl Deserializable for RawOutputNote {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        match source.read_u8()? {
-            Self::FULL => Ok(Self::Full(Note::read_from(source)?)),
-            Self::PARTIAL => Ok(Self::Partial(PartialNote::read_from(source)?)),
-            v => Err(DeserializationError::InvalidValue(format!("invalid output note type: {v}"))),
-        }
-    }
-}
-
 // OUTPUT NOTES
 // ================================================================================================
 
@@ -361,9 +291,6 @@ pub enum OutputNote {
 }
 
 impl OutputNote {
-    const PUBLIC: u8 = 0;
-    const PRIVATE: u8 = 1;
-
     /// Unique note identifier.
     ///
     /// This value commits to the note details and metadata.
@@ -426,44 +353,6 @@ impl<'note> From<&'note OutputNote> for &'note NoteHeader {
 impl From<&OutputNote> for NoteId {
     fn from(note: &OutputNote) -> Self {
         note.id()
-    }
-}
-
-// SERIALIZATION
-// ------------------------------------------------------------------------------------------------
-
-impl Serializable for OutputNote {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        match self {
-            Self::Public(note) => {
-                target.write(Self::PUBLIC);
-                target.write(note);
-            },
-            Self::Private(header) => {
-                target.write(Self::PRIVATE);
-                target.write(header);
-            },
-        }
-    }
-
-    fn get_size_hint(&self) -> usize {
-        let tag_size = 0u8.get_size_hint();
-        match self {
-            Self::Public(note) => tag_size + note.get_size_hint(),
-            Self::Private(header) => tag_size + header.get_size_hint(),
-        }
-    }
-}
-
-impl Deserializable for OutputNote {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        match source.read_u8()? {
-            Self::PUBLIC => Ok(Self::Public(PublicOutputNote::read_from(source)?)),
-            Self::PRIVATE => Ok(Self::Private(PrivateOutputNote::read_from(source)?)),
-            v => Err(DeserializationError::InvalidValue(format!(
-                "invalid proven output note type: {v}"
-            ))),
-        }
     }
 }
 
@@ -547,23 +436,6 @@ impl PublicOutputNote {
     }
 }
 
-impl Serializable for PublicOutputNote {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.0.write_into(target);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.0.get_size_hint()
-    }
-}
-
-impl Deserializable for PublicOutputNote {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let note = Note::read_from(source)?;
-        Self::new(note).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 // PRIVATE NOTE HEADER
 // ================================================================================================
 
@@ -628,26 +500,6 @@ impl PrivateOutputNote {
     /// Consumes this wrapper and returns the underlying note header.
     pub fn into_header(self) -> NoteHeader {
         self.header
-    }
-}
-
-impl Serializable for PrivateOutputNote {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.header.write_into(target);
-        self.attachments.write_into(target);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.header.get_size_hint() + self.attachments.get_size_hint()
-    }
-}
-
-impl Deserializable for PrivateOutputNote {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let header = NoteHeader::read_from(source)?;
-        let attachments = NoteAttachments::read_from(source)?;
-        Self::new(header, attachments)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 

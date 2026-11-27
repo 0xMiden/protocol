@@ -1,6 +1,4 @@
 use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::string::ToString;
-use alloc::vec::Vec;
 
 use miden_crypto::merkle::smt::{PartialSmt, SmtLeaf, SmtProof};
 use miden_crypto::merkle::{InnerNodeInfo, MerkleError};
@@ -9,13 +7,6 @@ use super::{AssetId, AssetVault};
 use crate::Word;
 use crate::asset::{Asset, AssetWitness};
 use crate::errors::PartialAssetVaultError;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 /// A partial representation of an [`AssetVault`], containing only proofs for a subset of assets.
 ///
@@ -244,25 +235,6 @@ impl PartialVault {
     }
 }
 
-impl Serializable for PartialVault {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write(&self.partial_smt);
-        target.write_usize(self.entries.len());
-        target.write_many(self.entries.keys());
-    }
-}
-
-impl Deserializable for PartialVault {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let partial_smt: PartialSmt = source.read()?;
-        let num_entries: usize = source.read()?;
-        let ids = source.read_many_iter::<AssetId>(num_entries)?.collect::<Result<Vec<_>, _>>()?;
-
-        Self::try_from_parts(partial_smt, ids)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -310,26 +282,6 @@ mod tests {
 
         let err = partial.open(asset.id()).unwrap_err();
         assert_matches!(err, PartialAssetVaultError::UntrackedAsset(_));
-
-        Ok(())
-    }
-
-    #[test]
-    fn partial_vault_with_witnesses_round_trips() -> anyhow::Result<()> {
-        let fungible = FungibleAsset::mock(500);
-        let non_fungible = NonFungibleAsset::mock(&[1, 2, 3]);
-        let vault = AssetVault::new(&[fungible, non_fungible])?;
-
-        let witnesses = [vault.open(fungible.id()), vault.open(non_fungible.id())];
-        let partial = PartialVault::with_witnesses(witnesses)?;
-
-        assert_eq!(partial.root(), vault.root());
-        assert_eq!(partial.entries().count(), 2);
-
-        // Round-trip serialization preserves equality.
-        let bytes = partial.to_bytes();
-        let roundtripped = PartialVault::read_from_bytes(&bytes)?;
-        assert_eq!(partial, roundtripped);
 
         Ok(())
     }

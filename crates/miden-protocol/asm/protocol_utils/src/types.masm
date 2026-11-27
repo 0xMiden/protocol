@@ -39,6 +39,10 @@ pub type AssetAmount = felt
 pub type NoteTag = u32
 pub type NoteAttachmentScheme = u16
 pub type NoteAttachmentCount = u8
+#! Index of an input note in the transaction.
+pub type InputNoteIndex = u16
+#! Index of an output note in the transaction.
+pub type OutputNoteIndex = u16
 # Discriminants match the Rust NoteType representation.
 pub enum NoteType : u8 {
     PRIVATE = 0,

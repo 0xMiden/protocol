@@ -1,4 +1,4 @@
-use {NoteArgs} from miden::protocol::types
+use {NoteArgs, OutputNoteIndex} from miden::protocol::types
 use miden::protocol::active_note
 use miden::protocol::asset
 use miden::protocol::note
@@ -77,7 +77,7 @@ const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset
 #! - any attachment violates the kernel's attachment limits.
 #!
 #! Invocation: exec
-proc add_payback_attachments(note_idx: u16) -> u32
+proc add_payback_attachments(note_idx: OutputNoteIndex) -> u32
     mem_load.NUM_PAYBACK_ATTACHMENTS_PTR
     # => [num_attachments, note_idx]
 

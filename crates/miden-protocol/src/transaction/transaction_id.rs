@@ -5,13 +5,6 @@ use miden_crypto_derive::WordWrapper;
 use super::{Hasher, ProvenTransaction, Word};
 use crate::Felt;
 use crate::transaction::TransactionCodePatchCommitment;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // TRANSACTION ID
 // ================================================================================================
@@ -81,21 +74,5 @@ impl From<&ProvenTransaction> for TransactionId {
             tx.log_details().commitment(),
             tx.code_patch().commitment(),
         )
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for TransactionId {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write_bytes(&self.0.to_bytes());
-    }
-}
-
-impl Deserializable for TransactionId {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let id = Word::read_from(source)?;
-        Ok(Self(id))
     }
 }

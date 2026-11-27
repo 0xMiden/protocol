@@ -777,6 +777,36 @@
       }
     }
   },
+  "consume ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG note (network account)": {
+    "provenance": "producer_measured",
+    "prologue": 6184,
+    "total_cycles": 30719,
+    "notes_processing": 3084,
+    "note_execution": [
+      {
+        "note": "ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG",
+        "cycles": 3042
+      }
+    ],
+    "tx_script_processing": 41,
+    "epilogue": {
+      "total": 21410,
+      "auth_procedure": 12326
+    },
+    "trace": {
+      "core_rows": 30765,
+      "chiplets_rows": 6710,
+      "eidos_compression_rows": 59968,
+      "byte_pair_lookup_rows": 65536,
+      "chiplets_shape": {
+        "hasher_rows": 4640,
+        "bitwise_rows": 109,
+        "memory_rows": 1959,
+        "kernel_rom_rows": 1,
+        "ace_rows": 0
+      }
+    }
+  },
   "consume ALLOWLIST_CONFIG note (network account)": {
     "provenance": "producer_measured",
     "prologue": 6113,
