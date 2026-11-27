@@ -5,6 +5,7 @@ members = [
   "access/pausable",
   "access/pausable_manager",
   "access/rbac",
+  "attachments/encrypted_assets",
   "auth/guarded_multisig",
   "auth/hot_cold_guardian",
   "auth/multisig",
@@ -26,6 +27,9 @@ members = [
   "faucets/policies/transfer/basic_allowlist",
   "faucets/policies/transfer/basic_blocklist",
   "faucets/policies/transfer/blocklist/manager",
+  "faucets/policies/transfer/encrypted_assets",
+  "faucets/policies/transfer/supply_restriction/manager",
+  "faucets/policies/transfer/supply_restriction_policy",
   "fees/policies/basic_constant_fee",
   "fees/policies/constant_fee_manager",
   "inspection/code_inspection",
@@ -40,6 +44,6 @@ members = [
 version = "1.0.0-rc.1"
 
 [workspace.dependencies]
-miden-core      = { linkage = "dynamic", version = "1.0.0-rc.0" }
+miden-core      = { linkage = "dynamic", version = "1.0.0-rc.1" }
 miden-protocol  = { linkage = "dynamic", version = "1.0.0-rc.1" }
 miden-standards = { linkage = "dynamic", version = "1.0.0-rc.1" }

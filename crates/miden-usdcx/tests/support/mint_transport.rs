@@ -32,6 +32,7 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::transaction::ExecutedTransaction;
+use miden_protocol::utils::FeltSliceExt;
 use miden_protocol::{Felt, Word};
 use miden_standards::interop::eth::EthEmbeddedAccountId;
 use miden_standards::note::{
@@ -280,15 +281,6 @@ fn transport_felts(
     felts
 }
 
-fn words_of(felts: &[Felt]) -> Vec<Word> {
-    felts
-        .as_chunks::<{ Word::NUM_ELEMENTS }>()
-        .0
-        .iter()
-        .map(|c| Word::from(*c))
-        .collect()
-}
-
 /// The merged transport attachment under `plan` (word truncation / padding applied last, so the
 /// committed word count is exactly what the negatives intend).
 fn transport_attachment(
@@ -296,7 +288,9 @@ fn transport_attachment(
     key_source: &AttesterVector,
     plan: &AttachmentPlan,
 ) -> Result<NoteAttachment> {
-    let mut words = words_of(&transport_felts(payload, key_source, plan));
+    let mut words = transport_felts(payload, key_source, plan)
+        .to_words()
+        .context("the transport sections should be padded to whole words")?;
     if let Some(truncate) = plan.transport_truncate_words {
         words.truncate(truncate);
     }
@@ -331,10 +325,10 @@ pub fn tampered_mint_note(
         .map_err(|e| anyhow::anyhow!("storage asset: {e}"))?;
     let tag = storage.tag.unwrap_or_else(|| NoteTag::with_account_target(storage.recipient));
     let mint_storage = if storage.public {
-        MintNoteStorage::new_public(recipient_recipe, asset, tag)
+        MintNoteStorage::new_public_output(recipient_recipe, asset, tag)
             .map_err(|e| anyhow::anyhow!("public mint storage: {e}"))?
     } else {
-        MintNoteStorage::new_private(recipient_recipe.digest(), asset, tag)
+        MintNoteStorage::new_private_output(recipient_recipe.digest(), asset, tag)
     };
     let mut attachments: Vec<NoteAttachment> = Vec::new();
     if plan.transport {

@@ -24,6 +24,7 @@ use miden_protocol::account::{
     RoleSymbol,
 };
 use miden_protocol::asset::AssetAmount;
+use miden_protocol::crypto::ecdh::ecgfp5::SecretKey;
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::RawOutputNote;
@@ -37,12 +38,14 @@ use miden_standards::account::policies::{
     BlocklistManager,
     BurnPolicy,
     MintPolicy,
+    ReceivePolicy,
+    SendPolicy,
+    SupplyRestrictionManager,
+    SupplyRestrictionPolicy,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::account::upgrade::UpgradeManager;
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::UpgradeNote;
 use miden_standards::note::config::{
     AllowlistConfig,
     AllowlistConfigNote,
@@ -51,6 +54,7 @@ use miden_standards::note::config::{
     BlocklistConfig,
     BlocklistConfigNote,
     ConstantFeePolicyConfigNote,
+    EncryptedAssetsIssuerKeyConfigNote,
     FaucetMetadataConfig,
     FaucetMetadataConfigNote,
     FaucetPolicyConfig,
@@ -64,7 +68,10 @@ use miden_standards::note::config::{
     PauseConfigNote,
     RbacConfig,
     RbacConfigNote,
+    SupplyRestrictionConfig,
+    SupplyRestrictionConfigNote,
 };
+use miden_standards::note::{EncryptedAssetsIssuerKey, UpgradeNote};
 use miden_testing::{AccountState, Auth, MockTransaction};
 use rand::Rng;
 
@@ -96,8 +103,8 @@ pub fn tx_consume_faucet_policy_config_note_network() -> Result<MockTransaction>
         .allowed_mint_policy(MintPolicy::owner_only())
         .active_burn_policy(BurnPolicy::allow_all())
         .allowed_burn_policy(BurnPolicy::owner_only())
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
     let account_builder = AccountBuilder::new([43; 32])
@@ -215,8 +222,8 @@ pub fn tx_consume_min_burn_amount_config_note_network() -> Result<MockTransactio
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::min_burn_amount(AssetAmount::new(100)?))
-        .active_send_policy(TransferPolicy::allow_all())
-        .active_receive_policy(TransferPolicy::allow_all())
+        .active_send_policy(SendPolicy::allow_all())
+        .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
     let account_builder = AccountBuilder::new([43; 32])
@@ -236,6 +243,70 @@ pub fn tx_consume_min_burn_amount_config_note_network() -> Result<MockTransactio
         .sender(owner.id())
         .target(account.id())
         .min_burn_amount(AssetAmount::new(500)?)
+        .generate_serial_number(builder.rng_mut())
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()
+}
+
+// ENCRYPTED ASSETS ISSUER KEY CONFIG NOTE SETUP
+// ================================================================================================
+
+/// Returns the transaction context for a network faucet consuming an
+/// ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG note.
+///
+/// The faucet carries a `TokenPolicyManager` whose active send policy is the encrypted assets
+/// policy, which installs the issuer key gated by the owner wallet via `Authority::OwnerControlled`
+/// (mirrors the owned faucet fixture of the `encrypted_assets_policy` test suite). The benchmarked
+/// action rotates the issuer key.
+pub fn tx_consume_encrypted_assets_issuer_key_config_note_network() -> Result<MockTransaction> {
+    let mut builder = super::chain_builder(true);
+
+    // the owner wallet authorized to send issuer key config notes
+    let owner = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("ENC")?)
+        .symbol("ENC".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+
+    let initial_issuer_key =
+        EncryptedAssetsIssuerKey::new(SecretKey::from_bytes(&[7; 40])?.public_key());
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::allow_all())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(SendPolicy::with_encrypted_assets(initial_issuer_key))
+        .active_receive_policy(ReceivePolicy::allow_all())
+        .build();
+
+    let account_builder = AccountBuilder::new([43; 32])
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Ownable2Step::new(owner.id()))
+        .with_component(Authority::OwnerControlled)
+        .with_components(token_policy_manager)
+        .with_assets([super::fee_funding_asset()?]);
+    let account = builder.add_account_from_builder(
+        super::network_auth([EncryptedAssetsIssuerKeyConfigNote::script_root()])?,
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    let new_issuer_key =
+        EncryptedAssetsIssuerKey::new(SecretKey::from_bytes(&[8; 40])?.public_key());
+    let note: Note = EncryptedAssetsIssuerKeyConfigNote::builder()
+        .sender(owner.id())
+        .target(account.id())
+        .issuer_key(new_issuer_key)
         .generate_serial_number(builder.rng_mut())
         .build()?
         .into();
@@ -279,11 +350,19 @@ enum ListKind {
 }
 
 impl ListKind {
-    /// The list's empty basic transfer policy.
-    fn transfer_policy(self) -> TransferPolicy {
+    /// The list's empty basic send policy.
+    fn send_policy(self) -> SendPolicy {
         match self {
-            ListKind::Allowlist => TransferPolicy::empty_basic_allowlist(),
-            ListKind::Blocklist => TransferPolicy::empty_basic_blocklist(),
+            ListKind::Allowlist => SendPolicy::empty_basic_allowlist(),
+            ListKind::Blocklist => SendPolicy::empty_basic_blocklist(),
+        }
+    }
+
+    /// The list's empty basic receive policy.
+    fn receive_policy(self) -> ReceivePolicy {
+        match self {
+            ListKind::Allowlist => ReceivePolicy::empty_basic_allowlist(),
+            ListKind::Blocklist => ReceivePolicy::empty_basic_blocklist(),
         }
     }
 
@@ -355,8 +434,8 @@ fn tx_consume_list_config_note_network(list: ListKind) -> Result<MockTransaction
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::allow_all())
-        .active_send_policy(list.transfer_policy())
-        .active_receive_policy(list.transfer_policy())
+        .active_send_policy(list.send_policy())
+        .active_receive_policy(list.receive_policy())
         .build();
 
     let account_builder = AccountBuilder::new([43; 32])
@@ -376,6 +455,68 @@ fn tx_consume_list_config_note_network(list: ListKind) -> Result<MockTransaction
     // the account added to the initially empty list by the benchmarked action
     let listed = AccountIdBuilder::new().build_with_seed([3; 32]);
     let note = list.build_note(owner.id(), account.id(), listed, builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(note.id())
+        .build()
+}
+
+// SUPPLY RESTRICTION CONFIG NOTE SETUP
+// ================================================================================================
+
+/// Returns the transaction context for a network faucet consuming a SUPPLY_RESTRICTION_CONFIG
+/// note.
+///
+/// The faucet carries the `SupplyRestrictionPolicy` component, which installs the restricted
+/// amounts map, and the `SupplyRestrictionManager` component gated by the owner wallet via
+/// `Authority::OwnerControlled` (mirrors the account fixture of the `supply_restriction` test
+/// suite). The benchmarked action is `Confiscate`, the most expensive selector: on top of the
+/// restricted amounts map write that `Freeze` and `Unfreeze` also do, it decreases the token
+/// supply.
+pub fn tx_consume_supply_restriction_config_note_network() -> Result<MockTransaction> {
+    let mut builder = super::chain_builder(true);
+
+    // the owner wallet authorized to send supply restriction config notes
+    let owner = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .token_supply(AssetAmount::new(1_000)?)
+        .build()?;
+
+    let account_builder = AccountBuilder::new([43; 32])
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Ownable2Step::new(owner.id()))
+        .with_component(Authority::OwnerControlled)
+        .with_component(SupplyRestrictionPolicy::default())
+        .with_component(SupplyRestrictionManager)
+        .with_assets([super::fee_funding_asset()?]);
+    let account = builder.add_account_from_builder(
+        super::network_auth([SupplyRestrictionConfigNote::script_root()])?,
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    // the holder account whose balance is confiscated by the benchmarked action
+    let holder = AccountIdBuilder::new().build_with_seed([3; 32]);
+    let note: Note = SupplyRestrictionConfigNote::builder()
+        .sender(owner.id())
+        .target(account.id())
+        .config(SupplyRestrictionConfig::Confiscate {
+            account: holder,
+            amount: AssetAmount::new(100)?,
+        })
+        .generate_serial_number(builder.rng_mut())
+        .build()?
+        .into();
     builder.add_output_note(RawOutputNote::Full(note.clone()));
 
     let mock_chain = builder.build()?;

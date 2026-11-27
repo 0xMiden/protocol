@@ -3,6 +3,7 @@ pub mod authority_config
 pub mod blocklist_config
 pub mod burn
 pub mod constant_fee_policy_config
+pub mod encrypted_assets_issuer_key_config
 pub mod faucet_metadata_config
 pub mod faucet_policy_config
 pub mod fee_sponsorship
@@ -15,6 +16,7 @@ pub mod p2ide
 pub mod pause_config
 pub mod pswap
 pub mod rbac_config
+pub mod supply_restriction_config
 pub mod swap
 pub mod tx_fee
 pub mod upgrade

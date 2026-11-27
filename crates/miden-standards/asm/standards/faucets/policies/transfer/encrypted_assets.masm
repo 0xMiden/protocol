@@ -1,0 +1,89 @@
+# miden::standards::faucets::policies::transfer::encrypted_assets
+#
+# Encrypted assets send policy: returns the encrypted asset attachment of each private output note
+# holding the issuing faucet's assets that an account other than the faucet creates, built by
+# `miden::standards::attachments::encrypted_assets`, and rejects such a private note if it holds
+# more than one asset.
+
+use {NoteAttachmentCount, NoteAttachmentListCommitment, OutputNoteIndex} from miden::protocol::types
+use {ENCRYPTED_ASSETS_ATTACHMENT_SCHEME} from miden::standards::attachments::encrypted_assets
+use miden::protocol::account_id
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::output_note
+use miden::standards::attachments::encrypted_assets
+
+# ERRORS
+# ================================================================================================
+
+const ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS = "private note with an encrypted asset attachment cannot hold more than one asset"
+
+# POLICY PROCEDURES
+# ================================================================================================
+
+#! Send policy that returns the encrypted asset attachment of the output note.
+#!
+#! Returns no attachment for a note the issuing faucet creates itself, e.g. a note it mints, or for
+#! a public note. For a private note of another account, encrypts the note's details to the issuer
+#! key in the issuing faucet's storage (see `encrypted_assets::new`) and limits the transaction's
+#! expiration to [`expiration::DEFAULT_EXPIRATION_BLOCK_DELTA`] blocks after the reference block.
+#! Such a note may hold only one asset, since the attachment holds all of the note's assets and
+#! would show the assets of other faucets to the issuer.
+#!
+#! The notes the faucet mints get no attachment, so the policy should only be used on a faucet whose
+#! mint policy lets only the issuer mint, e.g. the owner-only mint policy.
+#!
+#! A send policy that combines other checks with the attachment executes its checks and then
+#! `exec`s this procedure with its own inputs, i.e. with the stack exactly `[note_idx, pad(15)]`.
+#!
+#! Inputs:  [note_idx, pad(15)]
+#! Outputs: [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
+#!
+#! Where:
+#! - note_idx is the index of the output note being sealed.
+#! - num_attachments is 1 for a private note of another account, whose attachment list holds the
+#!   encrypted asset attachment, and 0 otherwise.
+#! - ATTACHMENT_LIST_COMMITMENT is the commitment to the attachment list for a private note of
+#!   another account and the empty word otherwise.
+#!
+#! Panics if:
+#! - the note is a private note of another account and:
+#!   - its attachment cannot be built, e.g. because the advice map has no preimage for its
+#!     recipient or the issuing faucet has no issuer key.
+#!   - it holds more than one asset.
+#!
+#! Invocation: call
+@account_procedure
+pub proc check_send_policy(note_idx: OutputNoteIndex) -> (NoteAttachmentCount, NoteAttachmentListCommitment)
+    # the issuing faucet is the active account while the callback runs
+    exec.native_account::get_id exec.active_account::get_id exec.account_id::eq
+    # => [is_issuer, note_idx, pad(15)]
+
+    # a note the issuing faucet creates itself gets no attachment
+    if.true
+        push.0 swap drop
+        # => [num_attachments, EMPTY_WORD, pad(11)]
+    else
+        dup exec.encrypted_assets::new
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, pad(15)]
+
+        # only a private note gets the attachment
+        dup eq.ENCRYPTED_ASSETS_ATTACHMENT_SCHEME
+        # => [has_attachment, attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, pad(15)]
+
+        if.true
+            dup.5 exec.output_note::get_assets_info dropw
+            # => [num_assets, attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, pad(15)]
+
+            u32lte.1 assert.err=ERR_ENCRYPTED_ASSETS_NOTE_HAS_MULTIPLE_ASSETS
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, pad(15)]
+        end
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, pad(15)]
+
+        exec.output_note::single_attachment_list
+        # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, note_idx, pad(15)]
+
+        movup.5 drop movupw.3 dropw
+        # => [num_attachments, ATTACHMENT_LIST_COMMITMENT, pad(11)]
+    end
+end

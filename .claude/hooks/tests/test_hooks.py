@@ -9,6 +9,8 @@ so a regression points directly at the responsible script.
 from __future__ import annotations
 
 import importlib
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -17,13 +19,14 @@ from _classify import matches
 
 
 HOOK_NAMES = [
-    "pre_commit_lint",
     "post_commit_review",
     "pre_pr_draft",
     "pre_pr_review",
-    "pre_push_test",
+    "pre_push_lint_test",
     "post_pr_create_changelog",
 ]
+
+SETTINGS = Path(__file__).resolve().parents[2] / "settings.json"
 
 
 # Per-hook routing cases. The format is `(hook_module, command, should_fire)`.
@@ -38,28 +41,33 @@ HOOK_NAMES = [
 # changes one hook's TARGET without the other, that test fails and the
 # missing per-hook coverage is restored.
 HOOK_CASES: list[tuple[str, str, bool]] = [
-    # pre_push_test — every must-run / must-not-run case for `git push`.
-    ("pre_push_test", "git push", True),
-    ("pre_push_test", "git push origin main", True),
-    ("pre_push_test", "git -C . push", True),
-    ("pre_push_test", "git -c user.name=foo push", True),
-    ("pre_push_test", "git -c user.name=foo -C . push origin main", True),
-    ("pre_push_test", "cd repo && git push", True),
-    ("pre_push_test", "FOO=bar git push", True),
-    ("pre_push_test", "echo git push", False),
-    ("pre_push_test", 'echo "git push"', False),
-    ("pre_push_test", "git status", False),
-    ("pre_push_test", "git --version", False),
-    ("pre_push_test", "git push-graph", False),
-    # pre_commit_lint — `git commit`.
-    # Routing for post_commit_review (same TARGET) is covered transitively.
-    ("pre_commit_lint", "git commit -m hello", True),
-    ("pre_commit_lint", 'git -c commit.gpgsign=false commit -m "x"', True),
-    ("pre_commit_lint", "git -c user.name=foo commit", True),
-    ("pre_commit_lint", "git commit --amend --no-edit", True),
-    ("pre_commit_lint", "echo git commit", False),
-    ("pre_commit_lint", "git status", False),
-    ("pre_commit_lint", "git push", False),
+    # pre_push_lint_test — every must-run / must-not-run case for `git push`.
+    ("pre_push_lint_test", "git push", True),
+    ("pre_push_lint_test", "git push origin main", True),
+    ("pre_push_lint_test", "git -C . push", True),
+    ("pre_push_lint_test", "git -c user.name=foo push", True),
+    ("pre_push_lint_test", "git -c user.name=foo -C . push origin main", True),
+    ("pre_push_lint_test", "cd repo && git push", True),
+    ("pre_push_lint_test", "FOO=bar git push", True),
+    ("pre_push_lint_test", "cd repo && (git push origin a b > log 2>&1; echo $?)", True),
+    ("pre_push_lint_test", "{ git push; }", True),
+    ("pre_push_lint_test", "echo git push", False),
+    ("pre_push_lint_test", 'echo "git push"', False),
+    ("pre_push_lint_test", 'echo "(git push)"', False),
+    ("pre_push_lint_test", "git status", False),
+    ("pre_push_lint_test", "git --version", False),
+    ("pre_push_lint_test", "git push-graph", False),
+    # Lint runs once per push, not before every commit.
+    ("pre_push_lint_test", "git commit -m hello", False),
+    # post_commit_review — `git commit`.
+    ("post_commit_review", "git commit -m hello", True),
+    ("post_commit_review", 'git -c commit.gpgsign=false commit -m "x"', True),
+    ("post_commit_review", "git -c user.name=foo commit", True),
+    ("post_commit_review", "git commit --amend --no-edit", True),
+    ("post_commit_review", "(cd wt && git commit -m x)", True),
+    ("post_commit_review", "echo git commit", False),
+    ("post_commit_review", "git status", False),
+    ("post_commit_review", "git push", False),
     # pre_pr_draft — `gh pr create`.
     # Routing for post_pr_create_changelog and pre_pr_review (same TARGET) is
     # covered transitively.
@@ -67,6 +75,7 @@ HOOK_CASES: list[tuple[str, str, bool]] = [
     ("pre_pr_draft", "gh --repo 0xMiden/miden-base pr create", True),
     ("pre_pr_draft", "gh -R 0xMiden/miden-base pr create --draft", True),
     ("pre_pr_draft", "gh --hostname=github.com pr create", True),
+    ("pre_pr_draft", "(gh pr create --draft)", True),
     ("pre_pr_draft", "echo gh pr create", False),
     ("pre_pr_draft", 'echo "gh pr create"', False),
     ("pre_pr_draft", "gh pr list", False),
@@ -78,7 +87,6 @@ HOOK_CASES: list[tuple[str, str, bool]] = [
 # hook in each pair is the one whose routing cases appear in HOOK_CASES;
 # the second's coverage rides on the assertion that the targets match.
 PAIRED_TARGETS: list[tuple[str, str]] = [
-    ("pre_commit_lint", "post_commit_review"),
     ("pre_pr_draft", "post_pr_create_changelog"),
     ("pre_pr_draft", "pre_pr_review"),
 ]
@@ -144,6 +152,31 @@ def test_paired_hooks_share_target(
         f"Either re-align or remove the entry from PAIRED_TARGETS and add "
         f"explicit per-hook routing cases for both."
     )
+
+
+def _settings_hooks(event: str) -> list[str]:
+    """Module names of the hook scripts settings.json runs on `event`."""
+    settings = json.loads(SETTINGS.read_text())
+    return [
+        Path(hook["command"]).stem
+        for group in settings["hooks"][event]
+        for hook in group["hooks"]
+    ]
+
+
+def test_settings_wire_exactly_the_tested_hooks(hooks: dict[str, object]) -> None:
+    """settings.json runs exactly the hooks in HOOK_NAMES (which the `hooks`
+    fixture imports), so a removed or renamed hook script cannot stay wired."""
+    wired = _settings_hooks("PreToolUse") + _settings_hooks("PostToolUse")
+    assert sorted(wired) == sorted(hooks)
+
+
+def test_no_pre_tool_use_hook_fires_on_git_commit(hooks: dict[str, object]) -> None:
+    """`make lint` takes minutes, so it runs once before a push rather than
+    before every commit: no hook that runs before a Bash call fires on
+    `git commit`."""
+    for name in _settings_hooks("PreToolUse"):
+        assert not matches("git commit -m x", *hooks[name].TARGET), name  # type: ignore[attr-defined]
 
 
 # _review.run_review's severity parser is the single source of truth for what
@@ -440,3 +473,69 @@ def test_pre_pr_diff_base_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(pre_pr_review.subprocess, "run", fake_run)
     assert pre_pr_review._diff_base(None) == "origin/next"
+
+
+# pre_pr_review resolves the review base and head from the `gh pr create` args, so a PR
+# stacked on another PR (`--base`) or opened for another worktree's branch (`--head`) is
+# reviewed against the right range and in the right checkout.
+_WORKTREES = (
+    "worktree /repo\nHEAD abc\nbranch refs/heads/feature\n\n"
+    "worktree /repo-wt\nHEAD def\nbranch refs/heads/stacked\n"
+)
+
+
+def _fake_git(*, local_branch: bool = False):
+    def fake_run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
+        if "symbolic-ref" in cmd:
+            return _fake_proc(stdout="origin/next\n")
+        if "worktree" in cmd:
+            return _fake_proc(stdout=_WORKTREES)
+        if "rev-parse" in cmd:
+            return _fake_proc(returncode=0 if local_branch else 1)
+        raise AssertionError(f"unexpected command {cmd}")
+
+    return fake_run
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        ([], None),
+        (["--base", "feat"], "feat"),
+        (["-B", "feat"], "feat"),
+        (["--base=feat"], "feat"),
+        (["--title", "t", "--draft", "--base", "feat"], "feat"),
+        (["--base"], None),
+    ],
+)
+def test_pre_pr_flag_value(args: list[str], expected: str | None) -> None:
+    import pre_pr_review
+
+    assert pre_pr_review.flag_value(args, "--base", "-B") == expected
+
+
+@pytest.mark.parametrize(
+    ("args", "local_branch", "expected"),
+    [
+        # No flags: the default branch, the session checkout.
+        ([], False, ("origin/next", "HEAD", "/repo")),
+        # A stacked PR is reviewed against its base branch only.
+        (["--base", "feature"], False, ("origin/feature", "HEAD", "/repo")),
+        # A head checked out in a worktree is reviewed in that worktree.
+        (["--base", "feature", "--head", "stacked"], False, ("origin/feature", "HEAD", "/repo-wt")),
+        (["--head", "owner:stacked"], False, ("origin/next", "HEAD", "/repo-wt")),
+        # A head without a worktree is reviewed by ref.
+        (["--head", "other"], True, ("origin/next", "other", "/repo")),
+        (["--head", "other"], False, ("origin/next", "origin/other", "/repo")),
+    ],
+)
+def test_pre_pr_resolve_target(
+    monkeypatch: pytest.MonkeyPatch,
+    args: list[str],
+    local_branch: bool,
+    expected: tuple[str, str, str],
+) -> None:
+    import pre_pr_review
+
+    monkeypatch.setattr(pre_pr_review.subprocess, "run", _fake_git(local_branch=local_branch))
+    assert pre_pr_review.resolve_target(args, "/repo") == expected

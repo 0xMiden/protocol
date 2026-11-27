@@ -1,8 +1,13 @@
-use {AccountId, Asset, AssetAmount, AssetId, AssetValue} from miden::protocol::types
+use {AccountId, Asset, AssetAmount, AssetId, AssetValue, InputNoteIndex, OutputNoteIndex}
+    from miden::protocol::types
+use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::asset
+use miden::protocol::input_note
 use miden::protocol::native_account
-use {COMPOSITION_FUNGIBLE} from miden::protocol::asset
+use miden::protocol::output_note
+use miden::protocol::tx
+use {ASSET_SIZE, ASSET_VALUE_MEMORY_OFFSET, COMPOSITION_FUNGIBLE} from miden::protocol::asset
 pub use {FUNGIBLE_ASSET_MAX_AMOUNT as MAX_AMOUNT} from miden::protocol::asset
 
 # RE-EXPORTS
@@ -28,6 +33,11 @@ const ERR_FUNGIBLE_ASSET_ID_ASSET_CLASS_MUST_BE_ZERO = "fungible asset ID asset 
 
 #! Encodes the asset metadata with composition fungible and asset version 1.
 const ASSET_METADATA_FUNGIBLE = 0x11
+
+# LOCAL ADDRESSES (get_output_note_amount, get_input_note_amount)
+# ================================================================================================
+
+const NOTE_ASSETS_LOC = 0
 
 # PROCEDURES
 # ================================================================================================
@@ -115,7 +125,7 @@ end
 #! Panics if:
 #! - the asset composition encoded in ASSET_ID is not fungible.
 #! - the invocation of this procedure does not originate from the account context.
-#! - the current active account is not the native account of the transaction.
+#! - the active account is not the native account and it is not the issuer of the asset.
 #!
 #! Invocation: exec
 pub proc get_initial_native_account_balance(asset_id: AssetId) -> AssetAmount
@@ -160,6 +170,160 @@ pub proc get_active_account_balance(asset_id: AssetId) -> AssetAmount
     # extract the asset's balance
     exec.value_into_amount_unchecked
     # => [balance]
+end
+
+#! Returns the amount of the fungible asset held by all output notes created so far.
+#!
+#! The amount can only exceed the maximum fungible asset amount, and thus wrap around the field
+#! modulus, in a transaction whose output notes exceed that maximum in total. The kernel rejects
+#! such a transaction when it checks that assets are preserved.
+#!
+#! WARNING: Assumes that the composition of the asset ID is fungible and does NOT validate it. The
+#! caller must ensure this.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [sent]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the fungible asset of interest.
+#! - sent is the amount of the fungible asset held by all output notes created so far.
+#!
+#! Invocation: exec
+pub proc get_sent_amount(asset_id: AssetId) -> AssetAmount
+    push.0 movdn.4
+    # => [ASSET_ID, sent]
+
+    exec.tx::get_num_output_notes
+    # => [num_notes_left, ASSET_ID, sent]
+
+    dup neq.0
+    # => [should_loop, num_notes_left, ASSET_ID, sent]
+
+    while.true
+        sub.1
+        # => [note_idx, ASSET_ID, sent]
+
+        dup repeat.4 dup.5 end
+        # => [ASSET_ID, note_idx, note_idx, ASSET_ID, sent]
+
+        exec.get_output_note_amount
+        # => [note_amount, note_idx, ASSET_ID, sent]
+
+        movup.6 add movdn.5
+        # => [note_idx, ASSET_ID, sent]
+
+        # the note index is the number of notes left
+        dup neq.0
+        # => [should_loop, num_notes_left, ASSET_ID, sent]
+    end
+    # => [0, ASSET_ID, sent]
+
+    drop dropw
+    # => [sent]
+end
+
+#! Returns the amount of the fungible asset held by all input notes of the transaction.
+#!
+#! The amount covers the assets the notes were created with, so it does not change when assets are
+#! removed from the notes during transaction execution. Together with the initial balance of the
+#! native account it is at most the maximum fungible asset amount.
+#!
+#! WARNING: Assumes that the composition of the asset ID is fungible and does NOT validate it. The
+#! caller must ensure this.
+#!
+#! Inputs:  [ASSET_ID]
+#! Outputs: [received]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the fungible asset of interest.
+#! - received is the amount of the fungible asset held by all input notes.
+#!
+#! Invocation: exec
+pub proc get_received_amount(asset_id: AssetId) -> AssetAmount
+    push.0 movdn.4
+    # => [ASSET_ID, received]
+
+    exec.tx::get_num_input_notes
+    # => [num_notes_left, ASSET_ID, received]
+
+    dup neq.0
+    # => [should_loop, num_notes_left, ASSET_ID, received]
+
+    while.true
+        sub.1
+        # => [note_idx, ASSET_ID, received]
+
+        dup repeat.4 dup.5 end
+        # => [ASSET_ID, note_idx, note_idx, ASSET_ID, received]
+
+        exec.get_input_note_amount
+        # => [note_amount, note_idx, ASSET_ID, received]
+
+        movup.6 add movdn.5
+        # => [note_idx, ASSET_ID, received]
+
+        # the note index is the number of notes left
+        dup neq.0
+        # => [should_loop, num_notes_left, ASSET_ID, received]
+    end
+    # => [0, ASSET_ID, received]
+
+    drop dropw
+    # => [received]
+end
+
+#! Returns the amount of the fungible asset held by the output note with the provided index.
+#!
+#! WARNING: Assumes that the composition of the asset ID is fungible and does NOT validate it. The
+#! caller must ensure this.
+#!
+#! Inputs:  [ASSET_ID, note_idx]
+#! Outputs: [note_amount]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the fungible asset of interest.
+#! - note_idx is the index of the output note.
+#! - note_amount is the amount of the fungible asset held by the output note.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of output notes.
+#!
+#! Invocation: exec
+@locals(128)
+pub proc get_output_note_amount(asset_id: AssetId, note_idx: OutputNoteIndex) -> AssetAmount
+    # write the assets to local memory, which fits ASSET_SIZE * MAX_ASSETS_PER_NOTE elements
+    movup.4 locaddr.NOTE_ASSETS_LOC exec.output_note::get_assets
+    # => [num_assets, ASSET_ID]
+
+    locaddr.NOTE_ASSETS_LOC exec.sum_asset_amounts
+    # => [note_amount]
+end
+
+#! Returns the amount of the fungible asset the input note with the provided index was created with.
+#!
+#! WARNING: Assumes that the composition of the asset ID is fungible and does NOT validate it. The
+#! caller must ensure this.
+#!
+#! Inputs:  [ASSET_ID, note_idx]
+#! Outputs: [note_amount]
+#!
+#! Where:
+#! - ASSET_ID is the asset ID of the fungible asset of interest.
+#! - note_idx is the index of the input note.
+#! - note_amount is the amount of the fungible asset the input note was created with.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#!
+#! Invocation: exec
+@locals(128)
+pub proc get_input_note_amount(asset_id: AssetId, note_idx: InputNoteIndex) -> AssetAmount
+    # write the assets to local memory, which fits ASSET_SIZE * MAX_ASSETS_PER_NOTE elements
+    movup.4 locaddr.NOTE_ASSETS_LOC exec.input_note::get_initial_assets
+    # => [num_assets, ASSET_ID]
+
+    locaddr.NOTE_ASSETS_LOC exec.sum_asset_amounts
+    # => [note_amount]
 end
 
 #! Returns the balance of the given fungible asset.
@@ -270,4 +434,61 @@ pub proc validate(asset: Asset) -> Asset
     # assert the value word is well-formed, i.e. [amount, 0, 0, 0] with amount <= MAX_AMOUNT
     dupw.1 exec.value_into_amount drop
     # => [ASSET_ID, ASSET_VALUE]
+end
+
+# HELPER PROCEDURES
+# ================================================================================================
+
+#! Returns the sum of the amounts of the assets in memory that have the provided asset ID.
+#!
+#! Inputs:  [assets_ptr, num_assets, ASSET_ID]
+#! Outputs: [total_amount]
+#!
+#! Where:
+#! - assets_ptr is the memory address of the assets.
+#! - num_assets is the number of assets in memory.
+#! - ASSET_ID is the asset ID of the fungible asset of interest.
+#! - total_amount is the sum of the amounts of the matching assets.
+#!
+#! Invocation: exec
+proc sum_asset_amounts(assets_ptr: ptr<Asset>, num_assets: u8, asset_id: AssetId) -> AssetAmount
+    # compute the end pointer and initialize the amount
+    swap mul.ASSET_SIZE dup.1 add
+    # => [assets_end_ptr, asset_ptr, ASSET_ID]
+
+    push.0 movdn.2 swap
+    # => [asset_ptr, assets_end_ptr, total_amount, ASSET_ID]
+
+    dup.1 dup.1 neq
+    # => [should_loop, asset_ptr, assets_end_ptr, total_amount, ASSET_ID]
+
+    while.true
+        padw dup.4 mem_loadw_le
+        # => [CURRENT_ASSET_ID, asset_ptr, assets_end_ptr, total_amount, ASSET_ID]
+
+        repeat.4 dup.10 end exec.word::eq
+        # => [is_same_asset, asset_ptr, assets_end_ptr, total_amount, ASSET_ID]
+
+        if.true
+            padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
+            # => [CURRENT_ASSET_VALUE, asset_ptr, assets_end_ptr, total_amount, ASSET_ID]
+
+            exec.value_into_amount_unchecked
+            # => [asset_amount, asset_ptr, assets_end_ptr, total_amount, ASSET_ID]
+
+            movup.3 add movdn.2
+            # => [asset_ptr, assets_end_ptr, total_amount, ASSET_ID]
+        end
+        # => [asset_ptr, assets_end_ptr, total_amount, ASSET_ID]
+
+        add.ASSET_SIZE
+        # => [asset_ptr, assets_end_ptr, total_amount, ASSET_ID]
+
+        dup.1 dup.1 neq
+        # => [should_loop, asset_ptr, assets_end_ptr, total_amount, ASSET_ID]
+    end
+    # => [asset_ptr, assets_end_ptr, total_amount, ASSET_ID]
+
+    drop drop movdn.4 dropw
+    # => [total_amount]
 end

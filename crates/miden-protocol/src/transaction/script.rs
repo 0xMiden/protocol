@@ -184,25 +184,6 @@ mod entrypoint_tests {
 
 impl Eq for TransactionScript {}
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for TransactionScript {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.0.write_into(target);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.0.get_size_hint()
-    }
-}
-
-impl Deserializable for TransactionScript {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        Ok(Self(MastForestScript::read_from(source)?))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -272,19 +253,10 @@ mod tests {
 
         use crate::script::MastForestScriptError;
         use crate::testing::assembler::assemble_test_package;
-        use crate::utils::serde::{Deserializable, Serializable};
 
         let package = assemble_test_package("test-tx-script", "test::tx_script", TX_SCRIPT_SOURCE);
 
-        let script = TransactionScript::from_package(&package).unwrap();
-
-        // the script must round-trip through serialization unchanged
-        let bytes = script.to_bytes();
-        let mut hashless_mast = alloc::vec::Vec::new();
-        script.mast().write_hashless(&mut hashless_mast);
-        assert!(bytes.starts_with(&hashless_mast));
-        let decoded = TransactionScript::read_from_bytes(&bytes).unwrap();
-        assert_eq!(script, decoded);
+        TransactionScript::from_package(&package).unwrap();
 
         // a package without the attribute is rejected
         let no_attr = assemble_test_package(

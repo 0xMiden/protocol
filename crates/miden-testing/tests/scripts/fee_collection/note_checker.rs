@@ -3,13 +3,11 @@ use std::collections::BTreeSet;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{AccountComponent, AccountId};
+use miden_protocol::account::AccountId;
 use miden_protocol::asset::{AssetAmount, AssetId};
 use miden_protocol::note::{Note, NoteId};
 use miden_protocol::transaction::InputNote;
 use miden_standards::account::fees::FeePolicy;
-use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::{NoteConsumptionStatus, ReclaimError};
 use miden_testing::MockChain;
 use miden_tx::auth::UnreachableAuth;
@@ -24,6 +22,7 @@ use miden_tx::{
 use rstest::rstest;
 
 use super::{FEE_AMOUNT, Sponsorship, Test, fee_asset, fee_faucet_id, other_asset};
+use crate::scripts::policy_component;
 
 /// A custom fee policy charging `fee_amount` of the fee faucet's asset for every note.
 ///
@@ -57,12 +56,7 @@ fn flat_fee_policy(fee_amount: u64) -> anyhow::Result<FeePolicy> {
         fee_asset_id = AssetId::new_fungible(fee_faucet_id()?).to_word(),
     );
 
-    let code = CodeBuilder::default().compile_component_code(POLICY_NAME, &masm_source)?;
-    let root = code
-        .get_procedure_root_by_path(format!("{POLICY_NAME}::compute_note_fee").as_str())
-        .expect("flat fee policy should export compute_note_fee");
-    let component =
-        AccountComponent::new(code, vec![], AccountComponentMetadata::mock(POLICY_NAME))?;
+    let (root, component) = policy_component(POLICY_NAME, "compute_note_fee", vec![], masm_source)?;
 
     Ok(FeePolicy::custom(root, [component])?)
 }
@@ -781,6 +775,38 @@ async fn can_consume_reports_why_a_lone_feature_note_fee_cannot_be_collected(
             FeeError::FeeNotScheduled { feature_note_id } if *feature_note_id == feature_note.id()
         ),
     }
+
+    Ok(())
+}
+
+/// An account whose vault cannot pay the transaction fee is reported as such, rather than as a
+/// note failure: every bundle fails with [`NoteFailure::InsufficientFee`], and a single note is
+/// [`NoteConsumptionStatus::InsufficientFee`], so a client can keep the notes until the account
+/// holds the fee asset.
+#[tokio::test]
+async fn note_checker_reports_an_account_that_cannot_pay_the_transaction_fee() -> anyhow::Result<()>
+{
+    let Test {
+        mock_chain,
+        network_account,
+        feature_notes,
+        ..
+    } = Test::builder()
+        .feature_note_fee(AssetAmount::ZERO)
+        .num_feature_notes(2)
+        .verification_base_fee(500)
+        .build()?;
+
+    let info = check_notes(&mock_chain, network_account.id(), feature_notes.clone()).await?;
+
+    assert!(info.successful().is_empty(), "no note set can pay the transaction fee");
+    assert_eq!(info.failed().len(), feature_notes.len());
+    for failed in info.failed() {
+        assert_matches!(failed.failure(), NoteFailure::InsufficientFee { .. });
+    }
+
+    let status = can_consume(&mock_chain, network_account.id(), &feature_notes[0]).await?;
+    assert_matches!(status, NoteConsumptionStatus::InsufficientFee);
 
     Ok(())
 }

@@ -1,0 +1,94 @@
+use {NoteArgs} from miden::protocol::types
+use miden::protocol::active_note
+use miden::standards::attachments::encrypted_assets
+use miden::standards::note::note_target
+
+# CONSTANTS
+# =================================================================================================
+
+# Memory base at which the note storage is written by `active_note::get_bounded_storage`.
+const STORAGE_PTR = 0
+
+# Memory addresses of the new issuer public key in the EncryptedAssetsIssuerKeyConfig note
+# storage: its first four elements form a word, followed by its last element.
+const PUBLIC_KEY_HEAD_PTR = STORAGE_PTR
+const PUBLIC_KEY_TAIL_PTR = STORAGE_PTR + 4
+
+# Expected note storage item count: the elements of the new issuer public key.
+const NUM_STORAGE_ITEMS = 5
+
+# ERRORS
+# =================================================================================================
+
+const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "encrypted assets issuer key config note storage item count is not the expected count"
+
+const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG_NOTE_IS_NOT_PUBLIC = "encrypted assets issuer key config note must be public"
+
+# NOTE SCRIPT
+# =================================================================================================
+
+#! EncryptedAssetsIssuerKeyConfig script: rotates the issuer key of the consuming faucet by calling
+#! `encrypted_assets::set_issuer_key`.
+#!
+#! The new issuer public key is read from the note storage (fixed at note creation, so
+#! authorization is bound to the note sender):
+#! - `[public_key(5)]`.
+#!
+#! The note is bound to a specific target account by a `NetworkAccountTarget` attachment: this
+#! script asserts the consuming account matches that target before doing anything else, so the note
+#! cannot be consumed by any other account that happens to accept its sender.
+#!
+#! Authorization is enforced by the called `set_issuer_key` procedure via the account-wide
+#! `Authority` component; this script only forwards the stored key to it.
+#!
+#! Requires that the account exposes:
+#! - `miden::standards::attachments::encrypted_assets::set_issuer_key` (the
+#!   `EncryptedAssetsIssuerKey` component), backed by an `Authority` companion component.
+#!
+#! Consumers: target account (attachment)
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note is not public.
+#! - the consuming account is not the note's target account, or the target attachment is missing.
+#! - the number of storage items is not NUM_STORAGE_ITEMS.
+#! - the note sender is not authorized (per the `Authority` component).
+#! - the stored public key is zero (per `set_issuer_key`).
+@note_script
+pub proc main(args: NoteArgs)
+    # drop the note script args
+    dropw
+    # => [pad(16)]
+
+    exec.active_note::is_public
+    assert.err=ERR_ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG_NOTE_IS_NOT_PUBLIC
+    # => [pad(16)]
+
+    # bind consumption to the targeted account: reject if the consuming account is not the note's
+    # target account
+    exec.note_target::assert_active_account_is_network_target_account
+    # => [pad(16)]
+
+    # write the note storage to memory starting at STORAGE_PTR
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR exec.active_note::get_bounded_storage
+    # => [num_storage_items, pad(16)]
+
+    eq.NUM_STORAGE_ITEMS
+    assert.err=ERR_ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => [pad(16)]
+
+    # build the `set_issuer_key` input window [public_key(5), pad(11)]
+    padw padw push.0.0
+    mem_load.PUBLIC_KEY_TAIL_PTR
+    padw mem_loadw_le.PUBLIC_KEY_HEAD_PTR
+    # => [public_key(5), pad(11), pad(16)]
+
+    call.encrypted_assets::set_issuer_key
+    # => [pad(16), pad(16)]
+
+    # truncate the called procedure's output window, restoring the base stack
+    dropw dropw dropw dropw
+    # => [pad(16)]
+end

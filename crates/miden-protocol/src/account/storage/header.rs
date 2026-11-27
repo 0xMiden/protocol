@@ -1,6 +1,5 @@
 use alloc::collections::BTreeMap;
 use alloc::format;
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use super::map::EMPTY_STORAGE_MAP_ROOT;
@@ -9,13 +8,6 @@ use crate::DoubleWord;
 use crate::account::{StorageSlot, StorageSlotId, StorageSlotName};
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // ACCOUNT STORAGE HEADER
 // ================================================================================================
@@ -224,26 +216,6 @@ impl SequentialCommit for AccountStorageHeader {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for AccountStorageHeader {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let len = self.slots.len() as u8;
-        target.write_u8(len);
-        target.write_many(self.slots())
-    }
-}
-
-impl Deserializable for AccountStorageHeader {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let len = source.read_u8()?;
-        let slots: Vec<StorageSlotHeader> =
-            source.read_many_iter(len as usize)?.collect::<Result<_, _>>()?;
-        Self::new(slots).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 // STORAGE SLOT HEADER
 // ================================================================================================
 
@@ -319,26 +291,6 @@ impl From<&StorageSlot> for StorageSlotHeader {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for StorageSlotHeader {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.name.write_into(target);
-        self.r#type.write_into(target);
-        self.value.write_into(target);
-    }
-}
-
-impl Deserializable for StorageSlotHeader {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let name = StorageSlotName::read_from(source)?;
-        let slot_type = StorageSlotType::read_from(source)?;
-        let value = Word::read_from(source)?;
-        Ok(Self::new(name, slot_type, value))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -355,7 +307,6 @@ mod tests {
     use crate::account::{AccountStorage, StorageSlotHeader, StorageSlotName, StorageSlotType};
     use crate::errors::AccountError;
     use crate::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
-    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_from_account_storage() {
@@ -382,20 +333,6 @@ mod tests {
         let account_storage = AccountStorage::mock();
 
         assert_eq!(expected_header, AccountStorageHeader::from(&account_storage))
-    }
-
-    #[test]
-    fn test_serde_account_storage_header() {
-        // create new storage header
-        let storage = AccountStorage::mock();
-        let storage_header = AccountStorageHeader::from(&storage);
-
-        // serde storage header
-        let bytes = storage_header.to_bytes();
-        let deserialized = AccountStorageHeader::read_from_bytes(&bytes).unwrap();
-
-        // assert deserialized == storage header
-        assert_eq!(storage_header, deserialized);
     }
 
     #[test]

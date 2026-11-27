@@ -31,8 +31,8 @@ use miden_protocol::transaction::{
     ProvenTransaction,
     TransactionInputs,
 };
-use miden_tx::LocalTransactionProver;
 use miden_tx::auth::BasicAuthenticator;
+use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 use miden_tx_batch::LocalBatchProver;
 
 use super::note::MockChainNote;
@@ -410,23 +410,9 @@ impl MockChain {
         ValidatorConfig::from_signers(&self.validator_secret_keys)
     }
 
-    /// Signs `commitment` with every validator secret key, ordering the resulting signatures to
-    /// align positionally with [`Self::validator_config`].
+    /// Signs `commitment` with every validator secret key.
     fn sign_block(&self, commitment: Word) -> BlockSignatures {
-        let signatures = self
-            .validator_config()
-            .keys()
-            .iter()
-            .map(|key| {
-                let signer = self
-                    .validator_secret_keys
-                    .iter()
-                    .find(|sk| &sk.public_key() == key)
-                    .expect("a signer should exist for every validator key");
-                signer.sign(commitment)
-            })
-            .collect();
-        BlockSignatures::new(signatures).expect("signature count same as validator key count")
+        BlockSignatures::sign(&self.validator_secret_keys, commitment)
     }
 
     /// Returns the latest [`ProvenBlock`] in the chain.
@@ -628,6 +614,45 @@ impl MockChain {
         input: impl Into<MockTransactionInput>,
     ) -> MockTransactionBuilder<'_> {
         MockTransactionBuilder::new(self, input)
+    }
+
+    /// Executes a transaction of the account with the given ID consuming `notes` as
+    /// unauthenticated input notes.
+    ///
+    /// The transaction is not added to the chain. The outer result holds errors from building
+    /// the transaction, the inner result holds the outcome of its execution, so a test can assert
+    /// on an expected execution error.
+    pub async fn consume_notes(
+        &self,
+        account_id: AccountId,
+        notes: impl IntoIterator<Item = Note>,
+    ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
+        Ok(self
+            .build_transaction(account_id)
+            .unauthenticated_input_notes(notes)
+            .build()?
+            .execute()
+            .await)
+    }
+
+    /// Executes a transaction of the account with the given ID consuming `notes` as
+    /// authenticated input notes, then adds it to the chain and proves the next block.
+    ///
+    /// The notes must already be committed to the chain.
+    pub async fn consume_notes_and_commit(
+        &mut self,
+        account_id: AccountId,
+        notes: impl IntoIterator<Item = Note>,
+    ) -> anyhow::Result<ExecutedTransaction> {
+        let executed = self
+            .build_transaction(account_id)
+            .authenticated_input_notes(notes)
+            .build()?
+            .execute()
+            .await?;
+        self.add_pending_executed_transaction(&executed)?;
+        self.prove_next_block()?;
+        Ok(executed)
     }
 
     /// Resolves the account referenced by `input` into a concrete [`Account`].
@@ -1360,7 +1385,7 @@ mod tests {
     #[case::maximum(ValidatorConfig::MAX_VALIDATORS)]
     fn supplied_validator_signing_keys(#[case] key_count: usize) -> anyhow::Result<()> {
         let mut keys: Vec<SigningKey> = (0..key_count).map(|_| random_secret_key()).collect();
-        // Reverse canonical order to exercise positional signature ordering.
+        // Reverse canonical order to check the config does not depend on the input order.
         keys.sort_by_key(|key| core::cmp::Reverse(key.public_key().to_bytes()));
         let expected_config = ValidatorConfig::from_signers(&keys);
         let mut chain = MockChain::builder().validator_signing_keys(keys.clone()).build()?;

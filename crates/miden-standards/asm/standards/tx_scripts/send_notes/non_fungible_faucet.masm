@@ -65,7 +65,7 @@ end
 # =================================================================================================
 
 #! Creates the output notes described by the payload stored at `PAYLOAD_ADDR`, minting each
-#! note's single asset via the non-fungible faucet interface and adding its attachments.
+#! note's single asset via the non-fungible faucet interface, adding its attachments and sealing it.
 #!
 #! Inputs:
 #!   Operand stack: [pad(16)]
@@ -130,7 +130,7 @@ proc process_notes()
         dropw dropw dropw drop drop drop
         # => [notes_left, pad(16)]
 
-        # add the record's attachments to the note, landing on the next record
+        # add the record's attachments to the note and seal it, landing on the next record
         # -----------------------------------------------------------------------------------------
         loc_load.PROCESS_NOTES_READ_PTR_LOC add.NUM_ATTACHMENTS_OFFSET mem_load
         u32assert.err=ERR_SEND_NOTES_NUM_ATTACHMENTS_INVALID
@@ -142,7 +142,7 @@ proc process_notes()
         loc_load.PROCESS_NOTES_NOTE_IDX_LOC
         # => [note_idx, attachments_ptr, num_attachments, notes_left, pad(16)]
 
-        exec.common::add_attachments
+        exec.common::add_attachments_and_seal
         # => [end_ptr, notes_left, pad(16)]
 
         # the next note record starts right after the last item

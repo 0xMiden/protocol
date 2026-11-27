@@ -1,5 +1,5 @@
 use {SendNotesPayloadCommitment} from miden::standards::tx_scripts::send_notes
-use {NoteAttachmentCommitment} from miden::protocol::types
+use {NoteAttachmentCommitment, OutputNoteIndex} from miden::protocol::types
 # Shared payload handling for the canonical `send_notes` transaction scripts.
 #
 # This module is private to `send_notes`: it is the shared implementation behind the
@@ -142,10 +142,11 @@ pub proc write_payload_to_memory(
 end
 
 #! Adds the `num_attachments` attachments starting at `attachments_ptr` to the output note at
-#! `note_idx`, and returns the element right after the last attachment.
+#! `note_idx`, seals the note, and returns the element right after the last attachment.
 #!
 #! Every `send_notes` script shares this loop; the returned pointer is where the next note record
-#! begins, since attachments are the last items in a record.
+#! begins, since attachments are the last items in a record. Attachments are added after the
+#! assets, so the note is final and can be sealed.
 #!
 #! Inputs:
 #!   Operand stack: [note_idx, attachments_ptr, num_attachments]
@@ -165,8 +166,8 @@ end
 #! - an attachment's elements are missing from the advice map.
 #!
 #! Invocation: exec
-pub proc add_attachments(
-    note_idx: u32,
+pub proc add_attachments_and_seal(
+    note_idx: OutputNoteIndex,
     attachments_ptr: ptr<AttachmentRecord>,
     num_attachments: u32
 ) -> ptr<AttachmentRecord>
@@ -200,6 +201,6 @@ pub proc add_attachments(
     drop
     # => [read_ptr, note_idx]
 
-    swap drop
+    swap exec.output_note::seal
     # => [end_ptr]
 end

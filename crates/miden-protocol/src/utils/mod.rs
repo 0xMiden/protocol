@@ -1,13 +1,14 @@
 use alloc::vec;
+use alloc::vec::Vec;
 
 use miden_core::mast::MastNode;
 pub use miden_core::utils::*;
 pub use miden_crypto::utils::{HexParseError, bytes_to_hex_string, hex_to_bytes};
 pub use miden_utils_sync as sync;
 
-use crate::Word;
 use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastNodeId};
 use crate::vm::AdviceMap;
+use crate::{Felt, Word};
 
 pub mod serde {
     pub use miden_crypto::utils::{
@@ -24,6 +25,22 @@ pub mod serde {
 pub mod strings;
 
 pub(crate) use strings::ShortCapitalString;
+
+/// Extension methods for slices of [`Felt`]s.
+pub trait FeltSliceExt {
+    /// Returns the [`Word`]s formed by each consecutive [`Word::NUM_ELEMENTS`] elements, or `None`
+    /// if the number of elements is not a multiple of [`Word::NUM_ELEMENTS`].
+    fn to_words(&self) -> Option<Vec<Word>>;
+}
+
+impl FeltSliceExt for [Felt] {
+    fn to_words(&self) -> Option<Vec<Word>> {
+        let (words, []) = self.as_chunks::<{ Word::NUM_ELEMENTS }>() else {
+            return None;
+        };
+        Some(words.iter().copied().map(Word::new).collect())
+    }
+}
 
 /// Creates a minimal [MastForest] containing only an external node referencing the given digest.
 ///

@@ -23,7 +23,7 @@ Covered scenarios, with one variant per distinct execution path:
 
 - standards, consumed by a network basic wallet: P2ID (1 vs 16 assets); P2IDE (claim, claim with 16 assets, reclaim); SWAP (public vs private payback); PSWAP (full vs partial fill); FEE_SPONSORSHIP (consumed with its sponsored feature note; the sponsor-side reclaim path is benchmarked separately on a regular wallet, since a network account cannot consume a lone sponsorship note)
 - standards, consumed by a network faucet: MINT (fungible vs non-fungible faucet); BURN
-- standards, consumed by a network account with the matching management components: CONSTANT_FEE_POLICY_CONFIG, FAUCET_POLICY_CONFIG, FAUCET_METADATA_CONFIG, MIN_BURN_AMOUNT_CONFIG, ALLOWLIST_CONFIG, BLOCKLIST_CONFIG, PAUSE_CONFIG, OWNER_CONFIG, RBAC_CONFIG, AUTHORITY_CONFIG, NETWORK_ACCOUNT_CONFIG (one representative action selector each; other selectors run the identical dispatch path); UPGRADE (the new code is taken from the note attachment)
+- standards, consumed by a network account with the matching management components: CONSTANT_FEE_POLICY_CONFIG, FAUCET_POLICY_CONFIG, FAUCET_METADATA_CONFIG, MIN_BURN_AMOUNT_CONFIG, ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG, ALLOWLIST_CONFIG, BLOCKLIST_CONFIG, PAUSE_CONFIG, OWNER_CONFIG, RBAC_CONFIG, AUTHORITY_CONFIG, NETWORK_ACCOUNT_CONFIG (one representative action selector each; other selectors run the identical dispatch path); UPGRADE (the new code is taken from the note attachment)
 - agglayer, consumed by the bridge account (a network account): CLAIM (L1 vs L2 origin, with fee payment), B2AGG (empty vs `2^31 - 1`-leaf frontier, with fee payment), CONFIG_AGG_BRIDGE, DEREGISTER_AGG_FAUCET, UPDATE_GER, REMOVE_GER
 
 The original CLAIM/B2AGG scenarios (without fee payment) are kept unchanged for continuity; the `with fee payment` variants are the network-account pricing baseline.
@@ -44,8 +44,9 @@ Freshness is enforced in CI: the `checked_in_note_costs_match_executed_scenarios
 
 ### Benchmark Groups
 
-Each of the above transactions is measured in two groups:
-- Benchmarking the transaction execution.
+Cycle counts and elapsed time are measured separately:
+
+- Cycle counts cover all scenarios listed above.
 
   For each transaction, data is collected on the number of cycles required to complete:
   - Prologue
@@ -63,10 +64,13 @@ Each of the above transactions is measured in two groups:
 
   The same pass rebuilds the `ExecutionTrace` for each scenario. It records the AIR row totals (`core_rows`, `chiplets_rows`, `eidos_compression_rows`, and `byte_pair_lookup_rows`) and the per-chiplet breakdown (`hasher_rows`, `bitwise_rows`, `memory_rows`, `kernel_rom_rows`, and `ace_rows`).
 
-  Results of this benchmark will be stored in the [`bin/bench-tx/bench-tx.json`](bench-tx.json) file.
-- Benchmarking the transaction execution and proving.
-  
-  For each transaction in this group we measure how much time it takes to execute the transaction and to execute and prove the transaction.
+  Results are stored in [`bench-tx.json`](bench-tx.json).
+- Elapsed-time benchmarks cover single- and two-note P2ID consumption with Falcon or ECDSA authentication, CLAIM consumption from L1 or L2, and B2AGG consumption. Each scenario has two measurements:
+
+  - `Execute transaction`: initial transaction execution.
+  - `Execute and prove transaction`: initial execution followed by prover replay and proof generation.
+
+  Transaction setup is excluded from both measurements. Generated proofs are checked with `TransactionVerifier` after timing; execution, proving, or verification errors fail the benchmark.
 
   Proving benchmarks use Eidos, matching the protocol proof-hash policy.
 
@@ -74,24 +78,21 @@ Each of the above transactions is measured in two groups:
 
 ## Running Benchmarks
 
-You can run the benchmarks in two ways:
-
-### Option 1: Using Make (from protocol directory)
+From the repository root, run cycle counting and latency measurements independently:
 
 ```bash
-make bench-tx
+make bench-tx-cycles
+make bench-tx-time
 ```
 
-This command will run both the cycle counting and the time counting benchmarks.
+`make bench-tx-cycles` updates `bench-tx.json` using a release build. `make bench-tx-time` measures transaction latency using Cargo's bench profile. `make bench-tx` runs both commands in sequence.
 
-### Option 2: Running each benchmark individually (from protocol directory)
+To measure execution and proving of a single-note ECDSA P2ID transaction with eight Rayon workers:
 
 ```bash
-# Run the cycle counting benchmarks
-cargo run --bin bench-transaction --features concurrent
-
-# Run the time counting benchmarks
-cargo bench --bin bench-transaction --bench time_counting_benchmarks --features concurrent
+RAYON_NUM_THREADS=8 cargo bench --locked -p bench-transaction \
+  --bench time_counting_benchmarks --features concurrent -- \
+  '^Execute and prove transaction/eidos/ecdsa/single-p2id-note$'
 ```
 
 ## Trace shape and miden-vm's synthetic benchmark

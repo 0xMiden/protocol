@@ -45,11 +45,13 @@ impl PricedNote {
             PricedNote::Standard(StandardNote::FAUCET_POLICY_CONFIG),
             PricedNote::Standard(StandardNote::FAUCET_METADATA_CONFIG),
             PricedNote::Standard(StandardNote::MIN_BURN_AMOUNT_CONFIG),
+            PricedNote::Standard(StandardNote::ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG),
             PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG),
             PricedNote::Standard(StandardNote::BLOCKLIST_CONFIG),
             PricedNote::Standard(StandardNote::PAUSE_CONFIG),
             PricedNote::Standard(StandardNote::OWNER_CONFIG),
             PricedNote::Standard(StandardNote::RBAC_CONFIG),
+            PricedNote::Standard(StandardNote::SUPPLY_RESTRICTION_CONFIG),
             PricedNote::Standard(StandardNote::AUTHORITY_CONFIG),
             PricedNote::Standard(StandardNote::NETWORK_ACCOUNT_CONFIG),
             PricedNote::Standard(StandardNote::UPGRADE),
@@ -103,6 +105,9 @@ impl PricedNote {
             PricedNote::Standard(StandardNote::MIN_BURN_AMOUNT_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeMinBurnAmountConfigNetwork]
             },
+            PricedNote::Standard(StandardNote::ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG) => {
+                &[ExecutionBenchmark::ConsumeEncryptedAssetsIssuerKeyConfigNetwork]
+            },
             PricedNote::Standard(StandardNote::ALLOWLIST_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeAllowlistConfigNetwork]
             },
@@ -117,6 +122,9 @@ impl PricedNote {
             },
             PricedNote::Standard(StandardNote::RBAC_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeRbacConfigNetwork]
+            },
+            PricedNote::Standard(StandardNote::SUPPLY_RESTRICTION_CONFIG) => {
+                &[ExecutionBenchmark::ConsumeSupplyRestrictionConfigNetwork]
             },
             PricedNote::Standard(StandardNote::AUTHORITY_CONFIG) => {
                 &[ExecutionBenchmark::ConsumeAuthorityConfigNetwork]
@@ -205,6 +213,7 @@ impl PricedNote {
             PricedNote::Standard(
                 StandardNote::ALLOWLIST_CONFIG
                 | StandardNote::AUTHORITY_CONFIG
+                | StandardNote::ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG
                 | StandardNote::OWNER_CONFIG
                 | StandardNote::RBAC_CONFIG
                 | StandardNote::UPGRADE,
@@ -383,6 +392,10 @@ mod tests {
         assert_eq!(subjects["UPDATE_GER"], "an UPDATE_GER");
         assert_eq!(subjects["RBAC_CONFIG"], "an RBAC_CONFIG");
         assert_eq!(subjects["AUTHORITY_CONFIG"], "an AUTHORITY_CONFIG");
+        assert_eq!(
+            subjects["ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG"],
+            "an ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG"
+        );
         assert_eq!(subjects["REMOVE_GER"], "a REMOVE_GER");
         assert_eq!(subjects["P2ID"], "a P2ID");
     }

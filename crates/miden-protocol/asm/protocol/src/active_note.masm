@@ -5,6 +5,7 @@ use {
     Bool,
     NoteAssetsCommitment,
     NoteAttachmentCommitment,
+    NoteAttachmentScheme,
     NoteAttachmentsCommitment,
     NoteId,
     NoteMetadata,
@@ -61,9 +62,9 @@ const ERR_NOTE_TOO_MANY_STORAGE_ITEMS =
 #!
 #! Invocation: exec
 pub proc get_initial_assets(dest_ptr: ptr<Asset>) -> u8
-    # push a placeholder note_index and the active note flag
+    # push a placeholder note_idx and the active note flag
     push.0.1
-    # => [is_active_note = 1, note_index = 0, dest_ptr]
+    # => [is_active_note = 1, note_idx = 0, dest_ptr]
 
     exec.input_note_internal::get_initial_assets_raw
     # => [num_assets]
@@ -86,9 +87,9 @@ end
 #!
 #! Invocation: exec
 pub proc get_initial_assets_info() -> (NoteAssetsCommitment, u8)
-    # push a placeholder note_index and the active note flag
+    # push a placeholder note_idx and the active note flag
     push.0.1
-    # => [is_active_note = 1, note_index = 0]
+    # => [is_active_note = 1, note_idx = 0]
 
     exec.input_note_internal::get_initial_assets_info_raw
     # => [ASSETS_COMMITMENT, num_assets]
@@ -136,9 +137,9 @@ end
 #!
 #! Invocation: exec
 pub proc get_asset(asset_index: u8) -> Asset
-    # push a placeholder note_index below asset_index and the active note flag on top
+    # push a placeholder note_idx below asset_index and the active note flag on top
     push.0 swap push.1
-    # => [is_active_note = 1, asset_index, note_index = 0]
+    # => [is_active_note = 1, asset_index, note_idx = 0]
 
     exec.input_note_internal::get_asset_raw
     # => [ASSET_ID, ASSET_VALUE]
@@ -163,6 +164,7 @@ end
 #!   the EMPTY_WORD if the entire asset was removed.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - no note is currently active.
 #! - the asset ID to remove is the empty word or is not a well-formed asset ID.
 #! - the asset's composition is Custom (not yet supported).
@@ -172,9 +174,9 @@ end
 #!
 #! Invocation: exec
 pub proc remove_asset(asset: Asset) -> AssetValue
-    # push a placeholder note_index below the asset and the active note flag on top
+    # push a placeholder note_idx below the asset and the active note flag on top
     push.0 movdn.8 push.1
-    # => [is_active_note = 1, ASSET_ID, ASSET_VALUE, note_index = 0]
+    # => [is_active_note = 1, ASSET_ID, ASSET_VALUE, note_idx = 0]
 
     exec.input_note_internal::remove_asset_raw
     # => [FINAL_ASSET_VALUE]
@@ -204,13 +206,14 @@ end
 #! - num_assets is the number of assets removed by this procedure.
 #!
 #! Panics if:
+#! - an asset callback is executing.
 #! - no note is currently active.
 #!
 #! Invocation: exec
 pub proc remove_all_assets(dest_ptr: ptr<Asset>) -> u8
-    # push a placeholder note_index and the active note flag
+    # push a placeholder note_idx and the active note flag
     push.0.1
-    # => [is_active_note = 1, note_index = 0, dest_ptr]
+    # => [is_active_note = 1, note_idx = 0, dest_ptr]
 
     exec.input_note_internal::remove_all_assets_raw
     # => [num_assets]
@@ -229,9 +232,9 @@ end
 #!
 #! Invocation: exec
 pub proc get_recipient() -> NoteRecipient
-    # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
+    # push a placeholder note_idx (ignored when is_active_note = 1) and the active note flag
     push.0.1
-    # => [is_active_note = 1, note_index = 0]
+    # => [is_active_note = 1, note_idx = 0]
 
     exec.input_note_internal::get_recipient_raw
     # => [RECIPIENT]
@@ -250,9 +253,9 @@ end
 #!
 #! Invocation: exec
 pub proc get_note_id() -> NoteId
-    # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
+    # push a placeholder note_idx (ignored when is_active_note = 1) and the active note flag
     push.0.1
-    # => [is_active_note = 1, note_index = 0]
+    # => [is_active_note = 1, note_idx = 0]
 
     exec.input_note_internal::get_note_id_raw
     # => [NOTE_ID]
@@ -272,9 +275,9 @@ end
 #!
 #! Invocation: exec
 pub proc get_storage_info() -> (NoteStorageCommitment, u16)
-    # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
+    # push a placeholder note_idx (ignored when is_active_note = 1) and the active note flag
     push.0.1
-    # => [is_active_note = 1, note_index = 0]
+    # => [is_active_note = 1, note_idx = 0]
 
     exec.input_note_internal::get_storage_info_raw
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items]
@@ -298,9 +301,9 @@ end
 #!
 #! Invocation: exec
 pub proc get_storage(dest_ptr: ptr<felt>) -> u16
-    # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
+    # push a placeholder note_idx (ignored when is_active_note = 1) and the active note flag
     push.0.1
-    # => [is_active_note = 1, note_index = 0, dest_ptr]
+    # => [is_active_note = 1, note_idx = 0, dest_ptr]
 
     exec.input_note_internal::get_storage_info_raw
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
@@ -365,9 +368,9 @@ end
 #!
 #! Invocation: exec
 pub proc get_metadata() -> NoteMetadata
-    # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
+    # push a placeholder note_idx (ignored when is_active_note = 1) and the active note flag
     push.0.1
-    # => [is_active_note = 1, note_index = 0]
+    # => [is_active_note = 1, note_idx = 0]
 
     exec.input_note_internal::get_metadata_raw
     # => [METADATA]
@@ -453,9 +456,9 @@ end
 #!
 #! Invocation: exec
 pub proc get_serial_number() -> NoteSerialNumber
-    # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
+    # push a placeholder note_idx (ignored when is_active_note = 1) and the active note flag
     push.0.1
-    # => [is_active_note = 1, note_index = 0]
+    # => [is_active_note = 1, note_idx = 0]
 
     exec.input_note_internal::get_serial_number_raw
     # => [SERIAL_NUMBER]
@@ -474,9 +477,9 @@ end
 #!
 #! Invocation: exec
 pub proc get_script_root() -> NoteScriptRoot
-    # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
+    # push a placeholder note_idx (ignored when is_active_note = 1) and the active note flag
     push.0.1
-    # => [is_active_note = 1, note_index = 0]
+    # => [is_active_note = 1, note_idx = 0]
 
     exec.input_note_internal::get_script_root_raw
     # => [SCRIPT_ROOT]
@@ -551,9 +554,9 @@ end
 #!
 #! Invocation: exec
 pub proc get_attachments_commitment() -> NoteAttachmentsCommitment
-    # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
+    # push a placeholder note_idx (ignored when is_active_note = 1) and the active note flag
     push.0.1
-    # => [is_active_note = 1, note_index = 0]
+    # => [is_active_note = 1, note_idx = 0]
 
     exec.input_note_internal::get_attachments_commitment_raw
     # => [ATTACHMENTS_COMMITMENT]
@@ -633,7 +636,7 @@ end
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc find_attachment(attachment_scheme: u16) -> (Bool, u8)
+pub proc find_attachment(attachment_scheme: NoteAttachmentScheme) -> (Bool, u8)
     exec.get_metadata
     # => [METADATA, attachment_scheme]
 

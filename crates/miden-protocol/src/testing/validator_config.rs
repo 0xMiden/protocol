@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::Word;
-use crate::block::{BlockSignatures, ValidatorConfig};
+use crate::block::{BlockSignatures, ValidatorConfig, ValidatorSignature};
 use crate::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use crate::testing::random_secret_key::random_secret_key;
 
@@ -23,23 +23,17 @@ impl ValidatorConfig {
         let config = Self::from_signers(&signers);
         (signers, config)
     }
+}
 
-    /// Signs `commitment` with every one of `signers`, ordering the resulting signatures to align
-    /// positionally with the keys of this config.
+impl BlockSignatures {
+    /// Signs `commitment` with every one of `signers`.
     ///
-    /// Panics if `signers` does not contain a matching signer for every key in this config.
-    pub fn sign_all(&self, signers: &[SigningKey], commitment: Word) -> BlockSignatures {
-        let signatures = self
-            .keys()
+    /// Panics if `signers` does not form a valid signature set.
+    pub fn sign(signers: &[SigningKey], commitment: Word) -> Self {
+        let signatures = signers
             .iter()
-            .map(|key| {
-                let signer = signers
-                    .iter()
-                    .find(|signer| &signer.public_key() == key)
-                    .expect("a signer should exist for every validator key");
-                signer.sign(commitment)
-            })
+            .map(|signer| ValidatorSignature::new(signer.public_key(), signer.sign(commitment)))
             .collect();
-        BlockSignatures::new(signatures).expect("signature count same as validator key count")
+        Self::new(signatures).expect("signers should form a valid signature set")
     }
 }
