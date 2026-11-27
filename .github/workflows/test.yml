@@ -11,7 +11,7 @@ on:
   push:
     branches: [main, next]
   pull_request:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, synchronize, ready_for_review]
   merge_group:
 
 permissions:
@@ -21,10 +21,12 @@ jobs:
   test:
     if: >-
       ${{
+        (github.event.pull_request.number != 4285 || github.event.pull_request.draft != true) && (
         github.event_name != 'pull_request' ||
         github.event.pull_request.head.repo.full_name != github.repository ||
         github.event.pull_request.head.ref != 'next' ||
         github.event.pull_request.base.ref != 'main'
+        )
       }}
     name: test
     runs-on: warp-ubuntu-latest-x64-8x
@@ -55,10 +57,12 @@ jobs:
   doc-tests:
     if: >-
       ${{
+        (github.event.pull_request.number != 4285 || github.event.pull_request.draft != true) && (
         github.event_name != 'pull_request' ||
         github.event.pull_request.head.repo.full_name != github.repository ||
         github.event.pull_request.head.ref != 'next' ||
         github.event.pull_request.base.ref != 'main'
+        )
       }}
     name: doc-tests
     runs-on: warp-ubuntu-latest-x64-8x

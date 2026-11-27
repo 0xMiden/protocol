@@ -11,7 +11,7 @@ on:
     push:
         branches: [main, next]
     pull_request:
-        types: [opened, reopened, synchronize]
+        types: [opened, reopened, synchronize, ready_for_review]
     merge_group:
 
 permissions:
@@ -21,10 +21,12 @@ jobs:
     no-std:
         if: >-
             ${{
+                (github.event.pull_request.number != 4285 || github.event.pull_request.draft != true) && (
                 github.event_name != 'pull_request' ||
                 github.event.pull_request.head.repo.full_name != github.repository ||
                 github.event.pull_request.head.ref != 'next' ||
                 github.event.pull_request.base.ref != 'main'
+                )
             }}
         name: build for no-std
         runs-on: ubuntu-latest
@@ -49,10 +51,12 @@ jobs:
     check-features:
       if: >-
         ${{
+          (github.event.pull_request.number != 4285 || github.event.pull_request.draft != true) && (
           github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.full_name != github.repository ||
           github.event.pull_request.head.ref != 'next' ||
           github.event.pull_request.base.ref != 'main'
+          )
         }}
       name: check all feature combinations
       runs-on: warp-ubuntu-latest-x64-8x
@@ -79,10 +83,12 @@ jobs:
     build-benches:
       if: >-
         ${{
+          (github.event.pull_request.number != 4285 || github.event.pull_request.draft != true) && (
           github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.full_name != github.repository ||
           github.event.pull_request.head.ref != 'next' ||
           github.event.pull_request.base.ref != 'main'
+          )
         }}
       name: Check benchmarks compilation
       runs-on: ubuntu-latest

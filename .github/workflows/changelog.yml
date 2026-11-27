@@ -5,13 +5,14 @@ name: changelog
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, labeled, unlabeled]
+    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]
 
 permissions:
   contents: read
 
 jobs:
   changelog:
+    if: github.event.pull_request.number != 4285 || github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
