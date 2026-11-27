@@ -77,6 +77,13 @@ jobs:
             tool: cargo-hack
         - name: Check all feature combinations
           run: make check-features
+        - name: Report slow build-script executions
+          if: env.KACHE_RUNTIME_DIR != ''
+          run: |
+            kache stats --full --format json | jq -c '
+              .traceEvents[].args
+              | select(.crate_name == "build_script_run" and .elapsed_ms >= 5000)
+              | {package, cache_key, result, elapsed_ms}'
 
     build-benches:
       if: >-

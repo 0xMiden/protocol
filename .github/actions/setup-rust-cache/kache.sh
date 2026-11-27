@@ -12,4 +12,15 @@ case "${CARGO_CRATE_NAME:-}" in
         ;;
 esac
 
+# Unit and integration test executables can embed checkout paths from their dependencies.
+# Cargo gives each integration test its own crate name, but passes --test to rustc for both.
+if [[ -n "${GITHUB_WORKSPACE:-}" && "${CARGO_MANIFEST_DIR:-}" == "${GITHUB_WORKSPACE}/crates/"* ]]; then
+    for arg in "$@"; do
+        if [[ "${arg}" == "--test" ]]; then
+            export KACHE_RUSTC_PATH_NORMALIZE=0
+            break
+        fi
+    done
+fi
+
 exec kache "$@"

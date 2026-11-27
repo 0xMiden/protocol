@@ -25,7 +25,8 @@ runs:
 
     - name: Set up kache
       if: steps.r2.outcome == 'success'
-      uses: kunobi-ninja/kache-action@ad7317540dcdd71c904f7a60a87b620a0c0e67ed # v1, pinned by 0xMiden/node
+      # Match the action commit in 0xMiden/node's actions.lock.
+      uses: kunobi-ninja/kache-action@ad7317540dcdd71c904f7a60a87b620a0c0e67ed
       with:
         version: v2.3.0
         s3-bucket: kache
