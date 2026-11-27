@@ -9,6 +9,7 @@
 
 use std::env;
 use std::path::Path;
+use std::process::Command;
 
 use miden_assembly::ProjectTargetSelector;
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
@@ -46,9 +47,26 @@ const XRESERVE_ERRORS_ARRAY_NAME: &str = "XRESERVE_ERRORS";
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
+    println!("cargo::rerun-if-env-changed=MIDEN_USDCX_MASP_DIR");
 
     let crate_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is always set");
     let build_dir = env::var("OUT_DIR").expect("OUT_DIR is always set for build scripts");
+    let previous_out = env::var_os("MIDEN_USDCX_MASP_DIR");
+    let skip_assembly = previous_out.is_some();
+    if let Some(previous_out) = previous_out
+        && Path::new(&previous_out) != Path::new(&build_dir)
+    {
+        let assets = Path::new(&previous_out).join(ASSETS_DIR);
+        println!("cargo::rerun-if-changed={}", assets.display());
+        // Cargo tracks the copied packages. Preserve their input timestamps across builds.
+        let status = Command::new("cp")
+            .arg("-Rp")
+            .arg(&assets)
+            .arg(&build_dir)
+            .status()
+            .into_diagnostic()?;
+        assert!(status.success(), "failed to copy {}", assets.display());
+    }
 
     let source_dir = Path::new(&crate_dir).join(ASM_DIR);
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
@@ -62,6 +80,7 @@ fn main() -> Result<()> {
         ProjectTargetSelector::Library,
         &mut registry,
         &target_dir,
+        skip_assembly,
     )?;
     registry.cache_package(xreserve_lib).into_diagnostic()?;
 
@@ -72,6 +91,7 @@ fn main() -> Result<()> {
             source_dir.join(workspace_dir).join(PROJECT_MANIFEST),
             &mut registry,
             &target_dir.join(workspace_dir),
+            skip_assembly,
             |metadata| {
                 Ok(AccountComponentMetadata::from_toml(metadata).into_diagnostic()?.to_bytes())
             },

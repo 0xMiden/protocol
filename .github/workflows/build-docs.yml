@@ -12,7 +12,7 @@ on:
       - "docs/**"
       - ".github/workflows/build-docs.yml"
   pull_request:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, synchronize, ready_for_review]
     paths:
       - "docs/**"
       - ".github/workflows/build-docs.yml"
