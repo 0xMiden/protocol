@@ -292,7 +292,7 @@ impl TransactionKernel {
         final_account_commitment: Word,
         account_patch_commitment: Word,
         output_notes_commitment: Word,
-        _code_patch_commitment: CodePatchCommitment,
+        code_patch_commitment: CodePatchCommitment,
         expiration_block_num: BlockNumber,
         logs_commitment: Word,
     ) -> StackOutputs {
@@ -306,9 +306,7 @@ impl TransactionKernel {
         let mut outputs: Vec<Felt> = Vec::with_capacity(Word::NUM_ELEMENTS * 4);
         outputs.extend(output_notes_commitment);
         outputs.extend(account_update_commitment);
-        // TODO(#4006): output the code patch commitment once the transaction kernel outputs it.
-        // Until then, the kernel outputs the empty word, so the proof does not commit to the patch.
-        outputs.extend(Word::empty());
+        outputs.extend(code_patch_commitment.as_word());
         outputs.extend(logs_expiration_commitment);
 
         StackOutputs::new(&outputs).expect("number of stack outputs should be <= 16")
@@ -364,14 +362,19 @@ impl TransactionKernel {
         logs: TransactionLogs,
         code_patch: CodePatch,
     ) -> Result<TransactionOutputs, TransactionOutputError> {
-        // TODO(#4006): check the code patch against CODE_PATCH_COMMITMENT once the transaction
-        // kernel outputs it.
         let (
             output_notes_commitment,
             account_update_commitment,
-            _code_patch_commitment,
+            code_patch_commitment,
             logs_expiration_commitment,
         ) = Self::parse_output_stack(stack);
+
+        if code_patch.commitment() != code_patch_commitment {
+            return Err(TransactionOutputError::CodePatchCommitmentInconsistent {
+                expected: code_patch_commitment,
+                actual: code_patch.commitment(),
+            });
+        }
 
         let (logs_commitment, expiration_block_num) =
             Self::parse_logs_expiration_commitment(logs_expiration_commitment, advice_inputs)?;
