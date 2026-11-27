@@ -40,8 +40,7 @@ use alloc::vec::Vec;
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::{EventError, EventHandlerRegistry, NoopEventHandler};
 use miden_processor::trace::RowIndex;
-use miden_protocol::Word;
-use miden_processor::{Felt, LoadedMastForest, MastForestStore, ProcessorState};
+use miden_processor::{Felt, ProcessorState};
 use miden_protocol::account::{
     AccountCode,
     AccountCodeUpgrade,
