@@ -34,6 +34,8 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-8x
     env:
       CARGO_PROFILE_TEST_DEV_DEBUG: "0"
+      # This target enumerates generated packages in the builder's OUT_DIR at runtime.
+      BUILD_HOST_TESTS: "binary_id(=miden-standards::component_metadata)"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -55,7 +57,10 @@ jobs:
       - name: Build test archive
         run: |
           cargo nextest archive --locked --cargo-profile test-dev --no-default-features \
-            --features concurrent,testing,std --archive-file "$RUNNER_TEMP/tests.tar.zst"
+            --features concurrent,testing,std -E "not $BUILD_HOST_TESTS" \
+            --archive-file "$RUNNER_TEMP/tests.tar.zst"
+      - name: Check built component packages
+        run: make test-release name="-E '$BUILD_HOST_TESTS'"
       - name: Test protobuf build support
         run: cargo test -p miden-protobuf --all-features --locked
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
