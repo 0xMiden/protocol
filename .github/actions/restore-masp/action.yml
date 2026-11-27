@@ -17,9 +17,13 @@ runs:
     - name: Use compiled packages
       if: steps.cache.outputs.cache-hit == 'true'
       shell: bash
-      run: |
+      # The workspace prefix comes from the runner. The check below excludes newlines
+      # and '=' from the only cache-controlled part of both the name and the value.
+      run: | # zizmor: ignore[github-env]
         shopt -s failglob
         for dir in "$GITHUB_WORKSPACE"/.ci-masp/*; do
-          crate=$(basename "$dir" | tr '[:lower:]-' '[:upper:]_')
-          echo "${crate}_MASP_DIR=$dir" >> "$GITHUB_ENV"
+          crate=${dir##*/}
+          [[ $crate =~ ^[a-zA-Z0-9_-]+$ && -d "$dir/assets" ]] || exit 1
+          crate=$(printf '%s' "$crate" | tr '[:lower:]-' '[:upper:]_')
+          printf '%s_MASP_DIR=%s\n' "$crate" "$dir" >> "$GITHUB_ENV"
         done
