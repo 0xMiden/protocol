@@ -1,4 +1,5 @@
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
@@ -9,7 +10,7 @@ use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::code_tree::CodeTree;
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{BlockBody, BlockSignatures, Blockchain, ProvenBlock};
-use miden_protocol::code::ProcedureRoot;
+use miden_protocol::code::CodeRegistry;
 use miden_protocol::note::Nullifier;
 use miden_tx::auth::BasicAuthenticator;
 use proto::mock_chain as wire;
@@ -88,11 +89,7 @@ impl MockChain {
                 .map(|key| AuthSecretKey::EcdsaK256Keccak(key.clone()).into())
                 .collect(),
             protocol_config: Some((&self.protocol_config).into()),
-            code_tree_procedure_roots: self
-                .code_tree
-                .procedure_roots()
-                .map(|procedure_root| procedure_root.as_word().into())
-                .collect(),
+            code_registry: Some(self.code_registry.mast().as_ref().into()),
         }
     }
 
@@ -139,13 +136,8 @@ impl MockChain {
             .map(|entry| Ok((Nullifier::from_raw(entry.nullifier), entry.block_num.verify()?)))
             .collect::<anyhow::Result<Vec<_>>>()?;
         let nullifier_tree = NullifierTree::with_entries(nullifiers)?;
-        let code_tree = CodeTree::with_entries(
-            snapshot
-                .code_tree_procedure_roots
-                .into_inner()
-                .into_iter()
-                .map(ProcedureRoot::from_raw),
-        )?;
+        let code_registry = CodeRegistry::new(Arc::new(snapshot.code_registry.verify()?));
+        let code_tree = CodeTree::with_entries(code_registry.procedure_roots())?;
         let committed_accounts = snapshot
             .committed_accounts
             .verify()?
@@ -189,6 +181,7 @@ impl MockChain {
             account_tree,
             nullifier_tree,
             code_tree,
+            code_registry,
             pending_transactions: snapshot.pending_transactions.build_unchecked()?,
             pending_batches: snapshot.pending_batches.build_unchecked()?,
             committed_accounts,
