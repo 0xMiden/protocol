@@ -10,7 +10,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
+use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::protocol::ERR_NOTE_TOO_MANY_STORAGE_ITEMS;
@@ -18,7 +18,6 @@ use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
 use miden_standards::account::access::AccessControl;
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
     MinBurnAmount,
@@ -37,6 +36,7 @@ use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
+use super::fungible_faucet_account;
 use crate::into_private_note;
 
 // HELPERS
@@ -48,13 +48,6 @@ const INITIAL_MIN_BURN_AMOUNT: u64 = 50;
 /// Builds a fungible faucet whose active burn policy is `min_burn_amount`, gated by `owner` via
 /// `Authority::OwnerControlled` (installed by `AccessControl::Ownable2Step`).
 fn create_faucet_with_min_burn_amount(owner: AccountId) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("SYM")?)
-        .symbol("SYM".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?;
-
     let token_policy_manager = TokenPolicyManager::builder()
         .active_mint_policy(MintPolicy::allow_all())
         .active_burn_policy(BurnPolicy::min_burn_amount(AssetAmount::new(INITIAL_MIN_BURN_AMOUNT)?))
@@ -62,11 +55,9 @@ fn create_faucet_with_min_burn_amount(owner: AccountId) -> anyhow::Result<Accoun
         .active_receive_policy(ReceivePolicy::allow_all())
         .build();
 
-    let account = AccountBuilder::new([43; 32])
-        .account_type(AccountType::Public)
+    let account = fungible_faucet_account(43)?
         .with_components(Auth::IncrNonce)
         .with_components(AccessControl::Ownable2Step { owner })
-        .with_component(faucet)
         .with_components(token_policy_manager)
         .build_existing()?;
 

@@ -7,13 +7,11 @@ use alloc::vec;
 
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{Account, AccountId, AccountType, AssetCallbackFlag};
-use miden_protocol::asset::{AssetAmount, FungibleAsset};
+use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::NoteType;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{Approver, GuardianConfig};
 use miden_standards::account::faucets::{
-    FungibleFaucet,
-    TokenName,
     create_guarded_user_fungible_faucet,
     create_multisig_user_fungible_faucet,
 };
@@ -34,6 +32,8 @@ use miden_testing::{
     MockTransaction,
     assert_transaction_executor_error,
 };
+
+use super::fungible_faucet;
 
 // HELPERS
 // ================================================================================================
@@ -63,15 +63,6 @@ fn allowlist_policy_manager(
         .active_send_policy(SendPolicy::with_basic_allowlist(allow_list.clone()))
         .active_receive_policy(ReceivePolicy::with_basic_allowlist(allow_list))
         .build()
-}
-
-fn sample_faucet() -> anyhow::Result<FungibleFaucet> {
-    Ok(FungibleFaucet::builder()
-        .name(TokenName::new("SYM")?)
-        .symbol("SYM".try_into()?)
-        .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
-        .build()?)
 }
 
 /// Registers a factory-built faucet in the chain's genesis state. The faucet never executes a
@@ -116,7 +107,7 @@ async fn multisig_factory_faucet_enforces_receive_allowlist() -> anyhow::Result<
 
     let faucet = create_multisig_user_fungible_faucet(
         [43u8; 32],
-        sample_faucet()?,
+        fungible_faucet()?,
         user_faucet_multisig(sample_approvers(3), 2)?,
         allowlist_policy_manager([]),
         AccountType::Public,
@@ -141,7 +132,7 @@ async fn multisig_factory_faucet_allows_allowlisted_recipient() -> anyhow::Resul
 
     let faucet = create_multisig_user_fungible_faucet(
         [43u8; 32],
-        sample_faucet()?,
+        fungible_faucet()?,
         user_faucet_multisig(sample_approvers(3), 2)?,
         allowlist_policy_manager([target_account.id()]),
         AccountType::Public,
@@ -169,7 +160,7 @@ async fn guarded_factory_faucet_enforces_receive_allowlist() -> anyhow::Result<(
     ));
     let faucet = create_guarded_user_fungible_faucet(
         [44u8; 32],
-        sample_faucet()?,
+        fungible_faucet()?,
         user_faucet_guarded(sample_approvers(3), 2, guardian)?,
         allowlist_policy_manager([]),
         AccountType::Public,

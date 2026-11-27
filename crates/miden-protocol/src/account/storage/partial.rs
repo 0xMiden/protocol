@@ -8,13 +8,6 @@ use miden_crypto::merkle::smt::SmtLeaf;
 use super::{AccountStorage, AccountStorageHeader, StorageSlotContent};
 use crate::account::{PartialStorageMap, StorageMapWitness};
 use crate::errors::AccountError;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 /// A partial representation of an account storage, containing only a subset of the storage data.
 ///
@@ -162,24 +155,6 @@ impl PartialStorage {
     /// Iterator over all tracked, non‑empty leaves across every map.
     pub fn leaves(&self) -> impl Iterator<Item = &SmtLeaf> + '_ {
         self.maps().flat_map(|map| map.leaves()).map(|(_, leaf)| leaf)
-    }
-}
-
-impl Serializable for PartialStorage {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write(&self.header);
-        target.write(&self.maps);
-    }
-}
-
-impl Deserializable for PartialStorage {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let header: AccountStorageHeader = source.read()?;
-        let map_smts: BTreeMap<Word, PartialStorageMap> = source.read()?;
-
-        let commitment = header.to_commitment();
-
-        Ok(PartialStorage { header, maps: map_smts, commitment })
     }
 }
 

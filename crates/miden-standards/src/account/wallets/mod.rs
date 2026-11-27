@@ -235,12 +235,10 @@ fn create_wallet(
 mod tests {
     use alloc::string::ToString;
 
+    use miden_protocol::Word;
     use miden_protocol::account::auth::{self, PublicKeyCommitment};
-    use miden_protocol::utils::serde::{Deserializable, Serializable};
-    use miden_protocol::{ONE, Word};
 
     use super::{
-        Account,
         AccountType,
         Approver,
         ApproverSet,
@@ -262,21 +260,6 @@ mod tests {
     #[test]
     fn test_create_basic_wallet() -> anyhow::Result<()> {
         create_basic_wallet([1; 32], approver(1), AccountType::Public)?;
-        Ok(())
-    }
-
-    #[test]
-    fn test_serialize_basic_wallet() -> anyhow::Result<()> {
-        let approver = Approver::new(
-            PublicKeyCommitment::from(Word::from([ONE; 4])),
-            auth::AuthScheme::EcdsaK256Keccak,
-        );
-        let wallet = create_basic_wallet([1; 32], approver, AccountType::Public)?;
-
-        let bytes = wallet.to_bytes();
-        let deserialized_wallet = Account::read_from_bytes(&bytes)?;
-        assert_eq!(wallet, deserialized_wallet);
-
         Ok(())
     }
 

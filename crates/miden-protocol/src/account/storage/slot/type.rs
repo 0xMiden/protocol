@@ -1,17 +1,9 @@
-use alloc::string::ToString;
 use core::fmt::Display;
 
 use miden_core::{ONE, ZERO};
 
 use crate::Felt;
 use crate::errors::AccountError;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // STORAGE SLOT TYPE
 // ================================================================================================
@@ -80,35 +72,6 @@ impl Display for StorageSlotType {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for StorageSlotType {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        match self {
-            Self::Value => target.write_u8(0),
-            Self::Map => target.write_u8(1),
-        }
-    }
-
-    fn get_size_hint(&self) -> usize {
-        // The serialized size of a slot type.
-        0u8.get_size_hint()
-    }
-}
-
-impl Deserializable for StorageSlotType {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let storage_slot_type = source.read_u8()?;
-
-        match storage_slot_type {
-            Self::VALUE_TYPE => Ok(Self::Value),
-            Self::MAP_TYPE => Ok(Self::Map),
-            _ => Err(DeserializationError::InvalidValue(storage_slot_type.to_string())),
-        }
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -116,19 +79,6 @@ impl Deserializable for StorageSlotType {
 mod tests {
     use crate::Felt;
     use crate::account::StorageSlotType;
-    use crate::utils::serde::{Deserializable, Serializable};
-
-    #[test]
-    fn test_serde_account_storage_slot_type() {
-        let type_0 = StorageSlotType::Value;
-        let type_1 = StorageSlotType::Value;
-        let type_0_bytes = type_0.to_bytes();
-        let type_1_bytes = type_1.to_bytes();
-        let deserialized_0 = StorageSlotType::read_from_bytes(&type_0_bytes).unwrap();
-        let deserialized_1 = StorageSlotType::read_from_bytes(&type_1_bytes).unwrap();
-        assert_eq!(type_0, deserialized_0);
-        assert_eq!(type_1, deserialized_1);
-    }
 
     #[test]
     fn test_storage_slot_type_from_felt() {

@@ -1,5 +1,5 @@
 use {SendNotesPayloadCommitment} from miden::standards::tx_scripts::send_notes
-use {NoteAttachmentCommitment} from miden::protocol::types
+use {NoteAttachmentCommitment, OutputNoteIndex} from miden::protocol::types
 # Shared payload handling for the canonical `send_notes` transaction scripts.
 #
 # This module is private to `send_notes`: it is the shared implementation behind the
@@ -167,7 +167,7 @@ end
 #!
 #! Invocation: exec
 pub proc add_attachments_and_seal(
-    note_idx: u32,
+    note_idx: OutputNoteIndex,
     attachments_ptr: ptr<AttachmentRecord>,
     num_attachments: u32
 ) -> ptr<AttachmentRecord>

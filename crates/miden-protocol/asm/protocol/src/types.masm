@@ -20,6 +20,8 @@ pub use {
     NoteTag,
     NoteAttachmentScheme,
     NoteAttachmentCount,
+    InputNoteIndex,
+    OutputNoteIndex,
     NoteType,
     BlockNumber,
     BlockCommitment,

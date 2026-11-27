@@ -1,4 +1,3 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_core::deferred::PrecompileWitness;
@@ -17,13 +16,6 @@ use crate::transaction::{
     OutputNote,
     OutputNotes,
     TransactionId,
-};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
 };
 use crate::vm::{ExecutionProof, PrecompileStatus};
 
@@ -401,35 +393,6 @@ impl TxAccountUpdate {
     }
 }
 
-impl Serializable for TxAccountUpdate {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.account_id.write_into(target);
-        self.init_state_commitment.write_into(target);
-        self.final_state_commitment.write_into(target);
-        self.account_patch_commitment.write_into(target);
-        self.details.write_into(target);
-    }
-}
-
-impl Deserializable for TxAccountUpdate {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let account_id = AccountId::read_from(source)?;
-        let init_state_commitment = Word::read_from(source)?;
-        let final_state_commitment = Word::read_from(source)?;
-        let account_patch_commitment = Word::read_from(source)?;
-        let details = AccountUpdateDetails::read_from(source)?;
-
-        Self::new(
-            account_id,
-            init_state_commitment,
-            final_state_commitment,
-            account_patch_commitment,
-            details,
-        )
-        .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 // INPUT NOTE COMMITMENT
 // ================================================================================================
 
@@ -512,25 +475,6 @@ impl ToInputNoteCommitments for InputNoteCommitment {
 
     fn note_id(&self) -> Option<NoteId> {
         self.header.as_ref().map(NoteHeader::id)
-    }
-}
-
-// SERIALIZATION
-// ------------------------------------------------------------------------------------------------
-
-impl Serializable for InputNoteCommitment {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.nullifier.write_into(target);
-        self.header.write_into(target);
-    }
-}
-
-impl Deserializable for InputNoteCommitment {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let nullifier = Nullifier::read_from(source)?;
-        let header = <Option<NoteHeader>>::read_from(source)?;
-
-        Ok(Self::from_parts_unchecked(nullifier, header))
     }
 }
 

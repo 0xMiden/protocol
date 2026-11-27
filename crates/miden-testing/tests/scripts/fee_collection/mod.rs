@@ -59,6 +59,7 @@ use crate::scripts::fee_manager::{
     custom_fee_policy,
     fee_faucet_id,
 };
+use crate::scripts::policy_component;
 
 /// The lowest reclaim height a FEE_SPONSORSHIP note can have: height 0 encodes a disabled reclaim,
 /// so block 1 is the earliest block from which the note can be reclaimed.
@@ -928,12 +929,7 @@ fn asset_commitment_fee_policy(
         fee_amount = FEE_AMOUNT,
     );
 
-    let code = CodeBuilder::default().compile_component_code(POLICY_NAME, &masm_source)?;
-    let root = code
-        .get_procedure_root_by_path(format!("{POLICY_NAME}::compute_note_fee").as_str())
-        .expect("asset commitment fee policy should export compute_note_fee");
-    let component =
-        AccountComponent::new(code, vec![], AccountComponentMetadata::mock(POLICY_NAME))?;
+    let (root, component) = policy_component(POLICY_NAME, "compute_note_fee", vec![], masm_source)?;
 
     Ok(FeePolicy::custom(root, [component])?)
 }

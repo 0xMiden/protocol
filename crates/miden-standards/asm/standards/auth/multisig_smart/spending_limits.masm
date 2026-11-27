@@ -420,53 +420,53 @@ proc price_output_notes(
         # => [note_count, limit, unpriced_asset_policy]
 
         sub.1
-        # => [note_index, limit, unpriced_asset_policy]
+        # => [note_idx, limit, unpriced_asset_policy]
 
         dup locaddr.PRICE_NOTE_ASSETS_LOC
-        # => [assets_ptr, note_index, note_index, limit, unpriced_asset_policy]
+        # => [assets_ptr, note_idx, note_idx, limit, unpriced_asset_policy]
 
         exec.output_note::get_assets
-        # => [num_assets, note_index, limit, unpriced_asset_policy]
+        # => [num_assets, note_idx, limit, unpriced_asset_policy]
 
         dup neq.0
-        # => [has_assets, num_assets, note_index, limit, unpriced_asset_policy]
+        # => [has_assets, num_assets, note_idx, limit, unpriced_asset_policy]
 
         while.true
-            # => [asset_count, note_index, limit, unpriced_asset_policy]
+            # => [asset_count, note_idx, limit, unpriced_asset_policy]
 
             sub.1
-            # => [asset_idx, note_index, limit, unpriced_asset_policy]
+            # => [asset_idx, note_idx, limit, unpriced_asset_policy]
 
             dup.3 dup.3
-            # => [limit, unpriced_asset_policy, asset_idx, note_index, limit, unpriced_asset_policy]
+            # => [limit, unpriced_asset_policy, asset_idx, note_idx, limit, unpriced_asset_policy]
 
             dup.2 mul.ASSET_SIZE locaddr.PRICE_NOTE_ASSETS_LOC add
-            # => [asset_ptr, limit, unpriced_asset_policy, asset_idx, note_index, limit,
+            # => [asset_ptr, limit, unpriced_asset_policy, asset_idx, note_idx, limit,
             #     unpriced_asset_policy]
 
             exec.asset::load
-            # => [ASSET_ID, ASSET_VALUE, limit, unpriced_asset_policy, asset_idx, note_index, limit,
+            # => [ASSET_ID, ASSET_VALUE, limit, unpriced_asset_policy, asset_idx, note_idx, limit,
             #     unpriced_asset_policy]
 
             exec.price_asset
-            # => [converted_amount, asset_idx, note_index, limit, unpriced_asset_policy]
+            # => [converted_amount, asset_idx, note_idx, limit, unpriced_asset_policy]
 
             loc_load.PRICE_TOTAL_LOC exec.fungible_asset::saturating_add_amount
             loc_store.PRICE_TOTAL_LOC
-            # => [asset_idx, note_index, limit, unpriced_asset_policy]
+            # => [asset_idx, note_idx, limit, unpriced_asset_policy]
 
             dup neq.0
-            # => [has_assets, asset_idx, note_index, limit, unpriced_asset_policy]
+            # => [has_assets, asset_idx, note_idx, limit, unpriced_asset_policy]
         end
-        # => [asset_idx, note_index, limit, unpriced_asset_policy]
+        # => [asset_idx, note_idx, limit, unpriced_asset_policy]
 
         drop
-        # => [note_index, limit, unpriced_asset_policy]
+        # => [note_idx, limit, unpriced_asset_policy]
 
         dup neq.0
-        # => [has_notes, note_index, limit, unpriced_asset_policy]
+        # => [has_notes, note_idx, limit, unpriced_asset_policy]
     end
-    # => [note_index, limit, unpriced_asset_policy]
+    # => [note_idx, limit, unpriced_asset_policy]
 
     drop drop drop
     # => []
