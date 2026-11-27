@@ -3,7 +3,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use crate::account::AccountId;
-use crate::batch::{BatchAccountUpdate, BatchId};
+use crate::batch::{BatchAccountUpdate, BatchCodePatch, BatchId};
 use crate::block::BlockNumber;
 use crate::errors::ProvenBatchError;
 use crate::note::Nullifier;
@@ -13,7 +13,6 @@ use crate::transaction::{
     OrderedTransactionHeaders,
     OutputNote,
     PublicTransactionLogs,
-    TransactionCodePatch,
     TransactionHeader,
 };
 use crate::vm::ExecutionProof;
@@ -44,7 +43,7 @@ pub struct ProvenBatch {
     batch_expiration_block_num: BlockNumber,
     transactions: OrderedTransactionHeaders,
     public_logs: PublicTransactionLogs,
-    code_patch: TransactionCodePatch,
+    code_patch: BatchCodePatch,
     proof: ExecutionProof,
 }
 
@@ -80,7 +79,7 @@ impl ProvenBatch {
         batch_expiration_block_num: BlockNumber,
         transactions: OrderedTransactionHeaders,
         public_logs: PublicTransactionLogs,
-        code_patch: TransactionCodePatch,
+        code_patch: BatchCodePatch,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenBatchError> {
         if proof.has_precompiles() {
@@ -162,7 +161,7 @@ impl ProvenBatch {
         batch_expiration_block_num: BlockNumber,
         transactions: OrderedTransactionHeaders,
         public_logs: PublicTransactionLogs,
-        code_patch: TransactionCodePatch,
+        code_patch: BatchCodePatch,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenBatchError> {
         // Check that the batch expiration block number is greater than the reference block number.
@@ -265,7 +264,7 @@ impl ProvenBatch {
     }
 
     /// Returns the merged code patch of the transactions in the batch.
-    pub fn code_patch(&self) -> &TransactionCodePatch {
+    pub fn code_patch(&self) -> &BatchCodePatch {
         &self.code_patch
     }
 
@@ -383,7 +382,7 @@ mod tests {
 
     use super::ProvenBatch;
     use crate::account::{AccountId, AccountType, AccountUpdateDetails};
-    use crate::batch::BatchAccountUpdate;
+    use crate::batch::{BatchAccountUpdate, BatchCodePatch};
     use crate::block::BlockNumber;
     use crate::errors::ProvenBatchError;
     use crate::note::{Note, NoteHeader, NoteId};
@@ -511,7 +510,7 @@ mod tests {
             BlockNumber::from(2),
             transactions,
             Default::default(),
-            TransactionCodePatch::default(),
+            BatchCodePatch::default(),
             dummy_execution_proof(),
         )
         .unwrap();
@@ -531,7 +530,7 @@ mod tests {
             BlockNumber::from(2),
             transaction_headers(),
             Default::default(),
-            TransactionCodePatch::default(),
+            BatchCodePatch::default(),
             dummy_execution_proof(),
         )
         .unwrap();
@@ -551,7 +550,7 @@ mod tests {
                 BlockNumber::from(2),
                 transaction_headers(),
                 Default::default(),
-                TransactionCodePatch::default(),
+                BatchCodePatch::default(),
                 proof,
             )
             .unwrap_err();
@@ -574,7 +573,7 @@ mod tests {
             BlockNumber::from(2),
             transaction_headers(),
             Default::default(),
-            TransactionCodePatch::default(),
+            BatchCodePatch::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -609,7 +608,7 @@ mod tests {
             BlockNumber::from(2),
             transaction_headers(),
             Default::default(),
-            TransactionCodePatch::default(),
+            BatchCodePatch::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -639,7 +638,7 @@ mod tests {
             BlockNumber::from(2),
             transaction_headers(),
             Default::default(),
-            TransactionCodePatch::default(),
+            BatchCodePatch::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -661,7 +660,7 @@ mod tests {
             BlockNumber::from(2),
             transaction_headers(),
             Default::default(),
-            TransactionCodePatch::default(),
+            BatchCodePatch::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -705,7 +704,7 @@ mod tests {
             BlockNumber::from(2),
             transaction_headers(),
             Default::default(),
-            TransactionCodePatch::default(),
+            BatchCodePatch::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -752,7 +751,7 @@ mod tests {
             BlockNumber::from(2),
             transactions,
             Default::default(),
-            TransactionCodePatch::default(),
+            BatchCodePatch::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -785,7 +784,7 @@ mod tests {
             BlockNumber::from(2),
             transactions,
             Default::default(),
-            TransactionCodePatch::default(),
+            BatchCodePatch::default(),
             dummy_execution_proof(),
         )
         .unwrap();
@@ -804,7 +803,7 @@ mod tests {
             BlockNumber::from(2),
             transaction_headers(),
             Default::default(),
-            TransactionCodePatch::default(),
+            BatchCodePatch::default(),
             dummy_execution_proof(),
         )
         .unwrap();
@@ -829,7 +828,7 @@ mod tests {
             BlockNumber::from(2),
             transactions,
             Default::default(),
-            TransactionCodePatch::default(),
+            BatchCodePatch::default(),
             dummy_execution_proof(),
         )
         .unwrap();
@@ -851,7 +850,7 @@ mod tests {
             BlockNumber::from(2),
             transaction_headers(),
             Default::default(),
-            TransactionCodePatch::default(),
+            BatchCodePatch::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -876,7 +875,7 @@ mod tests {
             BlockNumber::from(2),
             transaction_headers(),
             Default::default(),
-            TransactionCodePatch::default(),
+            BatchCodePatch::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();
@@ -900,7 +899,7 @@ mod tests {
             BlockNumber::from(2),
             transaction_headers(),
             Default::default(),
-            TransactionCodePatch::default(),
+            BatchCodePatch::default(),
             dummy_execution_proof(),
         )
         .unwrap_err();

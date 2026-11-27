@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 
 use crate::account::AccountId;
 use crate::batch::note_tracker::{NoteTracker, TrackerOutput};
-use crate::batch::{BatchAccountUpdate, BatchId};
+use crate::batch::{BatchAccountUpdate, BatchCodePatch, BatchId};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::errors::ProposedBatchError;
 use crate::note::{NoteId, NoteInclusionProof};
@@ -17,7 +17,6 @@ use crate::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     PublicTransactionLogs,
-    TransactionCodePatch,
     TransactionHeader,
     TransactionLogDetails,
     TransactionVerifier,
@@ -60,7 +59,7 @@ pub struct ProposedBatch {
     /// [`OutputNote::id`].
     output_notes: Vec<OutputNote>,
     /// The merged code patch of the transactions in the batch.
-    code_patch: TransactionCodePatch,
+    code_patch: BatchCodePatch,
 }
 
 impl ProposedBatch {
@@ -124,8 +123,7 @@ impl ProposedBatch {
     /// - There are duplicate transactions.
     /// - If any transaction's expiration block number is less than or equal to the batch's
     ///   reference block.
-    /// - The code patches of the transactions cannot be merged (see
-    ///   [`TransactionCodePatch::merge`]).
+    /// - The code patches of the transactions cannot be merged (see [`BatchCodePatch::merge`]).
     fn new_batch_inner(
         transactions: Vec<Arc<ProvenTransaction>>,
         reference_block_header: BlockHeader,
@@ -332,7 +330,7 @@ impl ProposedBatch {
         // Merge the code patches.
         // --------------------------------------------------------------------------------------------
 
-        let code_patch = TransactionCodePatch::merge(transactions.iter().map(|tx| tx.code_patch()))
+        let code_patch = BatchCodePatch::merge(transactions.iter().map(|tx| tx.code_patch()))
             .map_err(ProposedBatchError::CodePatchMerge)?;
 
         // Compute batch ID.
@@ -475,7 +473,7 @@ impl ProposedBatch {
     }
 
     /// Returns the merged code patch of the transactions in the batch.
-    pub fn code_patch(&self) -> &TransactionCodePatch {
+    pub fn code_patch(&self) -> &BatchCodePatch {
         &self.code_patch
     }
 
@@ -493,7 +491,7 @@ impl ProposedBatch {
         InputNotes<InputNoteCommitment>,
         Vec<OutputNote>,
         BlockNumber,
-        TransactionCodePatch,
+        BatchCodePatch,
     ) {
         (
             self.transactions,

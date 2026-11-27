@@ -1,6 +1,12 @@
-use miden_protocol::batch::{BatchAccountUpdate, ProposedBatch, ProvenBatch};
+use miden_protocol::batch::{BatchAccountUpdate, BatchCodePatch, ProposedBatch, ProvenBatch};
 
 use crate::proto;
+
+impl From<&BatchCodePatch> for proto::transaction::BatchCodePatch {
+    fn from(value: &BatchCodePatch) -> Self {
+        Self { mast: Some(value.mast().as_ref().into()) }
+    }
+}
 
 impl From<&BatchAccountUpdate> for proto::transaction::BatchAccountUpdate {
     fn from(value: &BatchAccountUpdate) -> Self {

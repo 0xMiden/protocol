@@ -34,5 +34,10 @@ message ProvenBatch {
   primitives.ExecutionProof proof = 8;
   PublicTransactionLogs public_logs = 9;
   // The merged code patch of the transactions.
-  TransactionCodePatch code_patch = 10;
+  BatchCodePatch code_patch = 10;
+}
+
+// The merged code patch of the transactions of a batch.
+message BatchCodePatch {
+  primitives.MastForest mast = 1;
 }

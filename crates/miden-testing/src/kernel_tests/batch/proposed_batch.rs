@@ -7,7 +7,7 @@ use miden_crypto::rand::EidosRandomCoin;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::NonFungibleAsset;
-use miden_protocol::batch::ProposedBatch;
+use miden_protocol::batch::{BatchCodePatch, ProposedBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::MerkleError;
 use miden_protocol::errors::{BatchAccountUpdateError, ProposedBatchError};
@@ -1091,7 +1091,7 @@ fn batch_carries_merged_code_patch() -> anyhow::Result<()> {
         BTreeMap::default(),
     )?;
 
-    let expected_patch = TransactionCodePatch::merge([&first_patch, &second_patch])?;
+    let expected_patch = BatchCodePatch::merge([&first_patch, &second_patch])?;
     assert_eq!(expected_patch.created_procedures().len(), 3);
     assert_eq!(batch.code_patch(), &expected_patch);
 

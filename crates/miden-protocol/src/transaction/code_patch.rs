@@ -73,26 +73,6 @@ impl TransactionCodePatch {
         CodePatch::new(mast).map(Self)
     }
 
-    /// Merges the patches into one patch, e.g. the patches of the transactions of a batch.
-    ///
-    /// The merge deduplicates code that more than one patch contains. A dependency of one patch is
-    /// not a dependency of the merged patch if another patch contains its code, because
-    /// [`MastForest::merge`] replaces the external node with this code. If the code is a created
-    /// procedure, the patches prove against different code tree roots, and its insertion into the
-    /// code tree is a no-op.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - the forests cannot be merged.
-    /// - the merged forest is not a valid patch (see [`Self::new`]), e.g. because it exceeds the
-    ///   limits or contains two procedures with equal digests that differ in their MAST.
-    pub fn merge<'patch>(
-        patches: impl IntoIterator<Item = &'patch TransactionCodePatch>,
-    ) -> Result<Self, CodePatchError> {
-        CodePatch::merge(patches.into_iter().map(|patch| &patch.0)).map(Self)
-    }
-
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -135,6 +115,11 @@ impl TransactionCodePatch {
     /// [`Self::dependencies_commitment`] in the domain of transaction code patches.
     pub fn commitment(&self) -> TransactionCodePatchCommitment {
         TransactionCodePatchCommitment::from_raw(self.0.commitment())
+    }
+
+    /// Returns the shared code patch implementation.
+    pub(crate) fn as_core(&self) -> &CodePatch<TransactionCodePatch> {
+        &self.0
     }
 }
 

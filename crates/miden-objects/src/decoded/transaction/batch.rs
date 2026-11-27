@@ -21,6 +21,16 @@ impl Verify for BatchAccountUpdate {
     }
 }
 
+pub use proto::transaction::DecodedBatchCodePatch as BatchCodePatch;
+
+impl Verify for BatchCodePatch {
+    type Verified = miden_protocol::batch::BatchCodePatch;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        Ok(Self::Verified::new(alloc::sync::Arc::new(self.mast.verify()?))?)
+    }
+}
+
 pub use proto::transaction::DecodedProposedBatch as ProposedBatch;
 
 /// Verifies transaction proofs and batch consistency, not trust in the supplied reference chain.

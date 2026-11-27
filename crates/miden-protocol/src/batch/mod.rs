@@ -7,6 +7,9 @@ pub use batch_id::BatchId;
 mod batches_commitment;
 pub use batches_commitment::BatchesCommitment;
 
+mod code_patch;
+pub use code_patch::{BatchCodePatch, BatchCodePatchCommitment};
+
 mod account_update;
 pub use account_update::BatchAccountUpdate;
 

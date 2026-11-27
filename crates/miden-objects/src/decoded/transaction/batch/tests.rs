@@ -11,7 +11,7 @@ use miden_protocol::account::{
     AccountUpdateDetails,
     AssetCallbackFlag,
 };
-use miden_protocol::batch::{ProposedBatch, ProvenBatch};
+use miden_protocol::batch::{BatchCodePatch, ProposedBatch, ProvenBatch};
 use miden_protocol::block::BlockHeader;
 use miden_protocol::crypto::merkle::mmr::{Mmr, PartialMmr};
 use miden_protocol::testing::dummy_execution_proof;
@@ -132,7 +132,7 @@ fn proven_batch_rejects_changed_proposal_fields() {
                 wire.reference_block_commitment = Some(Word::empty().into())
             },
             "expiration block" => wire.expiration_block_num.as_mut().unwrap().block_num += 1,
-            "code patch" => wire.code_patch = Some((&TransactionCodePatch::default()).into()),
+            "code patch" => wire.code_patch = Some((&BatchCodePatch::default()).into()),
             _ => unreachable!(),
         }
         let error = wire.decode_and_verify_with(&proposal).unwrap_err();

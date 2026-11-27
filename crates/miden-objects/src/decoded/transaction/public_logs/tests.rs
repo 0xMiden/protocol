@@ -12,7 +12,7 @@ use crate::{DecodeMessageExt, proto};
 fn logged_owners() -> (ProvenBatch, BlockBody) {
     use miden_protocol::Word;
     use miden_protocol::account::{AccountId, AccountPatch, AccountUpdateDetails};
-    use miden_protocol::batch::BatchAccountUpdate;
+    use miden_protocol::batch::{BatchAccountUpdate, BatchCodePatch};
     use miden_protocol::testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER,
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
@@ -96,7 +96,7 @@ fn logged_owners() -> (ProvenBatch, BlockBody) {
         1.into(),
         headers.clone(),
         public_logs.clone(),
-        TransactionCodePatch::default(),
+        BatchCodePatch::default(),
         dummy_execution_proof(),
     )
     .unwrap();
