@@ -116,6 +116,11 @@ impl TransactionCodePatch {
     pub fn commitment(&self) -> TransactionCodePatchCommitment {
         TransactionCodePatchCommitment::from_raw(self.0.commitment())
     }
+
+    /// Returns the shared code patch implementation.
+    pub(crate) fn as_core(&self) -> &CodePatch<TransactionCodePatch> {
+        &self.0
+    }
 }
 
 impl CodePatchKind for TransactionCodePatch {

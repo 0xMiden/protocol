@@ -1361,6 +1361,8 @@ pub enum ProposedBatchError {
     /// Public log contents or aggregate limits are invalid.
     #[error("invalid public transaction logs")]
     TransactionLogs(#[from] TransactionLogError),
+    #[error("failed to merge the code patches of the transactions")]
+    CodePatchMerge(#[source] CodePatchError),
     #[error("failed to verify transaction {transaction_id} in transaction batch")]
     TransactionVerificationFailed {
         transaction_id: TransactionId,
@@ -1892,6 +1894,9 @@ pub enum CodePatchError {
 
     #[error("advice map of the code patch MAST forest is not empty")]
     AdviceMapNotEmpty,
+
+    #[error("failed to merge the MAST forests of the code patches")]
+    MastForestMerge(#[source] MastForestError),
 }
 
 // AUTH SCHEME ERROR

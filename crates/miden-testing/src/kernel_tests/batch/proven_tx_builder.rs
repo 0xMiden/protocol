@@ -27,6 +27,7 @@ pub struct MockProvenTxBuilder {
     output_notes: Option<Vec<OutputNote>>,
     input_notes: Option<Vec<InputNote>>,
     nullifiers: Option<Vec<Nullifier>>,
+    code_patch: TransactionCodePatch,
     proof: ExecutionProof,
 }
 
@@ -47,6 +48,7 @@ impl MockProvenTxBuilder {
             output_notes: None,
             input_notes: None,
             nullifiers: None,
+            code_patch: TransactionCodePatch::default(),
             proof: miden_protocol::testing::dummy_execution_proof(),
         }
     }
@@ -102,6 +104,14 @@ impl MockProvenTxBuilder {
         self
     }
 
+    /// Sets the transaction's code patch.
+    #[must_use]
+    pub fn code_patch(mut self, code_patch: TransactionCodePatch) -> Self {
+        self.code_patch = code_patch;
+
+        self
+    }
+
     /// Builds the [`ProvenTransaction`] and returns potential errors.
     pub fn build(self) -> anyhow::Result<ProvenTransaction> {
         let mut input_note_commitments: Vec<InputNoteCommitment> = self
@@ -136,7 +146,7 @@ impl MockProvenTxBuilder {
             self.expiration_block_num,
             self.proof,
             TransactionLogDetails::Private(Word::empty()),
-            TransactionCodePatch::default(),
+            self.code_patch,
         )
         .context("failed to build proven transaction")
     }

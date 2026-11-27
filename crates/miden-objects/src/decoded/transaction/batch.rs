@@ -21,6 +21,16 @@ impl Verify for BatchAccountUpdate {
     }
 }
 
+pub use proto::transaction::DecodedBatchCodePatch as BatchCodePatch;
+
+impl Verify for BatchCodePatch {
+    type Verified = miden_protocol::batch::BatchCodePatch;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        Ok(Self::Verified::new(alloc::sync::Arc::new(self.mast.verify()?))?)
+    }
+}
+
 pub use proto::transaction::DecodedProposedBatch as ProposedBatch;
 
 /// Verifies transaction proofs and batch consistency, not trust in the supplied reference chain.
@@ -85,6 +95,7 @@ impl crate::BuildUnchecked for ProvenBatch {
             unwrap_infallible(self.expiration_block_num.verify()),
             transactions,
             public_logs,
+            self.code_patch.verify()?,
             self.proof,
         )?)
     }
@@ -123,6 +134,8 @@ impl VerifyWith<&miden_protocol::batch::ProposedBatch> for ProvenBatch {
             Some("expiration block")
         } else if batch.transactions().as_slice() != proposed.transaction_headers().as_slice() {
             Some("transaction headers")
+        } else if batch.code_patch() != proposed.code_patch() {
+            Some("code patch")
         } else {
             None
         };

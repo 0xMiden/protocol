@@ -33,4 +33,11 @@ message ProvenBatch {
   repeated TransactionHeader transactions = 7;
   primitives.ExecutionProof proof = 8;
   PublicTransactionLogs public_logs = 9;
+  // The merged code patch of the transactions.
+  BatchCodePatch code_patch = 10;
+}
+
+// The merged code patch of the transactions of a batch.
+message BatchCodePatch {
+  primitives.MastForest mast = 1;
 }

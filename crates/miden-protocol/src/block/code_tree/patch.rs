@@ -109,6 +109,30 @@ impl<Kind: CodePatchKind> CodePatch<Kind> {
         Ok(Self::new_unchecked(mast))
     }
 
+    /// Merges the patches of a lower level into one patch, e.g. the patches of the transactions of
+    /// a batch.
+    ///
+    /// The merge deduplicates code that more than one patch contains. A dependency of one patch is
+    /// not a dependency of the merged patch if another patch contains its code, because
+    /// [`MastForest::merge`] replaces the external node with this code. If the code is a created
+    /// procedure, the patches prove against different code tree roots, and its insertion into the
+    /// code tree is a no-op.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the forests cannot be merged.
+    /// - the merged forest is not a valid patch (see [`Self::new`]), e.g. because it exceeds the
+    ///   limits or contains two procedures with equal digests that differ in their MAST.
+    pub(crate) fn merge<'patch, PatchKind: CodePatchKind + 'patch>(
+        patches: impl IntoIterator<Item = &'patch CodePatch<PatchKind>>,
+    ) -> Result<Self, CodePatchError> {
+        let (mast, _) = MastForest::merge(patches.into_iter().map(|patch| patch.mast.as_ref()))
+            .map_err(CodePatchError::MastForestMerge)?;
+
+        Self::new(Arc::new(mast))
+    }
+
     /// Creates a new [`CodePatch`] from the MAST forest without validation.
     fn new_unchecked(mast: Arc<MastForest>) -> Self {
         let commitment = Hasher::hash_elements_in_domain(
@@ -277,6 +301,18 @@ mod tests {
             .into())
     }
 
+    /// Returns a patch whose created procedures are the basic blocks `push.value` of the values.
+    fn push_block_patch(values: impl IntoIterator<Item = u32>) -> anyhow::Result<CodePatch> {
+        let mut nodes: IndexVec<MastNodeId, MastNode> = IndexVec::new();
+        let mut roots = Vec::new();
+        for value in values {
+            roots.push(nodes.push(push_block(value)?)?);
+        }
+        let mast = MastForest::from_raw_parts(nodes, roots, AdviceMap::default())?;
+
+        Ok(CodePatch::new(Arc::new(mast))?)
+    }
+
     /// Returns the sorted digests as a sequence of field elements.
     fn sorted_elements(digests: impl Iterator<Item = Word>) -> Vec<Felt> {
         let mut sorted_digests: Vec<Word> = digests.collect();
@@ -347,6 +383,134 @@ mod tests {
                 ]),
                 TRANSACTION_CODE_PATCH_COMMITMENT_DOMAIN,
             )
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn merge_of_empty_patches_is_empty() -> anyhow::Result<()> {
+        assert_eq!(CodePatch::merge::<TransactionCodePatch>([])?, CodePatch::default());
+        assert_eq!(
+            CodePatch::merge([&CodePatch::default(), &CodePatch::default()])?,
+            CodePatch::default()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn merge_deduplicates_overlapping_code() -> anyhow::Result<()> {
+        let first_patch = push_block_patch([0, 1])?;
+        let second_patch = push_block_patch([1, 2])?;
+
+        let merged_patch = CodePatch::merge([&first_patch, &second_patch])?;
+
+        assert_eq!(merged_patch.commitment(), push_block_patch([0, 1, 2])?.commitment());
+        assert_eq!(merged_patch.mast().nodes().len(), 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn merge_deduplicates_shared_dependency() -> anyhow::Result<()> {
+        let first_patch = CodePatch::new(assemble_forest(LIBRARY_SOURCE))?;
+        let second_patch = CodePatch::new(assemble_forest(&format!(
+            "
+            pub proc baz
+                push.3 drop
+                call.{}
+            end
+            ",
+            ProcedureRoot::from_raw(EXTERNAL_DIGEST)
+        )))?;
+
+        let merged_patch = CodePatch::merge([&first_patch, &second_patch])?;
+
+        assert_eq!(merged_patch.created_procedures().len(), 3);
+        assert_eq!(
+            merged_patch.dependencies(),
+            BTreeSet::from([ProcedureRoot::from_raw(EXTERNAL_DIGEST)])
+        );
+
+        Ok(())
+    }
+
+    /// A procedure that one patch creates and another one depends on is a created procedure of the
+    /// merged patch. The insertion into the code tree is then a no-op, because the dependency
+    /// proves that the procedure is present.
+    #[test]
+    fn merge_makes_dependency_created_procedure() -> anyhow::Result<()> {
+        let creating_patch = CodePatch::new(assemble_forest(
+            "
+            pub proc foo
+                push.1 drop
+            end
+            ",
+        ))?;
+        let foo_root = creating_patch
+            .created_procedures()
+            .pop_first()
+            .ok_or_else(|| anyhow::anyhow!("patch should create foo"))?;
+        let depending_patch = CodePatch::new(assemble_forest(&format!(
+            "
+            pub proc bar
+                call.{foo_root}
+            end
+            "
+        )))?;
+        assert_eq!(depending_patch.dependencies(), BTreeSet::from([foo_root]));
+
+        let merged_patch = CodePatch::merge([&creating_patch, &depending_patch])?;
+
+        assert!(merged_patch.created_procedures().contains(&foo_root));
+        assert_eq!(merged_patch.created_procedures().len(), 2);
+        assert!(merged_patch.dependencies().is_empty());
+        assert_eq!(
+            CodePatch::merge([&depending_patch, &creating_patch])?.commitment(),
+            merged_patch.commitment()
+        );
+
+        Ok(())
+    }
+
+    /// [`MastForest::merge`] keeps nodes with equal digests apart if their error codes differ, so
+    /// the merged patch would create the procedure twice.
+    #[test]
+    fn merge_rejects_equal_procedures_with_different_error_codes() -> anyhow::Result<()> {
+        let assert_patch = |error_code: u32| -> anyhow::Result<CodePatch> {
+            let mut nodes: IndexVec<MastNodeId, MastNode> = IndexVec::new();
+            let node_id = nodes.push(
+                BasicBlockNodeBuilder::new(vec![Operation::Assert(Felt::from_u32(error_code))])
+                    .build()?
+                    .into(),
+            )?;
+            let mast = MastForest::from_raw_parts(nodes, vec![node_id], AdviceMap::default())?;
+            Ok(CodePatch::new(Arc::new(mast))?)
+        };
+        let first_patch = assert_patch(1)?;
+        let second_patch = assert_patch(2)?;
+        assert_eq!(first_patch.created_procedures(), second_patch.created_procedures());
+
+        assert_matches!(
+            CodePatch::merge([&first_patch, &second_patch]),
+            Err(CodePatchError::DuplicateCreatedProcedure(root))
+                if first_patch.created_procedures().contains(&root)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn merge_rejects_too_many_created_procedures() -> anyhow::Result<()> {
+        let max_roots = u32::try_from(TransactionCodePatch::MAX_ROOTS)?;
+        let first_patch = push_block_patch(0..max_roots)?;
+        let second_patch = push_block_patch([max_roots])?;
+
+        assert_matches!(
+            CodePatch::merge([&first_patch, &second_patch]),
+            Err(CodePatchError::TooManyCreatedProcedures { count, .. })
+                if count == TransactionCodePatch::MAX_ROOTS + 1
         );
 
         Ok(())

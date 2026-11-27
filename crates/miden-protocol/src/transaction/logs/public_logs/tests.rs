@@ -1,6 +1,6 @@
 use super::*;
 use crate::Word;
-use crate::batch::{BatchId, OrderedBatches, ProvenBatch};
+use crate::batch::{BatchCodePatch, BatchId, OrderedBatches, ProvenBatch};
 use crate::block::{BlockBody, BlockHeader};
 use crate::errors::ProvenBatchError;
 use crate::testing::account_id::{
@@ -64,6 +64,7 @@ fn batch(headers: OrderedTransactionHeaders) -> ProvenBatch {
         1.into(),
         headers,
         logs,
+        BatchCodePatch::default(),
         dummy_execution_proof(),
     )
     .unwrap()
@@ -197,6 +198,7 @@ fn checked_batch(
         reference.block_num() + 2,
         headers,
         public_logs,
+        BatchCodePatch::default(),
         dummy_execution_proof(),
     )
 }
@@ -483,6 +485,7 @@ fn block_rejects_transaction_repeated_across_distinct_batches(#[case] public: bo
             2.into(),
             headers,
             logs,
+            BatchCodePatch::default(),
             dummy_execution_proof(),
         )
         .unwrap()

@@ -11,7 +11,7 @@ use miden_protocol::account::{
     AccountUpdateDetails,
     AssetCallbackFlag,
 };
-use miden_protocol::batch::{ProposedBatch, ProvenBatch};
+use miden_protocol::batch::{BatchCodePatch, ProposedBatch, ProvenBatch};
 use miden_protocol::block::BlockHeader;
 use miden_protocol::crypto::merkle::mmr::{Mmr, PartialMmr};
 use miden_protocol::testing::dummy_execution_proof;
@@ -60,7 +60,7 @@ fn proposal() -> ProposedBatch {
         header.block_num() + 1,
         dummy_execution_proof(),
         TransactionLogDetails::Private(Word::empty()),
-        TransactionCodePatch::default(),
+        TransactionCodePatch::mock(),
     )
     .unwrap();
     // A dummy proof is deliberate: structural decoding must not perform proof verification.
@@ -81,6 +81,7 @@ fn proven(proposal: &ProposedBatch) -> ProvenBatch {
             proposal.batch_expiration_block_num(),
             embedded_headers,
             embedded_logs,
+            proposal.code_patch().clone(),
             dummy_execution_proof(),
         )
     }
@@ -118,7 +119,12 @@ fn proven_batch_roundtrips_and_checks_proposal_agreement() {
 fn proven_batch_rejects_changed_proposal_fields() {
     let proposal = proposal();
     let batch = proven(&proposal);
-    for field in ["reference block number", "reference block commitment", "expiration block"] {
+    for field in [
+        "reference block number",
+        "reference block commitment",
+        "expiration block",
+        "code patch",
+    ] {
         let mut wire: proto::transaction::ProvenBatch = (&batch).into();
         match field {
             "reference block number" => wire.reference_block_num.as_mut().unwrap().block_num -= 1,
@@ -126,6 +132,7 @@ fn proven_batch_rejects_changed_proposal_fields() {
                 wire.reference_block_commitment = Some(Word::empty().into())
             },
             "expiration block" => wire.expiration_block_num.as_mut().unwrap().block_num += 1,
+            "code patch" => wire.code_patch = Some((&BatchCodePatch::default()).into()),
             _ => unreachable!(),
         }
         let error = wire.decode_and_verify_with(&proposal).unwrap_err();

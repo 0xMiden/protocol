@@ -57,6 +57,7 @@ pub use witness::{TransactionWitness, TransactionWitnessV1};
 mod batch;
 pub use batch::{
     BatchAccountUpdate,
+    BatchCodePatch,
     ProposedBatch,
     ProposedBatchError,
     ProvenBatch,

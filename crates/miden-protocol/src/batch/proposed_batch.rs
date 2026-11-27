@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 
 use crate::account::AccountId;
 use crate::batch::note_tracker::{NoteTracker, TrackerOutput};
-use crate::batch::{BatchAccountUpdate, BatchId};
+use crate::batch::{BatchAccountUpdate, BatchCodePatch, BatchId};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::errors::ProposedBatchError;
 use crate::note::{NoteId, NoteInclusionProof};
@@ -58,6 +58,8 @@ pub struct ProposedBatch {
     /// batch that are not consumed within the same batch. These are sorted by
     /// [`OutputNote::id`].
     output_notes: Vec<OutputNote>,
+    /// The merged code patch of the transactions in the batch.
+    code_patch: BatchCodePatch,
 }
 
 impl ProposedBatch {
@@ -121,6 +123,7 @@ impl ProposedBatch {
     /// - There are duplicate transactions.
     /// - If any transaction's expiration block number is less than or equal to the batch's
     ///   reference block.
+    /// - The code patches of the transactions cannot be merged (see [`BatchCodePatch::merge`]).
     fn new_batch_inner(
         transactions: Vec<Arc<ProvenTransaction>>,
         reference_block_header: BlockHeader,
@@ -324,6 +327,12 @@ impl ProposedBatch {
             return Err(ProposedBatchError::TooManyOutputNotes(output_notes.len()));
         }
 
+        // Merge the code patches.
+        // --------------------------------------------------------------------------------------------
+
+        let code_patch = BatchCodePatch::merge(transactions.iter().map(|tx| tx.code_patch()))
+            .map_err(ProposedBatchError::CodePatchMerge)?;
+
         // Compute batch ID.
         // --------------------------------------------------------------------------------------------
 
@@ -339,6 +348,7 @@ impl ProposedBatch {
             batch_expiration_block_num,
             input_notes,
             output_notes,
+            code_patch,
         })
     }
 
@@ -462,6 +472,11 @@ impl ProposedBatch {
         &self.output_notes
     }
 
+    /// Returns the merged code patch of the transactions in the batch.
+    pub fn code_patch(&self) -> &BatchCodePatch {
+        &self.code_patch
+    }
+
     /// Consumes the proposed batch and returns its underlying parts.
     #[allow(clippy::type_complexity)]
     pub fn into_parts(
@@ -476,6 +491,7 @@ impl ProposedBatch {
         InputNotes<InputNoteCommitment>,
         Vec<OutputNote>,
         BlockNumber,
+        BatchCodePatch,
     ) {
         (
             self.transactions,
@@ -487,6 +503,7 @@ impl ProposedBatch {
             self.input_notes,
             self.output_notes,
             self.batch_expiration_block_num,
+            self.code_patch,
         )
     }
 }
