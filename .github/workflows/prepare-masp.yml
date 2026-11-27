@@ -31,6 +31,7 @@ jobs:
         run: |
           # Project manifests supply metadata embedded in the packages. Hash them with the
           # MASM sources and assembler version so unrelated Cargo updates can reuse the cache.
+          # If a build script starts embedding another input, include it in this key too.
           assembler=$(python3 -c '
           import tomllib
           with open("Cargo.lock", "rb") as lock:
