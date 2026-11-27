@@ -57,8 +57,10 @@ const AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME: &str = "agglayer_constants.rs";
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
+    println!("cargo::rerun-if-env-changed=MIDEN_SKIP_MASP_ASSEMBLY");
     println!("cargo::rerun-if-env-changed=REGENERATE_CANONICAL_ZEROS");
 
+    let skip_assembly = env::var("MIDEN_SKIP_MASP_ASSEMBLY").as_deref() == Ok("1");
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let build_dir = env::var("OUT_DIR").unwrap();
     let crate_path = Path::new(&crate_dir);
@@ -78,7 +80,7 @@ fn main() -> Result<()> {
     let mut registry = build_registry()?;
 
     // compile agglayer library (includes note scripts) and seed it into the registry
-    compile_agglayer_package(&source_dir, &target_dir, &mut registry)?;
+    compile_agglayer_package(&source_dir, &target_dir, &mut registry, skip_assembly)?;
 
     // compile account components (thin wrappers per component); their packages are returned so
     // their code commitments can be computed below
@@ -86,6 +88,7 @@ fn main() -> Result<()> {
         source_dir.join(ASM_COMPONENTS_DIR).join(PROJECT_MANIFEST),
         &mut registry,
         &target_dir.join(ASM_COMPONENTS_DIR),
+        skip_assembly,
         |metadata| Ok(AccountComponentMetadata::from_toml(metadata).into_diagnostic()?.to_bytes()),
     )?;
 
@@ -131,11 +134,17 @@ fn compile_agglayer_package(
     source_dir: &Path,
     target_dir: &Path,
     registry: &mut InMemoryPackageRegistry,
+    skip_assembly: bool,
 ) -> Result<()> {
     let manifest_path = source_dir.join(ASM_AGGLAYER_DIR).join(PROJECT_MANIFEST);
 
-    let package =
-        assemble_project(manifest_path, ProjectTargetSelector::Library, registry, target_dir)?;
+    let package = assemble_project(
+        manifest_path,
+        ProjectTargetSelector::Library,
+        registry,
+        target_dir,
+        skip_assembly,
+    )?;
 
     registry.cache_package(package).into_diagnostic()?;
 

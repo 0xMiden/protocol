@@ -79,7 +79,9 @@ const TX_KERNEL_ERROR_CATEGORIES: [&str; 15] = [
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
+    println!("cargo::rerun-if-env-changed=MIDEN_SKIP_MASP_ASSEMBLY");
 
+    let skip_assembly = env::var("MIDEN_SKIP_MASP_ASSEMBLY").as_deref() == Ok("1");
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let build_dir = env::var("OUT_DIR").unwrap();
     let source_dir = Path::new(&crate_dir).join(ASM_DIR);
@@ -92,17 +94,35 @@ fn main() -> Result<()> {
     store.cache_package(CoreLibrary::default().package()).into_diagnostic()?;
 
     // compile transaction kernel
-    compile_tx_kernel(&source_dir, &target_dir.join("kernels"), &build_dir, &mut store)?;
+    compile_tx_kernel(
+        &source_dir,
+        &target_dir.join("kernels"),
+        &build_dir,
+        &mut store,
+        skip_assembly,
+    )?;
 
     // compile protocol library
     let manifest_path = source_dir.join(ASM_PROTOCOL_DIR).join(PROJECT_MANIFEST);
-    assemble_project(manifest_path, ProjectTargetSelector::Library, &mut store, &target_dir)?;
+    assemble_project(
+        manifest_path,
+        ProjectTargetSelector::Library,
+        &mut store,
+        &target_dir,
+        skip_assembly,
+    )?;
 
     // Make the shared utilities available to test assemblers as a package.
     #[cfg(any(feature = "testing", test))]
     {
         let manifest_path = source_dir.join(ASM_PROTOCOL_UTILS_DIR).join(PROJECT_MANIFEST);
-        assemble_project(manifest_path, ProjectTargetSelector::Library, &mut store, &target_dir)?;
+        assemble_project(
+            manifest_path,
+            ProjectTargetSelector::Library,
+            &mut store,
+            &target_dir,
+            skip_assembly,
+        )?;
     }
 
     // compile batch kernel
@@ -112,6 +132,7 @@ fn main() -> Result<()> {
         ProjectTargetSelector::Executable(BATCH_KERNEL_TARGET),
         &mut store,
         &target_dir.join("kernels"),
+        skip_assembly,
     )?;
 
     // compile block kernel
@@ -121,6 +142,7 @@ fn main() -> Result<()> {
         ProjectTargetSelector::Executable(BLOCK_KERNEL_TARGET),
         &mut store,
         &target_dir.join("kernels"),
+        skip_assembly,
     )?;
 
     generate_error_constants(&source_dir, &build_dir)?;
@@ -161,12 +183,18 @@ fn compile_tx_kernel(
     target_dir: &Path,
     build_dir: &str,
     store: &mut InMemoryPackageRegistry,
+    skip_assembly: bool,
 ) -> Result<()> {
     let manifest_path = source_dir.join(ASM_TX_KERNEL_DIR).join(PROJECT_MANIFEST);
 
     // assemble the kernel library and write its package to the `target_dir`
-    let kernel_package =
-        assemble_project(&manifest_path, ProjectTargetSelector::Library, store, target_dir)?;
+    let kernel_package = assemble_project(
+        &manifest_path,
+        ProjectTargetSelector::Library,
+        store,
+        target_dir,
+        skip_assembly,
+    )?;
 
     // generate kernel `procedures.rs` file
     generate_kernel_proc_hash_file(&kernel_package, build_dir)?;
@@ -181,6 +209,7 @@ fn compile_tx_kernel(
             ProjectTargetSelector::Executable(target_name),
             store,
             target_dir,
+            skip_assembly,
         )?;
     }
 
@@ -190,7 +219,13 @@ fn compile_tx_kernel(
     #[cfg(any(feature = "testing", test))]
     {
         let core_manifest = source_dir.join(ASM_TX_KERNEL_CORE_DIR).join(PROJECT_MANIFEST);
-        assemble_project(core_manifest, ProjectTargetSelector::Library, store, target_dir)?;
+        assemble_project(
+            core_manifest,
+            ProjectTargetSelector::Library,
+            store,
+            target_dir,
+            skip_assembly,
+        )?;
     }
 
     Ok(())

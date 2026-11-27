@@ -39,7 +39,9 @@ const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
+    println!("cargo::rerun-if-env-changed=MIDEN_SKIP_MASP_ASSEMBLY");
 
+    let skip_assembly = env::var("MIDEN_SKIP_MASP_ASSEMBLY").as_deref() == Ok("1");
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let build_dir = env::var("OUT_DIR").unwrap();
 
@@ -71,6 +73,7 @@ fn main() -> Result<()> {
         ProjectTargetSelector::Library,
         &mut registry,
         &target_dir,
+        skip_assembly,
     )?;
     registry.cache_package(package).into_diagnostic()?;
 
@@ -81,6 +84,7 @@ fn main() -> Result<()> {
         source_dir.join(ASM_COMPONENTS_DIR).join(PROJECT_MANIFEST),
         &mut registry,
         &target_dir.join(ASM_COMPONENTS_DIR),
+        skip_assembly,
         |metadata| Ok(AccountComponentMetadata::from_toml(metadata).into_diagnostic()?.to_bytes()),
     )?;
 

@@ -11,12 +11,12 @@ use std::sync::{Arc, LazyLock};
 
 use fs_err as fs;
 use miden_assembly::debuginfo::{DefaultSourceManager, SourceManager, SourceManagerExt};
-use miden_assembly::diagnostics::{IntoDiagnostic, Result};
+use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
 use miden_assembly::{Assembler, ProjectTargetSelector, Report};
 use miden_core::events::EventId;
 use miden_mast_package::{Package, Section, SectionId};
 use miden_package_registry::InMemoryPackageRegistry;
-use miden_project::Workspace;
+use miden_project::{Project, Workspace};
 use regex::Regex;
 use walkdir::WalkDir;
 
@@ -41,20 +41,27 @@ const COMPONENT_METADATA_TABLE: &str = "account-component";
 
 /// Assembles `selector` from the Miden project manifest at `manifest_path`, resolving
 /// dependencies against `registry`, writes the assembled package to `target_dir` as a `.masp`
-/// file, and returns it.
+/// file, and returns it. When `skip_assembly` is true, loads the existing file instead.
 pub fn assemble_project(
     manifest_path: impl AsRef<Path>,
     selector: ProjectTargetSelector,
     registry: &mut InMemoryPackageRegistry,
     target_dir: &Path,
+    skip_assembly: bool,
 ) -> Result<Arc<Package>> {
     let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
-    let package = Assembler::new(source_manager)
-        .with_warnings_as_errors(true)
-        .for_project_at_path(manifest_path.as_ref(), registry)?
-        .assemble(selector, BUILD_PROFILE)?;
-    package.write_masp_file(target_dir).into_diagnostic()?;
-    Ok(package)
+    if skip_assembly {
+        let project = Project::load(manifest_path.as_ref(), &source_manager)?.package();
+        let target = selector.select_target(&project)?;
+        read_masp(target_dir, &project.target_package_name(&target))
+    } else {
+        let package = Assembler::new(source_manager)
+            .with_warnings_as_errors(true)
+            .for_project_at_path(manifest_path.as_ref(), registry)?
+            .assemble(selector, BUILD_PROFILE)?;
+        package.write_masp_file(target_dir).into_diagnostic()?;
+        Ok(package)
+    }
 }
 
 /// Assembles every member of the workspace whose manifest is at `manifest_path` that defines a
@@ -65,11 +72,13 @@ pub fn assemble_project(
 /// If a member declares a `[package.metadata.account-component]` manifest table, the table is
 /// passed to `encode_account_component_metadata` as a TOML document and the returned bytes are
 /// embedded in the package as its [`SectionId::ACCOUNT_COMPONENT_METADATA`] section. Members
-/// without the table are assembled as-is.
+/// without the table are assembled as-is. When `skip_assembly` is true, loads the existing
+/// packages, including their embedded metadata.
 pub fn assemble_workspace(
     manifest_path: impl AsRef<Path>,
     registry: &mut InMemoryPackageRegistry,
     target_dir: &Path,
+    skip_assembly: bool,
     encode_account_component_metadata: fn(&str) -> Result<Vec<u8>>,
 ) -> Result<Vec<Arc<Package>>> {
     let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
@@ -86,24 +95,38 @@ pub fn assemble_workspace(
             continue;
         }
 
-        let mut package = assembler
-            .clone()
-            .for_project(member.clone(), registry)?
-            .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
+        let package = if skip_assembly {
+            read_masp(target_dir, member.name().inner())?
+        } else {
+            let mut package = assembler
+                .clone()
+                .for_project(member.clone(), registry)?
+                .assemble(ProjectTargetSelector::Library, BUILD_PROFILE)?;
 
-        if let Some(metadata) = component_metadata_toml(member)? {
-            let section = Section::new(
-                SectionId::ACCOUNT_COMPONENT_METADATA,
-                encode_account_component_metadata(&metadata)?,
-            );
-            Arc::make_mut(&mut package).sections.push(section);
-        }
+            if let Some(metadata) = component_metadata_toml(member)? {
+                let section = Section::new(
+                    SectionId::ACCOUNT_COMPONENT_METADATA,
+                    encode_account_component_metadata(&metadata)?,
+                );
+                Arc::make_mut(&mut package).sections.push(section);
+            }
 
-        package.write_masp_file(target_dir).into_diagnostic()?;
+            package.write_masp_file(target_dir).into_diagnostic()?;
+            package
+        };
         packages.push(package);
     }
 
     Ok(packages)
+}
+
+fn read_masp(target_dir: &Path, name: &str) -> Result<Arc<Package>> {
+    let path = target_dir.join(name).with_extension(Package::EXTENSION);
+    println!("cargo::rerun-if-changed={}", path.display());
+    Package::deserialize_from_file(&path)
+        .map(Arc::new)
+        .into_diagnostic()
+        .wrap_err_with(|| format!("reading prebuilt package {}", path.display()))
 }
 
 /// Returns the `[package.metadata.account-component]` table of `package`'s manifest as a standalone
