@@ -1,7 +1,5 @@
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
-use alloc::string::ToString;
-use alloc::vec::Vec;
 
 use miden_crypto::merkle::InnerNodeInfo;
 use miden_crypto::merkle::smt::SmtProof;
@@ -10,13 +8,6 @@ use super::asset_id::AssetId;
 use crate::Word;
 use crate::asset::Asset;
 use crate::errors::AssetError;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 /// A witness of an asset in an [`AssetVault`](super::AssetVault).
 ///
@@ -150,24 +141,6 @@ impl AssetWitness {
 impl From<AssetWitness> for SmtProof {
     fn from(witness: AssetWitness) -> Self {
         witness.proof
-    }
-}
-
-impl Serializable for AssetWitness {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write(&self.proof);
-        target.write_usize(self.entries.len());
-        target.write_many(self.entries.keys());
-    }
-}
-
-impl Deserializable for AssetWitness {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let proof: SmtProof = source.read()?;
-        let num_ids: usize = source.read()?;
-        let ids = source.read_many_iter::<AssetId>(num_ids)?.collect::<Result<Vec<_>, _>>()?;
-
-        Self::new(proof, ids).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 

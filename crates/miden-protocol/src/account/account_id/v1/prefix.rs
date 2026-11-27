@@ -7,13 +7,7 @@ use miden_core::Felt;
 use crate::account::account_id::v1::{self, validate_prefix};
 use crate::account::{AccountIdVersion, AccountType, AssetCallbackFlag};
 use crate::errors::AccountIdError;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
+use crate::utils::serde::DeserializationError;
 
 // ACCOUNT ID PREFIX VERSION 1
 // ================================================================================================
@@ -33,12 +27,6 @@ impl Hash for AccountIdPrefixV1 {
 }
 
 impl AccountIdPrefixV1 {
-    // CONSTANTS
-    // --------------------------------------------------------------------------------------------
-
-    /// The serialized size of an [`AccountIdPrefixV1`] in bytes.
-    const SERIALIZED_SIZE: usize = 8;
-
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -199,34 +187,11 @@ impl fmt::Display for AccountIdPrefixV1 {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for AccountIdPrefixV1 {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let bytes: [u8; 8] = (*self).into();
-        bytes.write_into(target);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        Self::SERIALIZED_SIZE
-    }
-}
-
-impl Deserializable for AccountIdPrefixV1 {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        <[u8; 8]>::read_from(source)?
-            .try_into()
-            .map_err(|err: AccountIdError| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::account::{AccountId, AccountIdPrefix};
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
@@ -250,11 +215,8 @@ mod tests {
         {
             let full_id = AccountId::try_from(account_id).unwrap();
             let prefix = full_id.prefix();
-            assert_eq!(
-                prefix,
-                AccountIdPrefix::read_from_bytes(&prefix.to_bytes()).unwrap(),
-                "failed in {idx}"
-            );
+            let prefix_bytes: [u8; 8] = prefix.into();
+            assert_eq!(prefix, AccountIdPrefix::try_from(prefix_bytes).unwrap(), "failed in {idx}");
         }
     }
 }

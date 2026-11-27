@@ -3,13 +3,6 @@ use miden_crypto_derive::WordWrapper;
 use crate::Word;
 use crate::account::AccountId;
 use crate::transaction::{OrderedTransactionHeaders, ProvenTransaction, TransactionId};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // BATCH ID
 // ================================================================================================
@@ -43,20 +36,5 @@ impl BatchId {
 impl core::fmt::Display for BatchId {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.to_hex())
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for BatchId {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.0.write_into(target);
-    }
-}
-
-impl Deserializable for BatchId {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        Ok(Self(Word::read_from(source)?))
     }
 }

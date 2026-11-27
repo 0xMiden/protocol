@@ -17,13 +17,6 @@ use crate::account::{AccountPatch, PartialAccount};
 use crate::block::code_tree::CodePatch;
 use crate::block::{BlockHeader, BlockNumber};
 use crate::transaction::TransactionInputs;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // EXECUTED TRANSACTION
 // ================================================================================================
@@ -206,37 +199,6 @@ impl TransactionMeasurements {
     /// Returns the total number of cycles spent executing the transaction.
     pub fn total_cycles(&self) -> usize {
         self.prologue + self.notes_processing + self.tx_script_processing + self.epilogue
-    }
-}
-
-impl Serializable for TransactionMeasurements {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.prologue.write_into(target);
-        self.notes_processing.write_into(target);
-        self.note_execution.write_into(target);
-        self.tx_script_processing.write_into(target);
-        self.epilogue.write_into(target);
-        self.auth_procedure.write_into(target);
-    }
-}
-
-impl Deserializable for TransactionMeasurements {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let prologue = usize::read_from(source)?;
-        let notes_processing = usize::read_from(source)?;
-        let note_execution = Vec::<(NoteId, usize)>::read_from(source)?;
-        let tx_script_processing = usize::read_from(source)?;
-        let epilogue = usize::read_from(source)?;
-        let auth_procedure = usize::read_from(source)?;
-
-        Ok(Self {
-            prologue,
-            notes_processing,
-            note_execution,
-            tx_script_processing,
-            epilogue,
-            auth_procedure,
-        })
     }
 }
 

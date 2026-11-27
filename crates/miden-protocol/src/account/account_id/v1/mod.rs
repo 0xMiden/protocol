@@ -557,23 +557,14 @@ mod tests {
         assert_eq!(deserialized_id.asset_callback_flag(), asset_callbacks);
         assert_eq!(serialized_id.len(), AccountIdV1::SERIALIZED_SIZE);
 
-        let serialized_prefix = id.prefix().to_bytes();
-        let deserialized_prefix = AccountIdPrefix::read_from_bytes(&serialized_prefix).unwrap();
-        assert_eq!(deserialized_prefix.asset_callback_flag(), asset_callbacks);
-        assert_eq!(serialized_prefix.len(), AccountIdPrefix::SERIALIZED_SIZE);
+        let prefix_bytes: [u8; 8] = id.prefix().into();
+        let converted_prefix = AccountIdPrefix::try_from(prefix_bytes).unwrap();
+        assert_eq!(converted_prefix.asset_callback_flag(), asset_callbacks);
     }
 
     #[test]
-    fn account_id_prefix_serialization_compatibility() {
-        // Ensure that an AccountIdPrefix can be read from the serialized bytes of an AccountId.
+    fn account_id_prefix_hex_compatibility() {
         let account_id = AccountIdV1::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let id_bytes = account_id.to_bytes();
-        assert_eq!(account_id.prefix().to_bytes(), id_bytes[..8]);
-
-        let deserialized_prefix = AccountIdPrefix::read_from_bytes(&id_bytes).unwrap();
-        assert_eq!(AccountIdPrefix::V1(account_id.prefix()), deserialized_prefix);
-
-        // Ensure AccountId and AccountIdPrefix's hex representation are compatible.
         assert!(account_id.to_hex().starts_with(&account_id.prefix().to_hex()));
     }
 

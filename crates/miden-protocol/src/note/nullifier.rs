@@ -4,17 +4,7 @@ use miden_core::WORD_SIZE;
 use miden_crypto::WordError;
 use miden_crypto_derive::WordWrapper;
 
-use super::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Felt,
-    Hasher,
-    Serializable,
-    Word,
-    ZERO,
-};
+use super::{Felt, Hasher, Word, ZERO};
 use crate::note::{NoteDetails, NoteMetadata, NoteScriptRoot};
 
 // CONSTANTS
@@ -111,26 +101,6 @@ impl Display for Nullifier {
 impl Debug for Nullifier {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         Display::fmt(self, f)
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for Nullifier {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write_bytes(&self.0.to_bytes());
-    }
-
-    fn get_size_hint(&self) -> usize {
-        Word::SERIALIZED_SIZE
-    }
-}
-
-impl Deserializable for Nullifier {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let nullifier = Word::read_from(source)?;
-        Ok(Self(nullifier))
     }
 }
 

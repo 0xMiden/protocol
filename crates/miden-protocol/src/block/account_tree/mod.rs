@@ -1,4 +1,3 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 #[cfg(feature = "std")]
@@ -10,13 +9,6 @@ use crate::block::{SmtBackend, SmtBackendReader};
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt, SmtLeaf};
 use crate::errors::AccountTreeError;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 mod partial;
 pub use partial::PartialAccountTree;
@@ -404,39 +396,6 @@ fn duplicate_state_commitment_error(err: MerkleError) -> AccountTreeError {
         prefix: AccountIdPrefix::new_unchecked(
             crate::Felt::try_from(leaf_idx).expect("leaf index should be a valid felt"),
         ),
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for AccountTree {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.account_commitments().collect::<Vec<_>>().write_into(target);
-    }
-}
-
-impl Deserializable for AccountTree {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let entries = Vec::<(AccountId, Word)>::read_from(source)?;
-
-        // Validate uniqueness of account ID prefixes before creating the tree
-        let mut seen_prefixes = alloc::collections::BTreeSet::new();
-        for (id, _) in &entries {
-            if !seen_prefixes.insert(id.prefix()) {
-                return Err(DeserializationError::InvalidValue(format!(
-                    "Duplicate account ID prefix: {}",
-                    id.prefix()
-                )));
-            }
-        }
-
-        // Create the SMT with validated entries
-        let smt = Smt::with_entries(
-            entries.into_iter().map(|(k, v)| (AccountIdKey::from(k).as_word(), v)),
-        )
-        .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
-        Ok(Self::new_unchecked(smt))
     }
 }
 

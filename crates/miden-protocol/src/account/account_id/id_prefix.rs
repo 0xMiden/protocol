@@ -6,13 +6,7 @@ use crate::Felt;
 use crate::account::account_id::AccountIdPrefixV1;
 use crate::account::{AccountIdVersion, AccountType, AssetCallbackFlag};
 use crate::errors::AccountIdError;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
+use crate::utils::serde::DeserializationError;
 
 // ACCOUNT ID PREFIX
 // ================================================================================================
@@ -21,9 +15,6 @@ use crate::utils::serde::{
 ///
 /// See the [`AccountId`][id] documentation for details.
 ///
-/// The serialization formats of [`AccountIdPrefix`] and [`AccountId`][id] are compatible. In
-/// particular, a prefix can be deserialized from the serialized bytes of a full id.
-///
 /// [id]: crate::account::AccountId
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum AccountIdPrefix {
@@ -31,12 +22,6 @@ pub enum AccountIdPrefix {
 }
 
 impl AccountIdPrefix {
-    // CONSTANTS
-    // --------------------------------------------------------------------------------------------
-
-    /// The serialized size of an [`AccountIdPrefix`] in bytes.
-    pub const SERIALIZED_SIZE: usize = 8;
-
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -246,30 +231,5 @@ impl Ord for AccountIdPrefix {
 impl fmt::Display for AccountIdPrefix {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_hex())
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for AccountIdPrefix {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        match self {
-            AccountIdPrefix::V1(id_prefix) => id_prefix.write_into(target),
-        }
-    }
-
-    fn get_size_hint(&self) -> usize {
-        match self {
-            AccountIdPrefix::V1(id_prefix) => id_prefix.get_size_hint(),
-        }
-    }
-}
-
-impl Deserializable for AccountIdPrefix {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        <[u8; 8]>::read_from(source)?
-            .try_into()
-            .map_err(|err: AccountIdError| DeserializationError::InvalidValue(err.to_string()))
     }
 }
