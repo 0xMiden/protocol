@@ -10,6 +10,7 @@ use miden_protocol::account::{
     AccountVaultDelta,
 };
 use miden_protocol::block::BlockNumber;
+use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::errors::TransactionSummaryError;
 use miden_protocol::note::{Note, PartialNote};
 use miden_protocol::transaction::{
@@ -54,6 +55,7 @@ fn transaction_summary() -> anyhow::Result<TransactionSummary> {
         account_delta,
         input_notes,
         output_notes,
+        CodePatch::default(),
         BlockNumber::from(17_u32),
         dummy_word(5),
         u16::MAX,

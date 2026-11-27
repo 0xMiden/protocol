@@ -40,9 +40,6 @@ where
 {
     /// The underlying base transaction host.
     base_host: TransactionBaseHost<'store, STORE>,
-
-    /// The code patch of the executed transaction, which the kernel loads.
-    code_patch: CodePatch,
 }
 
 impl<'store, STORE> TransactionProverHost<'store, STORE>
@@ -73,7 +70,7 @@ where
         expected_output_note_recipients: Vec<NoteRecipient>,
         ies_seal_seed: Option<IesSealSeed>,
     ) -> Result<Self, TransactionKernelError> {
-        let base_host = TransactionBaseHost::new(
+        let mut base_host = TransactionBaseHost::new(
             account,
             input_notes,
             block_commitments,
@@ -85,25 +82,20 @@ where
             ies_seal_seed,
         )?;
 
-        Ok(Self { base_host, code_patch })
+        base_host.set_code_patch(code_patch);
+
+        Ok(Self { base_host })
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Consumes `self` and returns the account patch, input and output notes, transaction logs and
-    /// the code patch.
+    /// Consumes `self` and returns the account patch, input and output notes and transaction logs.
     pub fn into_parts(
         self,
-    ) -> (
-        AccountPatch,
-        InputNotes<InputNote>,
-        Vec<RawOutputNote>,
-        TransactionLogs,
-        CodePatch,
-    ) {
-        let (account_patch, input_notes, output_notes, logs) = self.base_host.into_parts();
-        (account_patch, input_notes, output_notes, logs, self.code_patch)
+    ) -> (AccountPatch, InputNotes<InputNote>, Vec<RawOutputNote>, TransactionLogs) {
+        let (account_patch, input_notes, output_notes, logs, _) = self.base_host.into_parts();
+        (account_patch, input_notes, output_notes, logs)
     }
 }
 
@@ -249,7 +241,10 @@ where
 
             // The code witnesses are in the transaction inputs at proving time.
             TransactionEvent::CodePatchBeforeLoaded => {
-                Ok(Vec::from([code_patch_advice(&self.code_patch)]))
+                let code_patch = self.base_host.code_patch().ok_or_else(|| {
+                    TransactionKernelError::other("code patch should be set at construction")
+                })?;
+                Ok(Vec::from([code_patch_advice(code_patch)]))
             },
 
             TransactionEvent::CodePatchBeforeWitnessVerified { procedure_root } => {

@@ -26,6 +26,7 @@ impl Verify for TransactionSummaryV1 {
             self.account_delta.verify()?,
             self.input_notes.verify()?,
             self.output_notes.verify()?,
+            self.code_patch.verify()?,
             unwrap_infallible(self.block_number.verify()),
             self.block_commitment,
             self.expiration_delta.try_into()?,

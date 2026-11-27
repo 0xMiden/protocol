@@ -14,6 +14,7 @@ impl From<&TransactionSummary> for proto::transaction::TransactionSummaryV1 {
             account_delta: Some(summary.account_delta().into()),
             input_notes: Some(summary.input_notes().into()),
             output_notes: Some(summary.output_notes().into()),
+            code_patch: Some(summary.code_patch().into()),
             block_number: Some(summary.block_number().into()),
             block_commitment: Some(summary.block_commitment().into()),
             expiration_delta: summary.expiration_delta().into(),

@@ -187,7 +187,7 @@ impl LocalTransactionProver {
             script_mast_store,
             account_procedure_index_map,
             code_tree,
-            code_patch,
+            code_patch.clone(),
             tx_args.output_note_recipients().to_vec(),
             tx_args.ies_seal_seed().cloned(),
         )
@@ -205,7 +205,7 @@ impl LocalTransactionProver {
             .execute_for_proving_sync(&TransactionKernel::main(), &mut host)
             .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
 
-        let (account_patch, input_notes, output_notes, logs, code_patch) = host.into_parts();
+        let (account_patch, input_notes, output_notes, logs) = host.into_parts();
         let output_notes = RawOutputNotes::new(output_notes)
             .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
         let tx_outputs = TransactionOutputs::new(

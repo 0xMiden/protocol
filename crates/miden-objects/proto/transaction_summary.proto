@@ -24,4 +24,5 @@ message TransactionSummaryV1 {
   uint32 expiration_delta = 6;
   repeated primitives.Felt user_params = 7;
   TransactionLogs logs = 8;
+  CodePatch code_patch = 9;
 }

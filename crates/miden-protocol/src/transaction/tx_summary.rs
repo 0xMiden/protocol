@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use super::TransactionLogs;
 use crate::account::AccountDelta;
 use crate::block::BlockNumber;
+use crate::block::code_tree::CodePatch;
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionSummaryError;
 use crate::transaction::{InputNote, InputNotes, RawOutputNotes};
@@ -13,10 +14,13 @@ use crate::{Felt, WORD_SIZE, Word};
 
 /// The summary of the changes that result from executing a transaction.
 ///
-/// These are the account delta, the consumed and created notes, the block the summary binds (see
-/// [`TransactionSummaryMetadata`]) together with that block's commitment, the transaction's
-/// expiration block delta, transaction logs, and user-defined parameters (see
+/// These are the account delta, the consumed and created notes, the code patch, the block the
+/// summary binds (see [`TransactionSummaryMetadata`]) together with that block's commitment, the
+/// transaction's expiration block delta, transaction logs, and user-defined parameters (see
 /// [`TransactionSummaryUserParams`]).
+///
+/// The host provides the code patch to the kernel non-deterministically. The summary binds it, so
+/// that the executor or prover cannot change the code that the signed transaction registers.
 ///
 /// Because this data is intended to be signed, the user-defined parameters give an account's
 /// authentication procedure a way to bind arbitrary additional data to that signature, for example
@@ -28,6 +32,7 @@ pub struct TransactionSummary {
     account_delta: AccountDelta,
     input_notes: InputNotes<InputNote>,
     output_notes: RawOutputNotes,
+    code_patch: CodePatch,
     block_number: BlockNumber,
     block_commitment: Word,
     expiration_delta: u16,
@@ -51,9 +56,9 @@ impl TransactionSummary {
 
     /// The number of elements in the preimage of a [`TransactionSummary`] commitment, i.e. the
     /// length of the vector returned by [`TransactionSummary::to_elements`]: the version, the
-    /// metadata element, the user parameters and the five commitment words.
+    /// metadata element, the user parameters and the six commitment words.
     pub const NUM_ELEMENTS: usize =
-        Self::USER_PARAMS_IDX + TransactionSummaryUserParams::NUM_ELEMENTS + 5 * WORD_SIZE;
+        Self::USER_PARAMS_IDX + TransactionSummaryUserParams::NUM_ELEMENTS + 6 * WORD_SIZE;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -62,10 +67,12 @@ impl TransactionSummary {
     ///
     /// `block_commitment` must be the commitment of the block identified by `block_number`, which
     /// is what the kernel guarantees for the summaries it builds.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         account_delta: AccountDelta,
         input_notes: InputNotes<InputNote>,
         output_notes: RawOutputNotes,
+        code_patch: CodePatch,
         block_number: BlockNumber,
         block_commitment: Word,
         expiration_delta: u16,
@@ -76,6 +83,7 @@ impl TransactionSummary {
             account_delta,
             input_notes,
             output_notes,
+            code_patch,
             block_number,
             block_commitment,
             expiration_delta,
@@ -110,6 +118,11 @@ impl TransactionSummary {
     /// Returns the output notes of this transaction summary.
     pub fn output_notes(&self) -> &RawOutputNotes {
         &self.output_notes
+    }
+
+    /// Returns the code patch of this transaction summary.
+    pub fn code_patch(&self) -> &CodePatch {
+        &self.code_patch
     }
 
     /// Returns the number of the block bound by this transaction summary.
@@ -147,7 +160,8 @@ impl TransactionSummary {
     ///     [version, metadata, user_param0, user_param1],
     ///     [user_param2, user_param3, user_param4, user_param5],
     ///     ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
-    ///     OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT, LOGS_COMMITMENT,
+    ///     OUTPUT_NOTES_COMMITMENT, CODE_PATCH_COMMITMENT,
+    ///     BLOCK_COMMITMENT, LOGS_COMMITMENT,
     /// ]
     /// ```
     ///
@@ -171,7 +185,7 @@ impl TransactionSummary {
     /// preimage of a transaction summary commitment.
     ///
     /// `elements` must be a full preimage as returned by [`TransactionSummary::to_elements`]. The
-    /// five commitments are not decoded because they cannot be inverted. A caller reconstructing a
+    /// six commitments are not decoded because they cannot be inverted. A caller reconstructing a
     /// summary must rebuild the committed data, including transaction logs, from its own state,
     /// pass it to [`Self::new`], and check the resulting [`Self::to_commitment`] against the
     /// expected commitment.
@@ -226,6 +240,7 @@ impl SequentialCommit for TransactionSummary {
         elements.extend_from_slice(self.account_delta.to_commitment().as_elements());
         elements.extend_from_slice(self.input_notes.commitment().as_elements());
         elements.extend_from_slice(self.output_notes.commitment().as_elements());
+        elements.extend_from_slice(self.code_patch.commitment().as_word().as_elements());
         elements.extend_from_slice(self.block_commitment.as_elements());
         elements.extend_from_slice(self.logs_commitment().as_elements());
         elements
@@ -390,6 +405,11 @@ mod tests {
 
     /// Builds a transaction summary over an empty delta and no notes, binding the parameters above.
     fn mock_summary() -> TransactionSummary {
+        mock_summary_with_code_patch(CodePatch::default())
+    }
+
+    /// Builds the summary of [`mock_summary`] with the provided code patch.
+    fn mock_summary_with_code_patch(code_patch: CodePatch) -> TransactionSummary {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
         let account_delta = AccountDelta::new(
             account_id,
@@ -404,6 +424,7 @@ mod tests {
             account_delta,
             InputNotes::new(Vec::new()).unwrap(),
             RawOutputNotes::new(Vec::new()).unwrap(),
+            code_patch,
             BlockNumber::from(BLOCK_NUMBER),
             Word::from([9u32, 10, 11, 12].map(Felt::from)),
             EXPIRATION_DELTA,
