@@ -7,7 +7,8 @@
           {
             "type": "command",
             "if": "Bash(*git *)",
-            "command": ".claude/hooks/pre_push_lint_test.py"
+            "command": ".claude/hooks/pre_push_lint_test.py",
+            "timeout": 3600
           },
           {
             "type": "command",
@@ -17,7 +18,8 @@
           {
             "type": "command",
             "if": "Bash(*gh *)",
-            "command": ".claude/hooks/pre_pr_review.py"
+            "command": ".claude/hooks/pre_pr_review.py",
+            "timeout": 1800
           }
         ]
       }
