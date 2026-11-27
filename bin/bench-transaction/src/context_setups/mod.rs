@@ -195,6 +195,9 @@ pub async fn build_benchmark_context(bench: ExecutionBenchmark) -> Result<MockTr
         ExecutionBenchmark::ConsumeMinBurnAmountConfigNetwork => {
             network_config::tx_consume_min_burn_amount_config_note_network()
         },
+        ExecutionBenchmark::ConsumeEncryptedAssetsIssuerKeyConfigNetwork => {
+            network_config::tx_consume_encrypted_assets_issuer_key_config_note_network()
+        },
         ExecutionBenchmark::ConsumeAllowlistConfigNetwork => {
             network_config::tx_consume_allowlist_config_note_network()
         },

@@ -17,7 +17,7 @@
 use {ASSET_SIZE} from miden::protocol::asset
 use {MAX_ASSETS_PER_NOTE, WORD_NUM_ELEMENTS} from miden::protocol::constants
 use {NOTE_TYPE_PUBLIC} from miden::protocol::note
-use {NoteAttachmentCommitment, NoteAttachmentScheme} from miden::protocol::types
+use {NoteAttachmentCommitment, NoteAttachmentScheme, OutputNoteIndex} from miden::protocol::types
 use miden::core::crypto::ecdh::ecgfp5
 use miden::core::crypto::hashes::eidos
 use miden::core::word
@@ -124,7 +124,7 @@ const ERR_ENCRYPTED_ASSETS_ISSUER_KEY_ZERO = "issuer public key for encrypted as
 #!   - the transaction arguments provide no IES seal seed.
 #!
 #! Invocation: exec
-pub proc new(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmentCommitment)
+pub proc new(note_idx: OutputNoteIndex) -> (NoteAttachmentScheme, NoteAttachmentCommitment)
     dup exec.output_note::get_metadata
     # => [METADATA, note_idx]
 
@@ -231,7 +231,7 @@ end
 #!
 #! Invocation: exec
 @locals(432)
-proc encrypt_note_details(note_idx: u16) -> (NoteAttachmentScheme, NoteAttachmentCommitment)
+proc encrypt_note_details(note_idx: OutputNoteIndex) -> (NoteAttachmentScheme, NoteAttachmentCommitment)
     # the issuer key is mutable faucet state, which the faucet's callback reads through FPI
     exec.expiration::apply_default
     # => [note_idx]

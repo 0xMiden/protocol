@@ -600,12 +600,12 @@
   "consume MINT note (fungible faucet, network account)": {
     "provenance": "producer_measured",
     "prologue": 6196,
-    "total_cycles": 36547,
-    "notes_processing": 7575,
+    "total_cycles": 36527,
+    "notes_processing": 7555,
     "note_execution": [
       {
         "note": "MINT",
-        "cycles": 7533
+        "cycles": 7513
       }
     ],
     "tx_script_processing": 41,
@@ -614,9 +614,9 @@
       "auth_procedure": 12209
     },
     "trace": {
-      "core_rows": 36593,
+      "core_rows": 36573,
       "chiplets_rows": 8177,
-      "eidos_compression_rows": 70272,
+      "eidos_compression_rows": 70240,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
         "hasher_rows": 5720,
@@ -630,12 +630,12 @@
   "consume MINT note (non-fungible faucet, network account)": {
     "provenance": "producer_measured",
     "prologue": 6714,
-    "total_cycles": 39048,
-    "notes_processing": 8143,
+    "total_cycles": 39028,
+    "notes_processing": 8123,
     "note_execution": [
       {
         "note": "MINT",
-        "cycles": 8101
+        "cycles": 8081
       }
     ],
     "tx_script_processing": 41,
@@ -644,9 +644,9 @@
       "auth_procedure": 12290
     },
     "trace": {
-      "core_rows": 39094,
+      "core_rows": 39074,
       "chiplets_rows": 8852,
-      "eidos_compression_rows": 74784,
+      "eidos_compression_rows": 74752,
       "byte_pair_lookup_rows": 65536,
       "chiplets_shape": {
         "hasher_rows": 6208,
@@ -772,6 +772,36 @@
         "hasher_rows": 4520,
         "bitwise_rows": 109,
         "memory_rows": 1878,
+        "kernel_rom_rows": 1,
+        "ace_rows": 0
+      }
+    }
+  },
+  "consume ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG note (network account)": {
+    "provenance": "producer_measured",
+    "prologue": 6161,
+    "total_cycles": 30329,
+    "notes_processing": 3084,
+    "note_execution": [
+      {
+        "note": "ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG",
+        "cycles": 3042
+      }
+    ],
+    "tx_script_processing": 41,
+    "epilogue": {
+      "total": 21043,
+      "auth_procedure": 12016
+    },
+    "trace": {
+      "core_rows": 30375,
+      "chiplets_rows": 6637,
+      "eidos_compression_rows": 59296,
+      "byte_pair_lookup_rows": 65536,
+      "chiplets_shape": {
+        "hasher_rows": 4600,
+        "bitwise_rows": 109,
+        "memory_rows": 1926,
         "kernel_rom_rows": 1,
         "ace_rows": 0
       }

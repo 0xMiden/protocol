@@ -1,17 +1,6 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use super::{
-    AccountError,
-    AccountStoragePatch,
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Felt,
-    Serializable,
-    Word,
-};
+use super::{AccountError, AccountStoragePatch, Felt, Word};
 use crate::account::{
     AccountComponent,
     StorageMapPatch,
@@ -460,37 +449,6 @@ impl SequentialCommit for AccountStorage {
     }
 }
 
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for AccountStorage {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write_u8(self.slots().len() as u8);
-        target.write_many(self.slots());
-    }
-
-    fn get_size_hint(&self) -> usize {
-        // Size of the serialized slot length.
-        let u8_size = 0u8.get_size_hint();
-        let mut size = u8_size;
-
-        for slot in self.slots() {
-            size += slot.get_size_hint();
-        }
-
-        size
-    }
-}
-
-impl Deserializable for AccountStorage {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let num_slots = source.read_u8()? as usize;
-        let slots = source.read_many_iter::<StorageSlot>(num_slots)?.collect::<Result<_, _>>()?;
-
-        Self::new(slots).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -500,7 +458,7 @@ mod tests {
 
     use assert_matches::assert_matches;
 
-    use super::{AccountStorage, Deserializable, Serializable};
+    use super::AccountStorage;
     use crate::Word;
     use crate::account::{
         AccountStorageHeader,
@@ -512,25 +470,6 @@ mod tests {
         StorageValuePatch,
     };
     use crate::errors::AccountError;
-
-    #[test]
-    fn test_serde_account_storage() -> anyhow::Result<()> {
-        // empty storage
-        let storage = AccountStorage::new(vec![]).unwrap();
-        let bytes = storage.to_bytes();
-        assert_eq!(storage, AccountStorage::read_from_bytes(&bytes).unwrap());
-
-        // storage with values for default types
-        let storage = AccountStorage::new(vec![
-            StorageSlot::with_empty_value(StorageSlotName::new("miden::test::value")?),
-            StorageSlot::with_empty_map(StorageSlotName::new("miden::test::map")?),
-        ])
-        .unwrap();
-        let bytes = storage.to_bytes();
-        assert_eq!(storage, AccountStorage::read_from_bytes(&bytes).unwrap());
-
-        Ok(())
-    }
 
     #[test]
     fn test_get_slot_by_name() -> anyhow::Result<()> {

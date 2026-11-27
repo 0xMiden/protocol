@@ -159,6 +159,8 @@ PUSH_DIR_CASES: list[tuple[str, str]] = [
     ("cd {root}/other && git push", "other"),
     ("git -C {root}/other push", "other"),
     ("cd ../other && git push -u origin", "other"),
+    ("(cd {root}/other && git push)", "other"),
+    ("cd {root}/other && (git push -u origin a b > log 2>&1; echo $?)", "other"),
     # The pushed branch is checked out in another worktree.
     ("git push origin feature", "feature-wt"),
     ("git push -u origin +refs/heads/feature:feature", "feature-wt"),

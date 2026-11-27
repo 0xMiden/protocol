@@ -48,7 +48,7 @@ impl MockChain {
                 .map(|block| wire::ProvenBlock {
                     header: Some(block.header().into()),
                     body: Some(block.body().into()),
-                    signatures: block.signatures().as_signatures().iter().map(Into::into).collect(),
+                    signatures: block.signatures().as_slice().iter().map(Into::into).collect(),
                     proof: Some(block.proof().into()),
                 })
                 .collect(),
