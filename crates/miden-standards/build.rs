@@ -1,6 +1,3 @@
-#[path = "build/masp_cache.rs"]
-mod masp_cache;
-
 use std::env;
 use std::path::Path;
 
@@ -53,38 +50,28 @@ fn main() -> Result<()> {
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
-    println!("cargo::rerun-if-env-changed=MIDEN_STANDARDS_MASP_CACHE_DIR");
-    let packages = [
+    // The miden-core library is provided through an in-memory registry
+    let mut registry = InMemoryPackageRegistry::default();
+
+    // The protocol package declares dependencies on the kernel and core packages, so all three
+    // must be available in the registry for project dependency resolution to succeed.
+    for package in [
         CoreLibrary::default().package(),
         ProtocolLib::default().package(),
         TransactionKernel::package(),
-    ];
-    let assemble = |assets: &Path| {
-        let mut registry = InMemoryPackageRegistry::default();
-        for package in &packages {
-            registry.cache_package(package.clone()).into_diagnostic()?;
-        }
-        assemble_standards(&source_dir, assets, &mut registry)
-    };
-    if let Some(dir) = env::var_os("MIDEN_STANDARDS_MASP_CACHE_DIR") {
-        let key = masp_cache::key(&source_dir, packages.iter().map(|package| package.to_bytes()))?;
-        masp_cache::restore_or_build(Path::new(&dir), &key, &target_dir, assemble)?;
-    } else {
-        assemble(&target_dir)?;
+    ] {
+        registry.cache_package(package).into_diagnostic()?;
     }
-    generate_error_constants(&source_dir, &build_dir)
-}
 
-fn assemble_standards(
-    source_dir: &Path,
-    target_dir: &Path,
-    registry: &mut InMemoryPackageRegistry,
-) -> Result<()> {
     // compile standards library (includes note scripts and transaction scripts) and seed it into
     // the registry
     let manifest_path = source_dir.join(ASM_STANDARDS_DIR).join(PROJECT_MANIFEST);
-    let package =
-        assemble_project(manifest_path, ProjectTargetSelector::Library, registry, target_dir)?;
+    let package = assemble_project(
+        manifest_path,
+        ProjectTargetSelector::Library,
+        &mut registry,
+        &target_dir,
+    )?;
     registry.cache_package(package).into_diagnostic()?;
 
     // compile account components (each member of the components workspace becomes its own package)
@@ -92,10 +79,12 @@ fn assemble_standards(
     // makes a malformed schema fail the build instead of the first instantiation.
     assemble_workspace(
         source_dir.join(ASM_COMPONENTS_DIR).join(PROJECT_MANIFEST),
-        registry,
+        &mut registry,
         &target_dir.join(ASM_COMPONENTS_DIR),
         |metadata| Ok(AccountComponentMetadata::from_toml(metadata).into_diagnostic()?.to_bytes()),
     )?;
+
+    generate_error_constants(&source_dir, &build_dir)?;
 
     Ok(())
 }
