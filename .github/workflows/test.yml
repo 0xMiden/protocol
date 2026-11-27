@@ -40,14 +40,9 @@ jobs:
         uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
         with:
           tool: cargo-nextest
-      - uses: ./.github/actions/setup-rust-cache
+      - uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
-          warp: "true"
-        # These bucket-scoped CI credentials are shared by compilation jobs.
-        env: &cache-env
-          KACHE_R2_ENDPOINT: ${{ vars.KACHE_R2_ENDPOINT }}
-          KACHE_S3_ACCESS_KEY: ${{ secrets.KACHE_R2_ACCESS_KEY_ID }} # zizmor: ignore[secrets-outside-env]
-          KACHE_S3_SECRET_KEY: ${{ secrets.KACHE_R2_SECRET_ACCESS_KEY }} # zizmor: ignore[secrets-outside-env]
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install rust
         run: rustup update --no-self-update
       - name: Build tests
@@ -73,10 +68,9 @@ jobs:
           persist-credentials: false
       - name: Cleanup large tools for build space
         uses: ./.github/actions/cleanup-runner
-      - uses: ./.github/actions/setup-rust-cache
+      - uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
-          warp: "true"
-        env: *cache-env
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install rust
         run: rustup update --no-self-update
       - name: Run doc-tests
