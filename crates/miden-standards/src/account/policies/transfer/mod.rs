@@ -187,9 +187,15 @@ impl SendPolicy {
 
     /// Returns a send policy that attaches the
     /// [`EncryptedAssetsAttachment`](crate::note::EncryptedAssetsAttachment), encrypted to
-    /// `issuer_key`, to every private output note holding the faucet's assets, so the issuer can
-    /// track them. Public notes get no attachment. A private note may hold only one asset, since
-    /// the attachment would show the assets of other faucets to the issuer.
+    /// `issuer_key`, to every private output note holding the faucet's assets that an account
+    /// other than the faucet creates, so the issuer can track them. Public notes and the notes the
+    /// faucet creates itself, e.g. the notes it mints, get no attachment. A private note with an
+    /// attachment may hold only one asset, since the attachment would show the assets of other
+    /// faucets to the issuer.
+    ///
+    /// Since the notes the faucet mints get no attachment, the policy should only be used on a
+    /// faucet whose mint policy lets only the issuer mint, e.g.
+    /// [`MintPolicy::owner_only`](crate::account::policies::MintPolicy::owner_only).
     ///
     /// Resolves to [`EncryptedAssetsSendPolicy::send_root`] and ships the companion
     /// [`EncryptedAssetsSendPolicy`] component and `issuer_key` as the component that installs
@@ -197,12 +203,11 @@ impl SendPolicy {
     /// manager installs the components of a policy root once, so registering this policy again
     /// with another key keeps the first key.
     ///
-    /// A private note seals only if the transaction's advice map holds its recipient preimage, so
-    /// a note whose creator knows only its recipient digest cannot hold the faucet's assets. A
-    /// MINT note with a private output note holds only that digest: the faucet mints it only if
-    /// the transaction supplies the preimage, so a network faucet cannot. The same holds for the
-    /// private payback note of a SWAP note that requests the faucet's asset. The transaction
-    /// arguments must also carry an [`IesSealSeed`](miden_protocol::transaction::IesSealSeed).
+    /// A private note of another account seals only if the transaction's advice map holds its
+    /// recipient preimage, so an account that knows only a note's recipient digest cannot create
+    /// it holding the faucet's assets, e.g. the private payback note of a SWAP note that requests
+    /// the faucet's asset. The transaction arguments must also carry an
+    /// [`IesSealSeed`](miden_protocol::transaction::IesSealSeed).
     ///
     /// A custom policy that composes other checks with this one `exec`s them and then
     /// `encrypted_assets::check_send_policy`, so that its attachment list is the output.

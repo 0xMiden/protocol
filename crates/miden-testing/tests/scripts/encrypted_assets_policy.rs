@@ -45,7 +45,6 @@ use miden_testing::{
 };
 use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 
-use super::faucet::{FaucetTestParams, create_mint_body_code};
 use super::transfer_policy::{SEALED_NOTE_IDX, build_mint_note_for};
 use super::{
     assert_default_expiration_limit,
@@ -574,58 +573,9 @@ async fn set_issuer_key_rejects_unauthorized_sender() -> anyhow::Result<()> {
 // MINT TESTS
 // ================================================================================================
 
-/// The faucet mints a public note and then a private note through `mint_and_send`, in a
-/// transaction that supplies the notes' recipient preimages. The send policy runs with the faucet
-/// as the native account and attaches the encrypted asset attachment to the private note.
-#[tokio::test]
-async fn faucet_mints_private_note_with_attachment() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let faucet =
-        add_faucet(&mut builder, policy_manager(SendPolicy::with_encrypted_assets(issuer_key())))?;
-    let mock_chain = builder.build()?;
-
-    let public_note = p2id_note(faucet.id(), faucet.id(), NoteType::Public, 2)?;
-    let note = p2id_note(faucet.id(), faucet.id(), NoteType::Private, 1)?;
-    let amount = Felt::new(NOTE_AMOUNT)?;
-    let mint_code = |note: &Note| {
-        let params = FaucetTestParams {
-            recipient: note.recipient().digest(),
-            tag: note.metadata().tag(),
-            note_type: note.metadata().note_type(),
-            amount,
-        };
-        create_mint_body_code(&params, faucet.id())
-    };
-    let tx_script = CodeBuilder::default().compile_tx_script(format!(
-        "
-        @transaction_script
-        pub proc main
-            {mint_public_note}
-            {mint_note_under_test}
-        end
-        ",
-        mint_public_note = mint_code(&public_note),
-        mint_note_under_test = mint_code(&note),
-    ))?;
-
-    let executed = mock_chain
-        .build_transaction(faucet.id())
-        .tx_script(tx_script)
-        .expected_output_note(RawOutputNote::Full(public_note))
-        .expected_output_note(RawOutputNote::Full(note))
-        .build()?
-        .execute()
-        .await?;
-
-    assert!(executed.output_notes().get_note(0).attachments().is_empty());
-    assert_issuer_decrypts_note(&executed, &issuer_secret_key())?;
-
-    Ok(())
-}
-
-/// A network faucet consumes a MINT note with a public output note, which gets no attachment. It
-/// cannot consume a MINT note with a private output note, which holds only that note's recipient
-/// digest, so the attachment cannot be built.
+/// A network faucet consumes a MINT note with a public or a private output note. The send policy
+/// runs with the faucet as the native account, so the minted note gets no attachment, and the
+/// faucet mints the private note although the MINT note holds only its recipient digest.
 ///
 /// The faucet consumes a public MINT note first, so the output note under test is at
 /// [`SEALED_NOTE_IDX`].
@@ -633,7 +583,7 @@ async fn faucet_mints_private_note_with_attachment() -> anyhow::Result<()> {
 #[case::public_output_note(NoteType::Public)]
 #[case::private_output_note(NoteType::Private)]
 #[tokio::test]
-async fn network_faucet_mints_only_public_output_notes(
+async fn network_faucet_mints_notes_without_attachment(
     #[case] output_note_type: NoteType,
 ) -> anyhow::Result<()> {
     let owner = AccountId::try_from(ACCOUNT_ID_SENDER)?;
@@ -653,29 +603,18 @@ async fn network_faucet_mints_only_public_output_notes(
     builder.add_output_note(RawOutputNote::Full(mint_note_under_test.clone()));
     let mock_chain = builder.build()?;
 
-    let result = mock_chain
+    let executed = mock_chain
         .build_transaction(faucet.id())
         .authenticated_input_note(first_mint_note.id())
         .authenticated_input_note(mint_note_under_test.id())
         .build()?
         .execute()
-        .await;
+        .await?;
 
-    match output_note_type {
-        NoteType::Public => {
-            let executed = result?;
-            let minted_note = executed.output_notes().get_note(SEALED_NOTE_IDX);
-            assert_eq!(minted_note.recipient_digest(), output_note.recipient().digest());
-            assert!(minted_note.attachments().is_empty());
-        },
-        NoteType::Private => {
-            assert_transaction_executor_error!(
-                result,
-                matches ExecutionError::AdviceError { err: AdviceError::MapKeyNotFound { key }, .. }
-                    if key == output_note.recipient().digest()
-            );
-        },
-    }
+    let minted_note = executed.output_notes().get_note(SEALED_NOTE_IDX);
+    assert_eq!(minted_note.metadata().note_type(), output_note_type);
+    assert_eq!(minted_note.recipient_digest(), output_note.recipient().digest());
+    assert!(minted_note.attachments().is_empty());
 
     Ok(())
 }
