@@ -30,12 +30,14 @@ jobs:
 
   test:
     needs: prepare-masp
-    name: Build test archive
+    name: Test shard ${{ matrix.shard }}/2
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     runs-on: warp-ubuntu-latest-x64-8x
     env:
       CARGO_PROFILE_TEST_DEV_DEBUG: "0"
-      # This target enumerates generated packages in the builder's OUT_DIR at runtime.
-      BUILD_HOST_TESTS: "binary_id(=miden-standards::component_metadata)"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -48,68 +50,33 @@ jobs:
           tool: cargo-nextest
       - uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
+          # Both shards use the same dependencies. Only one needs to save the cache.
+          save-if: ${{ matrix.shard == 1 && github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install rust
         run: rustup update --no-self-update
       - uses: ./.github/actions/restore-masp
         with:
           cache-key: ${{ needs.prepare-masp.outputs.cache-key }}
-      - name: Build test archive
-        run: |
-          cargo nextest archive --locked --cargo-profile test-dev --no-default-features \
-            --features concurrent,testing,std -E "not $BUILD_HOST_TESTS" \
-            --archive-file "$RUNNER_TEMP/tests.tar.zst"
-      - name: Check built component packages
-        run: make test-release name="-E '$BUILD_HOST_TESTS'"
-      - name: Test protobuf build support
-        run: cargo test -p miden-protobuf --all-features --locked
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          path: ${{ runner.temp }}/tests.tar.zst
-          # Nextest already compresses the archive and preserves executable permissions.
-          archive: false
-          overwrite: true
-          if-no-files-found: error
-          retention-days: 7
-
-  test-shards:
-    needs: test
-    name: Test shard ${{ matrix.shard }}/2
-    runs-on: warp-ubuntu-latest-x64-8x
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          persist-credentials: false
-      - uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
-        with:
-          tool: cargo-nextest
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: tests.tar.zst
-          path: ${{ runner.temp }}
-          skip-decompress: true
+      - name: Build tests
+        run: make test-release-build
       - name: Run tests
         env:
           SHARD: ${{ matrix.shard }}
-          RUST_BACKTRACE: "1"
-        run: |
-          cargo nextest run --archive-file "$RUNNER_TEMP/tests.tar.zst" \
-            --workspace-remap "$GITHUB_WORKSPACE" --partition "hash:$SHARD/2"
+        run: make test-release name="--partition hash:$SHARD/2"
+      - name: Test protobuf build support
+        if: matrix.shard == 1
+        run: cargo test -p miden-protobuf --all-features --locked
 
   test-result:
     # Branch protection requires a single check named "test" for the entire suite.
     name: test
-    needs: [prepare-masp, test-shards]
+    needs: [prepare-masp, test]
     if: ${{ !cancelled() && needs.prepare-masp.result != 'skipped' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check shard results
         env:
-          RESULT: ${{ needs.test-shards.result }}
+          RESULT: ${{ needs.test.result }}
         run: test "$RESULT" = success
 
   doc-tests:
