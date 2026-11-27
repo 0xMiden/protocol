@@ -30,7 +30,11 @@ jobs:
 
   test:
     needs: prepare-masp
-    name: test
+    name: Test shard ${{ matrix.shard }}/2
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     runs-on: warp-ubuntu-latest-x64-8x
     env:
       CARGO_PROFILE_TEST_DEV_DEBUG: "0"
@@ -46,7 +50,8 @@ jobs:
           tool: cargo-nextest
       - uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
+          # Both shards use the same dependencies. Only one needs to save the cache.
+          save-if: ${{ matrix.shard == 1 && github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install rust
         run: rustup update --no-self-update
       - uses: ./.github/actions/restore-masp
@@ -54,10 +59,25 @@ jobs:
           cache-key: ${{ needs.prepare-masp.outputs.cache-key }}
       - name: Build tests
         run: make test-release-build
-      - name: test
-        run: make test-release # runs without debug mode
+      - name: Run tests
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: make test-release name="--partition hash:$SHARD/2"
       - name: Test protobuf build support
+        if: matrix.shard == 1
         run: cargo test -p miden-protobuf --all-features --locked
+
+  test-result:
+    # Branch protection requires a single check named "test" for the entire suite.
+    name: test
+    needs: [prepare-masp, test]
+    if: ${{ !cancelled() && needs.prepare-masp.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check shard results
+        env:
+          RESULT: ${{ needs.test.result }}
+        run: test "$RESULT" = success
 
   doc-tests:
     needs: prepare-masp
