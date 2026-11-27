@@ -188,6 +188,7 @@ impl LocalTransactionProver {
             account_procedure_index_map,
             code_tree,
             code_patch,
+            tx_args.output_note_recipients().to_vec(),
             tx_args.ies_seal_seed().cloned(),
         )
         .map_err(|err| TransactionProverError::TransactionHostCreationFailed(Box::new(err)))?;

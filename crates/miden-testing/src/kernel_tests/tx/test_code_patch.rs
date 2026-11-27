@@ -6,6 +6,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
+use miden_processor::ExecutionError;
+use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -35,6 +37,7 @@ use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account_code::MockAccountCodeExt;
 use miden_standards::testing::note::NoteBuilder;
 use miden_standards::tx_script::SendNotesTransactionScript;
+use miden_tx::TransactionKernelError;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 
@@ -183,6 +186,44 @@ async fn referenced_absent_procedure_is_a_created_procedure() -> anyhow::Result<
             ProtocolLib::procedure_root("miden::protocol::active_account::get_nonce"),
             core_lib_procedure_root("miden::core::sys::truncate_stack")?,
         ])
+    );
+
+    Ok(())
+}
+
+/// The script of a public note is a reference to its root. If the expected output notes and the
+/// code to register do not provide an absent script, the host cannot build the code patch.
+#[tokio::test]
+async fn absent_script_without_code_is_rejected() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account =
+        builder.add_existing_wallet_with_assets(Auth::IncrNonce, [FungibleAsset::mock(10)])?;
+    let mock_chain = builder.build()?;
+
+    let note = create_custom_note(account.id(), ACTIVE_ACCOUNT_SCRIPT, NoteType::Public, 1)?;
+    let script = SendNotesTransactionScript::new(
+        &account.code_interface(),
+        &[PartialNote::from(note.clone())],
+    )?;
+    // Only the recipient preimage is in the advice map, so the note is not an expected output note.
+    let recipient_preimage =
+        AdviceInputs::default().with_map(note.recipient().to_advice_map_entries());
+    let result = mock_chain
+        .build_transaction(account.id())
+        .send_notes_script(&script)
+        .extend_advice_inputs(recipient_preimage)
+        .build()?
+        .execute()
+        .await;
+
+    let script_root = ProcedureRoot::from(note.script().root());
+    assert_transaction_executor_error!(
+        result,
+        matches ExecutionError::EventError { error: ref event_err, .. }
+            if matches!(
+                event_err.downcast_ref::<TransactionKernelError>(),
+                Some(TransactionKernelError::MissingProcedureMast(root)) if *root == script_root
+            )
     );
 
     Ok(())

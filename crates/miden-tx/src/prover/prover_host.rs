@@ -11,6 +11,7 @@ use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::code_tree::{CodePatch, PartialCodeTree};
+use miden_protocol::note::NoteRecipient;
 use miden_protocol::transaction::{
     IesSealSeed,
     InputNote,
@@ -53,7 +54,8 @@ where
 
     /// Creates a new [`TransactionProverHost`] instance from the provided inputs.
     ///
-    /// The code patch is the patch of the executed transaction.
+    /// The code patch is the patch of the executed transaction. The expected output note recipients
+    /// are the ones of the transaction arguments.
     ///
     /// # Errors
     ///
@@ -68,6 +70,7 @@ where
         acct_procedure_index_map: AccountProcedureIndexMap,
         code_tree: PartialCodeTree,
         code_patch: CodePatch,
+        expected_output_note_recipients: Vec<NoteRecipient>,
         ies_seal_seed: Option<IesSealSeed>,
     ) -> Result<Self, TransactionKernelError> {
         let base_host = TransactionBaseHost::new(
@@ -78,6 +81,7 @@ where
             scripts_mast_store,
             acct_procedure_index_map,
             code_tree,
+            expected_output_note_recipients,
             ies_seal_seed,
         )?;
 
@@ -223,9 +227,6 @@ where
                     RecipientData::Recipient(note_recipient) => self
                         .base_host
                         .output_note_from_recipient(note_idx, metadata, note_recipient),
-                    RecipientData::ScriptMissing { .. } => Err(TransactionKernelError::other(
-                        "note script should be in the advice provider at proving time",
-                    )),
                 }
             },
 

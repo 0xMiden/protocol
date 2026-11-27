@@ -87,6 +87,7 @@ async fn build_trace_summary(
         account_procedure_index_map,
         code_tree,
         code_patch,
+        tx_args.output_note_recipients().to_vec(),
         tx_args.ies_seal_seed().cloned(),
     )
     .context("failed to construct transaction prover host")?;

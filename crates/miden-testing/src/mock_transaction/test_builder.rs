@@ -1,7 +1,6 @@
 // TEST TRANSACTION BUILDER
 // ================================================================================================
 
-use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -12,7 +11,7 @@ use miden_protocol::EMPTY_WORD;
 use miden_protocol::account::{Account, AccountCodeUpgrade};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
-use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
+use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
@@ -41,7 +40,6 @@ pub(crate) struct TestTransactionBuilder {
     tx_script_args: Word,
     auth_args: Word,
     account_code_upgrade: Option<AccountCodeUpgrade>,
-    note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
 }
 
 impl TestTransactionBuilder {
@@ -56,7 +54,6 @@ impl TestTransactionBuilder {
             tx_script_args: EMPTY_WORD,
             auth_args: EMPTY_WORD,
             account_code_upgrade: None,
-            note_scripts: BTreeMap::new(),
         }
     }
 
@@ -164,12 +161,6 @@ impl TestTransactionBuilder {
         self
     }
 
-    /// Add a note script to the mock transaction for testing.
-    pub(crate) fn add_note_script(mut self, script: NoteScript) -> Self {
-        self.note_scripts.insert(script.root(), script);
-        self
-    }
-
     /// Builds the [MockTransaction].
     ///
     /// An ad-hoc [`crate::MockChain`] is created to generate valid block data for the requested
@@ -207,9 +198,6 @@ impl TestTransactionBuilder {
         }
         if let Some(account_code_upgrade) = self.account_code_upgrade {
             builder = builder.account_code_upgrade(account_code_upgrade);
-        }
-        for script in self.note_scripts.into_values() {
-            builder = builder.add_note_script(script);
         }
 
         builder.build()

@@ -26,7 +26,7 @@ use miden_protocol::note::{
     NoteId,
     NoteRecipient,
     NoteScript,
-    NoteStorage,
+    NoteScriptRoot,
     NoteTag,
     NoteType,
     PartialNoteMetadata,
@@ -42,6 +42,7 @@ use miden_protocol::transaction::{
 use miden_protocol::utils::FeltSliceExt;
 use miden_protocol::vm::EventId;
 use miden_protocol::{Felt, Word};
+use miden_standards::note::StandardNote;
 
 use crate::host::{TransactionBaseHost, TransactionKernelProcess};
 use crate::{LinkMap, TransactionKernelError};
@@ -149,7 +150,7 @@ pub(crate) enum TransactionEvent {
         note_idx: usize,
         /// The note metadata extracted from the stack.
         metadata: PartialNoteMetadata,
-        /// The recipient data extracted from the advice inputs.
+        /// The recipient data extracted from the advice inputs and the expected output notes.
         recipient_data: RecipientData,
     },
 
@@ -487,18 +488,19 @@ impl TransactionEvent {
                     let (note_storage, script_root, serial_num) =
                         process.read_note_recipient_info_from_adv_map(recipient_digest)?;
 
-                    let note_script = process
-                        .advice_provider()
-                        .get_mapped_values(&script_root)
-                        .map(|script_elements| {
-                            NoteScript::try_from_elements(script_elements).map_err(|source| {
-                                TransactionKernelError::MalformedNoteScript {
-                                    script_elements: script_elements.to_vec(),
-                                    source,
-                                }
-                            })
+                    let script_root = NoteScriptRoot::from_raw(script_root);
+
+                    // The script of a public note is a reference to its root, because the code
+                    // patch publishes its code. The code of a private note is not guaranteed to be
+                    // in the code registry, so it gets the full script if one is available.
+                    let note_script = if metadata.is_public() {
+                        Some(NoteScript::from_root(script_root))
+                    } else {
+                        base_host.expected_output_note_script(script_root).cloned().or_else(|| {
+                            StandardNote::from_script_root(script_root)
+                                .map(|standard_note| standard_note.script())
                         })
-                        .transpose()?;
+                    };
 
                     match note_script {
                         Some(note_script) => {
@@ -514,12 +516,7 @@ impl TransactionEvent {
 
                             RecipientData::Recipient(recipient)
                         },
-                        None => RecipientData::ScriptMissing {
-                            recipient_digest,
-                            serial_num,
-                            script_root,
-                            note_storage,
-                        },
+                        None => RecipientData::Digest(recipient_digest),
                     }
                 } else {
                     RecipientData::Digest(recipient_digest)
@@ -752,13 +749,6 @@ pub(crate) enum RecipientData {
     Digest(Word),
     /// The full [`NoteRecipient`] is available.
     Recipient(NoteRecipient),
-    /// Everything but the note script is available.
-    ScriptMissing {
-        recipient_digest: Word,
-        serial_num: Word,
-        script_root: Word,
-        note_storage: NoteStorage,
-    },
 }
 
 // IES SEAL REQUEST
