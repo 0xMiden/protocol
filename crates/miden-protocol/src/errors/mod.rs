@@ -1932,6 +1932,22 @@ pub enum BoundSignatureError {
     },
 }
 
+// PROOF VERIFICATION ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum ProofVerificationError {
+    #[error("VM proof uses {actual:?}, but the protocol requires {expected:?}")]
+    UnsupportedVmProofHash {
+        actual: HashFunction,
+        expected: HashFunction,
+    },
+    #[error("proof security level is {actual} but must be at least {required}")]
+    InsufficientSecurityLevel { actual: u32, required: u32 },
+    #[error("failed to verify the execution proof")]
+    VerificationFailed(#[source] VerificationError),
+}
+
 // TRANSACTION VERIFIER ERROR
 // ================================================================================================
 
@@ -1948,4 +1964,20 @@ pub enum TransactionVerifierError {
     TransactionProofContainsPrecompiles,
     #[error("transaction proof security level is {actual} but must be at least {expected_minimum}")]
     InsufficientProofSecurityLevel { actual: u32, expected_minimum: u32 },
+}
+
+impl From<ProofVerificationError> for TransactionVerifierError {
+    fn from(error: ProofVerificationError) -> Self {
+        match error {
+            ProofVerificationError::UnsupportedVmProofHash { actual, expected } => {
+                Self::UnsupportedVmProofHash { actual, expected }
+            },
+            ProofVerificationError::InsufficientSecurityLevel { actual, required } => {
+                Self::InsufficientProofSecurityLevel { actual, expected_minimum: required }
+            },
+            ProofVerificationError::VerificationFailed(error) => {
+                Self::TransactionVerificationFailed(error)
+            },
+        }
+    }
 }

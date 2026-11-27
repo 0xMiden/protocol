@@ -22,6 +22,14 @@ miden_crypto::eidos_domain_registry! {
                 schema: "param0 = 8 Felts; param1 = param2 = 0; \
                     transaction summary commitment followed by an empty word",
             }
+            pub P2ID_ENCRYPTION_BATCH: P2idEncryptionBatchDomain {
+                local_id: 0x8001,
+                version: DomainVersion::numbered(1),
+                encoding: FeltSequence,
+                description: "Ordered batch of encrypted P2ID notes.",
+                schema: "param0 = 12 * note count; param1 = param2 = 0; payload = ordered \
+                    triples of note ID, public key commitment, and envelope commitment",
+            }
         }
     }
 }

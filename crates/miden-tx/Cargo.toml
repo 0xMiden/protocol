@@ -41,6 +41,7 @@ miden-prover    = { workspace = true }
 
 # External dependencies
 bon       = { workspace = true }
+rand      = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

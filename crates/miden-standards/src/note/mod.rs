@@ -25,6 +25,7 @@ use self::config::{
 
 pub mod config;
 pub mod costs;
+pub mod encryption;
 
 mod burn;
 pub use burn::BurnNote;

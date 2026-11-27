@@ -1,8 +1,8 @@
 use miden_protocol::batch::{BatchKernel, BatchOutputs, ProvenBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::vm::ProgramInfo;
-use miden_protocol::{PROTOCOL_PROOF_HASH, Word};
-use miden_verifier::{ExecutionClaim, ExecutionProof, VerificationError, Verifier};
+use miden_protocol::{Word, verify_execution_proof};
+use miden_verifier::{ExecutionClaim, ExecutionProof};
 
 use crate::BatchVerifierError;
 
@@ -65,18 +65,7 @@ impl BatchVerifier {
             stack_inputs,
             stack_outputs,
         );
-        let outcome = Verifier::new()
-            .with_min_conjectured_security_level_per_stark(self.proof_security_level)
-            .verify(&claim, batch.proof())
-            .map_err(|error| match error {
-                VerificationError::InsufficientSecurityLevel { actual, required } => {
-                    BatchVerifierError::InsufficientProofSecurityLevel {
-                        actual,
-                        expected_minimum: required,
-                    }
-                },
-                error => BatchVerifierError::BatchVerificationFailed(error),
-            })?;
+        let outcome = verify_execution_proof(&claim, batch.proof(), self.proof_security_level)?;
         if !outcome.is_complete() {
             return Err(BatchVerifierError::IncompleteProof);
         }
@@ -85,18 +74,10 @@ impl BatchVerifier {
     }
 }
 
-/// Checks that the proof has no precompile work and uses the protocol transcript hash.
+/// Checks that the proof has no precompile work.
 fn validate_proof_shape(proof: &ExecutionProof) -> Result<(), BatchVerifierError> {
     if proof.has_precompiles() {
         return Err(BatchVerifierError::BatchProofContainsPrecompiles);
-    }
-
-    let vm_hash = proof.vm().proof.hash_fn();
-    if vm_hash != PROTOCOL_PROOF_HASH {
-        return Err(BatchVerifierError::UnsupportedVmProofHash {
-            actual: vm_hash,
-            expected: PROTOCOL_PROOF_HASH,
-        });
     }
 
     Ok(())
@@ -104,19 +85,16 @@ fn validate_proof_shape(proof: &ExecutionProof) -> Result<(), BatchVerifierError
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec::Vec;
-
     use miden_protocol::testing::{
         dummy_deferred_execution_proof,
         dummy_execution_proof,
         dummy_precompile_execution_proof,
     };
-    use miden_verifier::{HashFunction, StarkProof};
 
     use super::*;
 
     #[test]
-    fn proof_shape_requires_complete_eidos_proofs() {
+    fn proof_shape_rejects_precompile_work() {
         assert!(matches!(
             validate_proof_shape(&dummy_deferred_execution_proof()),
             Err(BatchVerifierError::BatchProofContainsPrecompiles)
@@ -125,17 +103,6 @@ mod tests {
         assert!(matches!(
             validate_proof_shape(&dummy_precompile_execution_proof()),
             Err(BatchVerifierError::BatchProofContainsPrecompiles)
-        ));
-
-        let (compatibility, mut vm, precompile) = dummy_execution_proof().into_parts();
-        vm.proof = StarkProof::new(Vec::new(), HashFunction::Blake3_256);
-        let blake3_vm = ExecutionProof::from_parts(compatibility, vm, precompile);
-        assert!(matches!(
-            validate_proof_shape(&blake3_vm),
-            Err(BatchVerifierError::UnsupportedVmProofHash {
-                actual: HashFunction::Blake3_256,
-                expected: PROTOCOL_PROOF_HASH,
-            })
         ));
 
         assert!(validate_proof_shape(&dummy_execution_proof()).is_ok());

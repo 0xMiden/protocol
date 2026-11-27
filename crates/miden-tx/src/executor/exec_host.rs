@@ -5,7 +5,14 @@ use alloc::vec::Vec;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
-use miden_processor::{BaseHost, FutureMaybeSend, Host, LoadedMastForest, ProcessorState};
+use miden_processor::{
+    BaseHost,
+    FutureMaybeSend,
+    Host,
+    LoadedMastForest,
+    MastForestLoadError,
+    ProcessorState,
+};
 use miden_protocol::Word;
 use miden_protocol::account::auth::{BoundSignature, PublicKeyCommitment, SignatureKey};
 use miden_protocol::account::{
@@ -524,9 +531,9 @@ where
     fn get_mast_forest(
         &self,
         node_digest: &Word,
-    ) -> impl FutureMaybeSend<Option<LoadedMastForest>> {
+    ) -> impl FutureMaybeSend<Result<Option<LoadedMastForest>, MastForestLoadError>> {
         let mast_forest = self.base_host.get_mast_forest(node_digest);
-        async move { mast_forest }
+        async move { Ok(mast_forest) }
     }
 
     fn on_event(
