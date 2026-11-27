@@ -1,19 +1,9 @@
-use alloc::string::ToString;
-use alloc::vec::Vec;
-
 use miden_crypto::merkle::SparseMerklePath;
 
 use crate::batch::BatchNoteTree;
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{LeafIndex, SimpleSmt};
 use crate::note::NoteHeader;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{
     BLOCK_NOTE_TREE_DEPTH,
     MAX_BATCHES_PER_BLOCK,
@@ -157,49 +147,5 @@ impl BlockNoteIndex {
             .position()
             .try_into()
             .expect("Unreachable: Input values must be valid at this point")
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for BlockNoteTree {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write_u32(self.0.num_leaves() as u32);
-        target.write_many(self.0.leaves());
-    }
-}
-
-impl Deserializable for BlockNoteTree {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let count = source.read_u32()?;
-        let leaves = source.read_many_iter(count as usize)?.collect::<Result<Vec<_>, _>>()?;
-
-        SimpleSmt::with_leaves(leaves)
-            .map(Self)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use miden_crypto::merkle::smt::SimpleSmt;
-    use miden_crypto::utils::{Deserializable, Serializable};
-
-    use super::BlockNoteTree;
-    use crate::Word;
-
-    #[test]
-    fn test_serialization() {
-        let data = core::iter::repeat(())
-            .enumerate()
-            .map(|(idx, ())| (idx as u64, Word::from([1, 0, 1, idx as u32])))
-            .take(100);
-        let initial_tree = BlockNoteTree(SimpleSmt::with_leaves(data).unwrap());
-
-        let serialized = initial_tree.to_bytes();
-        let deserialized_tree = BlockNoteTree::read_from_bytes(&serialized).unwrap();
-
-        assert_eq!(deserialized_tree, initial_tree);
     }
 }

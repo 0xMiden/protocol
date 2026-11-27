@@ -7,13 +7,6 @@ use thiserror::Error;
 
 use crate::account::StorageSlotName;
 use crate::errors::StorageSlotNameError;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 /// A simple wrapper type around a string key that identifies init-provided values.
 ///
@@ -193,22 +186,6 @@ impl Display for StorageValueName {
                 f.write_str(field)
             },
         }
-    }
-}
-
-impl Serializable for StorageValueName {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let key = self.to_string();
-        target.write(&key);
-    }
-}
-
-impl Deserializable for StorageValueName {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let key: String = source.read()?;
-        key.parse().map_err(|err: StorageValueNameError| {
-            DeserializationError::InvalidValue(err.to_string())
-        })
     }
 }
 

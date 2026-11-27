@@ -9,13 +9,6 @@ use crate::Word;
 use crate::assembly::Path;
 use crate::assembly::mast::{MastForest, MastNodeId};
 use crate::script::{MastForestScript, MastForestScriptError};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::vm::AdviceMap;
 
 // TRANSACTION SCRIPT ROOT
@@ -34,23 +27,6 @@ impl From<TransactionScriptRoot> for Word {
 impl Display for TransactionScriptRoot {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         Display::fmt(&self.0, f)
-    }
-}
-
-impl Serializable for TransactionScriptRoot {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write(self.0);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.0.get_size_hint()
-    }
-}
-
-impl Deserializable for TransactionScriptRoot {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let word: Word = source.read()?;
-        Ok(Self::from_raw(word))
     }
 }
 

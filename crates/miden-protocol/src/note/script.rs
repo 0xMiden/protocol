@@ -45,23 +45,6 @@ impl Display for NoteScriptRoot {
     }
 }
 
-impl Serializable for NoteScriptRoot {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write(self.0);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.0.get_size_hint()
-    }
-}
-
-impl Deserializable for NoteScriptRoot {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let word: Word = source.read()?;
-        Ok(Self::from_raw(word))
-    }
-}
-
 // NOTE SCRIPT
 // ================================================================================================
 

@@ -3,13 +3,6 @@ use core::fmt::Display;
 use miden_crypto_derive::WordWrapper;
 
 use super::{NoteDetailsCommitment, NoteMetadata};
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 use crate::{Hasher, Word, WordError};
 
 // NOTE ID
@@ -45,26 +38,6 @@ impl NoteId {
     /// Callers must ensure the provided value is an actual [`NoteId`].
     pub fn try_from_hex(hex_value: &str) -> Result<NoteId, WordError> {
         Word::try_from(hex_value).map(NoteId::from_raw)
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for NoteId {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write_bytes(&self.0.to_bytes());
-    }
-
-    fn get_size_hint(&self) -> usize {
-        Word::SERIALIZED_SIZE
-    }
-}
-
-impl Deserializable for NoteId {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let id = Word::read_from(source)?;
-        Ok(Self(id))
     }
 }
 

@@ -1,19 +1,10 @@
-use alloc::string::ToString;
-
-use miden_crypto::merkle::smt::{SMT_DEPTH, SmtLeaf, SmtProof, SmtProofError};
+use miden_crypto::merkle::smt::{SMT_DEPTH, SmtLeaf, SmtProof};
 use miden_crypto::merkle::{InnerNodeInfo, SparseMerklePath};
 
 use crate::Word;
 use crate::account::AccountId;
 use crate::block::account_tree::AccountIdKey;
 use crate::errors::AccountTreeError;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // ACCOUNT WITNESS
 // ================================================================================================
@@ -168,32 +159,5 @@ impl AccountWitness {
 impl From<AccountWitness> for SmtProof {
     fn from(witness: AccountWitness) -> Self {
         witness.into_proof()
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for AccountWitness {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.id.write_into(target);
-        self.commitment.write_into(target);
-        self.path.write_into(target);
-    }
-}
-
-impl Deserializable for AccountWitness {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let id = AccountId::read_from(source)?;
-        let commitment = Word::read_from(source)?;
-        let path = SparseMerklePath::read_from(source)?;
-
-        if path.depth() != SMT_DEPTH {
-            return Err(DeserializationError::InvalidValue(
-                SmtProofError::InvalidMerklePathLength(path.depth() as usize).to_string(),
-            ));
-        }
-
-        Ok(Self { id, commitment, path })
     }
 }

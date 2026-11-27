@@ -1,13 +1,6 @@
 use crate::Word;
 use crate::account::AccountUpdateDetails;
 use crate::block::account_tree::AccountWitness;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 /// This type encapsulates essentially three components:
 /// - The initial and final state commitment of the account update.
@@ -95,33 +88,5 @@ impl AccountUpdateWitness {
             self.initial_state_proof,
             self.details,
         )
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for AccountUpdateWitness {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write(self.initial_state_commitment);
-        target.write(self.final_state_commitment);
-        target.write(&self.initial_state_proof);
-        target.write(&self.details);
-    }
-}
-
-impl Deserializable for AccountUpdateWitness {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let initial_state_commitment = source.read()?;
-        let final_state_commitment = source.read()?;
-        let initial_state_proof = source.read()?;
-        let details = source.read()?;
-
-        Ok(AccountUpdateWitness {
-            initial_state_commitment,
-            final_state_commitment,
-            initial_state_proof,
-            details,
-        })
     }
 }

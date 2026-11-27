@@ -4,13 +4,6 @@ use miden_crypto::merkle::mmr::{Forest, Mmr, MmrError, MmrPeaks, MmrProof, Parti
 
 use crate::Word;
 use crate::block::BlockNumber;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 /// The [Merkle Mountain Range](Mmr) defining the Miden blockchain.
 ///
@@ -188,21 +181,5 @@ impl Blockchain {
 impl Default for Blockchain {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for Blockchain {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.mmr.write_into(target);
-    }
-}
-
-impl Deserializable for Blockchain {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let chain = Mmr::read_from(source)?;
-        Ok(Self::from_mmr_unchecked(chain))
     }
 }
