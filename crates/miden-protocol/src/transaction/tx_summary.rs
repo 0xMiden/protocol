@@ -3,10 +3,9 @@ use alloc::vec::Vec;
 use super::TransactionLogs;
 use crate::account::AccountDelta;
 use crate::block::BlockNumber;
-use crate::block::code_tree::CodePatch;
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionSummaryError;
-use crate::transaction::{InputNote, InputNotes, RawOutputNotes};
+use crate::transaction::{InputNote, InputNotes, RawOutputNotes, TransactionCodePatch};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -39,7 +38,7 @@ pub struct TransactionSummary {
     account_delta: AccountDelta,
     input_notes: InputNotes<InputNote>,
     output_notes: RawOutputNotes,
-    code_patch: CodePatch,
+    code_patch: TransactionCodePatch,
     block_number: BlockNumber,
     block_commitment: Word,
     expiration_delta: u16,
@@ -79,7 +78,7 @@ impl TransactionSummary {
         account_delta: AccountDelta,
         input_notes: InputNotes<InputNote>,
         output_notes: RawOutputNotes,
-        code_patch: CodePatch,
+        code_patch: TransactionCodePatch,
         block_number: BlockNumber,
         block_commitment: Word,
         expiration_delta: u16,
@@ -128,7 +127,7 @@ impl TransactionSummary {
     }
 
     /// Returns the code patch of this transaction summary.
-    pub fn code_patch(&self) -> &CodePatch {
+    pub fn code_patch(&self) -> &TransactionCodePatch {
         &self.code_patch
     }
 
@@ -402,11 +401,11 @@ mod tests {
 
     /// Builds a transaction summary over an empty delta and no notes, binding the parameters above.
     fn mock_summary() -> TransactionSummary {
-        mock_summary_with_code_patch(CodePatch::default())
+        mock_summary_with_code_patch(TransactionCodePatch::default())
     }
 
     /// Builds the summary of [`mock_summary`] with the provided code patch.
-    fn mock_summary_with_code_patch(code_patch: CodePatch) -> TransactionSummary {
+    fn mock_summary_with_code_patch(code_patch: TransactionCodePatch) -> TransactionSummary {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
         let account_delta = AccountDelta::new(
             account_id,

@@ -3,7 +3,6 @@ use alloc::vec::Vec;
 use anyhow::Context;
 use miden_protocol::Word;
 use miden_protocol::account::{AccountId, AccountUpdateDetails};
-use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{Note, NoteInclusionProof, Nullifier};
@@ -12,6 +11,7 @@ use miden_protocol::transaction::{
     InputNoteCommitment,
     OutputNote,
     ProvenTransaction,
+    TransactionCodePatch,
     TransactionLogDetails,
     TxAccountUpdate,
 };
@@ -136,7 +136,7 @@ impl MockProvenTxBuilder {
             self.expiration_block_num,
             self.proof,
             TransactionLogDetails::Private(Word::empty()),
-            CodePatch::default(),
+            TransactionCodePatch::default(),
         )
         .context("failed to build proven transaction")
     }

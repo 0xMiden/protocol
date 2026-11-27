@@ -1,4 +1,3 @@
-use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::transaction::{
     IesSealSeed,
     InputNoteCommitment,
@@ -9,6 +8,7 @@ use miden_protocol::transaction::{
     RawOutputNote,
     RawOutputNotes,
     TransactionArgs,
+    TransactionCodePatch,
     TransactionHeader,
     TransactionId,
     TransactionScript,
@@ -92,8 +92,8 @@ impl From<&TxAccountUpdate> for proto::transaction::TxAccountUpdate {
 // CODE PATCH
 // ================================================================================================
 
-impl From<&CodePatch> for proto::transaction::CodePatch {
-    fn from(value: &CodePatch) -> Self {
+impl From<&TransactionCodePatch> for proto::transaction::TransactionCodePatch {
+    fn from(value: &TransactionCodePatch) -> Self {
         Self { mast: Some(value.mast().as_ref().into()) }
     }
 }

@@ -11,7 +11,6 @@ use miden_protocol::account::{
     AccountVaultPatch,
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::crypto::rand::EidosRandomCoin;
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_STATE_CHANGED,
@@ -36,6 +35,7 @@ use miden_protocol::transaction::memory::{
 use miden_protocol::transaction::{
     RawOutputNote,
     RawOutputNotes,
+    TransactionCodePatch,
     TransactionLogs,
     TransactionOutputs,
 };
@@ -155,7 +155,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     );
     assert_eq!(
         exec_output.get_stack_word(TransactionOutputs::CODE_PATCH_COMMITMENT_WORD_IDX),
-        CodePatch::default().commitment().as_word(),
+        TransactionCodePatch::default().commitment().as_word(),
     );
 
     let logs_commitment = TransactionLogs::default().commitment();

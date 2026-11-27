@@ -1,9 +1,9 @@
 use alloc::format;
 
 use crate::Word;
-use crate::block::code_tree::CodePatch;
 use crate::code::ProcedureRoot;
 use crate::testing::assembler::assemble_test_package;
+use crate::transaction::TransactionCodePatch;
 
 impl ProcedureRoot {
     /// Returns a procedure root whose leaf is distinct for every `value`.
@@ -12,9 +12,9 @@ impl ProcedureRoot {
     }
 }
 
-impl CodePatch {
-    /// Returns a mock [`CodePatch`] with created procedures and a dependency.
-    pub fn mock() -> CodePatch {
+impl TransactionCodePatch {
+    /// Returns a mock [`TransactionCodePatch`] with created procedures and a dependency.
+    pub fn mock() -> TransactionCodePatch {
         let external_procedure = ProcedureRoot::mock(1);
         let source = format!(
             "
@@ -32,6 +32,6 @@ impl CodePatch {
                 .mast_forest()
                 .clone();
 
-        CodePatch::new(mast).expect("mock code patch should be valid")
+        TransactionCodePatch::new(mast).expect("mock code patch should be valid")
     }
 }

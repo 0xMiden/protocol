@@ -7,7 +7,6 @@ use super::{InputNote, ToInputNoteCommitments, TransactionLogDetails};
 use crate::Word;
 use crate::account::{AccountUpdateDetails, validate_new_public_account};
 use crate::block::BlockNumber;
-use crate::block::code_tree::CodePatch;
 use crate::errors::ProvenTransactionError;
 use crate::note::{NoteHeader, NoteId};
 use crate::transaction::{
@@ -16,6 +15,7 @@ use crate::transaction::{
     Nullifier,
     OutputNote,
     OutputNotes,
+    TransactionCodePatch,
     TransactionId,
 };
 use crate::utils::serde::{
@@ -68,7 +68,7 @@ pub struct ProvenTransaction {
     log_details: TransactionLogDetails,
 
     /// The procedures the transaction adds to the code tree and the procedures it depends on.
-    code_patch: CodePatch,
+    code_patch: TransactionCodePatch,
 }
 
 impl ProvenTransaction {
@@ -102,7 +102,7 @@ impl ProvenTransaction {
         expiration_block_num: BlockNumber,
         proof: ExecutionProof,
         log_details: TransactionLogDetails,
-        code_patch: CodePatch,
+        code_patch: TransactionCodePatch,
     ) -> Result<Self, ProvenTransactionError> {
         let input_notes: Vec<InputNoteCommitment> =
             input_notes.into_iter().map(Into::into).collect();
@@ -141,7 +141,7 @@ impl ProvenTransaction {
     }
 
     /// Returns the code patch of this transaction.
-    pub fn code_patch(&self) -> &CodePatch {
+    pub fn code_patch(&self) -> &TransactionCodePatch {
         &self.code_patch
     }
 
@@ -236,7 +236,7 @@ impl ProvenTransaction {
         expiration_block_num: BlockNumber,
         proof: ExecutionProof,
         log_details: TransactionLogDetails,
-        code_patch: CodePatch,
+        code_patch: TransactionCodePatch,
     ) -> Result<Self, ProvenTransactionError> {
         log_details
             .validate_visibility(account_update.account_id())
@@ -561,7 +561,6 @@ mod tests {
         StorageSlotName,
     };
     use crate::block::BlockNumber;
-    use crate::block::code_tree::CodePatch;
     use crate::errors::ProvenTransactionError;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER,
@@ -569,7 +568,7 @@ mod tests {
     };
     use crate::testing::add_component::AddComponent;
     use crate::testing::noop_auth_component::NoopAuthComponent;
-    use crate::transaction::TxAccountUpdate;
+    use crate::transaction::{TransactionCodePatch, TxAccountUpdate};
     use crate::utils::serde::Serializable;
     use crate::{ACCOUNT_UPDATE_MAX_SIZE, EMPTY_WORD, Felt, Word};
 
@@ -747,7 +746,7 @@ mod tests {
             BlockNumber::from(2),
             crate::testing::dummy_execution_proof(),
             TransactionLogDetails::Private(Word::empty()),
-            CodePatch::default(),
+            TransactionCodePatch::default(),
         )
         .unwrap_err();
 

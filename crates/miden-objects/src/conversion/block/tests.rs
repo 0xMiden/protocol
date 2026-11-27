@@ -2,9 +2,13 @@ use alloc::vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::AccountUpdateDetails;
-use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::block::{BlockAccountUpdate, BlockBody, BlockHeader};
-use miden_protocol::transaction::{InputNotes, OrderedTransactionHeaders, TransactionHeader};
+use miden_protocol::transaction::{
+    InputNotes,
+    OrderedTransactionHeaders,
+    TransactionCodePatch,
+    TransactionHeader,
+};
 use prost::Message;
 
 use crate::decoded::account::test_utils::private_account_id;
@@ -21,7 +25,7 @@ fn block_body_and_transaction_header_roundtrip() {
         InputNotes::default(),
         vec![],
         Default::default(),
-        CodePatch::default().commitment(),
+        TransactionCodePatch::default().commitment(),
     )
     .unwrap();
     let account_update = BlockAccountUpdate::new(

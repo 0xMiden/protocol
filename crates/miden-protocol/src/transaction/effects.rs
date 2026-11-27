@@ -9,7 +9,7 @@ use super::{
 use crate::Word;
 use crate::account::AccountPatch;
 use crate::block::BlockNumber;
-use crate::block::code_tree::CodePatch;
+use crate::transaction::TransactionCodePatch;
 
 // TRANSACTION EFFECTS
 // ================================================================================================
@@ -27,7 +27,7 @@ pub struct TransactionEffects {
     ref_block_commitment: Word,
     expiration_block_num: BlockNumber,
     logs: TransactionLogs,
-    code_patch: CodePatch,
+    code_patch: TransactionCodePatch,
 }
 
 #[bon::bon]
@@ -50,7 +50,7 @@ impl TransactionEffects {
         ref_block_commitment: Word,
         expiration_block_num: BlockNumber,
         logs: TransactionLogs,
-        code_patch: CodePatch,
+        code_patch: TransactionCodePatch,
     ) -> Self {
         let transaction_id = TransactionId::new(
             initial_state_commitment,
@@ -90,7 +90,7 @@ impl TransactionEffects {
     }
 
     /// Returns the code patch of the transaction.
-    pub fn code_patch(&self) -> &CodePatch {
+    pub fn code_patch(&self) -> &TransactionCodePatch {
         &self.code_patch
     }
 

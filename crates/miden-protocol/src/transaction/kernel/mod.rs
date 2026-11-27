@@ -7,13 +7,14 @@ use crate::account::{AccountHeader, AccountId};
 use crate::assembly::debuginfo::SourceManagerSync;
 use crate::assembly::{Assembler, DefaultSourceManager, Linkage};
 use crate::block::BlockNumber;
-use crate::block::code_tree::{CodePatch, CodePatchCommitment};
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionOutputError;
 use crate::protocol::ProtocolLib;
 use crate::transaction::{
     RawOutputNote,
     RawOutputNotes,
+    TransactionCodePatch,
+    TransactionCodePatchCommitment,
     TransactionInputs,
     TransactionLogs,
     TransactionOutputs,
@@ -284,7 +285,8 @@ impl TransactionKernel {
     /// - OUTPUT_NOTES_COMMITMENT is a commitment to the output notes.
     /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
     ///   patch commitment.
-    /// - CODE_PATCH_COMMITMENT is the commitment to the [`CodePatch`] of the transaction.
+    /// - CODE_PATCH_COMMITMENT is the commitment to the [`TransactionCodePatch`] of the
+    ///   transaction.
     /// - LOGS_EXPIRATION_COMMITMENT is the hash of the transaction logs commitment and the
     ///   expiration word `[expiration_block_num, 0, 0, 0]`, where expiration_block_num is the block
     ///   number at which the transaction will expire.
@@ -292,7 +294,7 @@ impl TransactionKernel {
         final_account_commitment: Word,
         account_patch_commitment: Word,
         output_notes_commitment: Word,
-        code_patch_commitment: CodePatchCommitment,
+        code_patch_commitment: TransactionCodePatchCommitment,
         expiration_block_num: BlockNumber,
         logs_commitment: Word,
     ) -> StackOutputs {
@@ -318,7 +320,7 @@ impl TransactionKernel {
     /// logs expiration commitment. See [`Self::build_output_stack`] for the stack layout.
     pub fn parse_output_stack(
         stack: &StackOutputs, // FIXME TODO add an extension trait for this one
-    ) -> (Word, Word, CodePatchCommitment, Word) {
+    ) -> (Word, Word, TransactionCodePatchCommitment, Word) {
         let output_notes_commitment = stack
             .get_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX)
             .expect("output_notes_commitment (first word) missing");
@@ -329,7 +331,7 @@ impl TransactionKernel {
 
         let code_patch_commitment = stack
             .get_word(TransactionOutputs::CODE_PATCH_COMMITMENT_WORD_IDX)
-            .map(CodePatchCommitment::from_raw)
+            .map(TransactionCodePatchCommitment::from_raw)
             .expect("code_patch_commitment (third word) missing");
 
         let logs_expiration_commitment = stack
@@ -360,7 +362,7 @@ impl TransactionKernel {
         advice_inputs: &AdviceInputs,
         output_notes: Vec<RawOutputNote>,
         logs: TransactionLogs,
-        code_patch: CodePatch,
+        code_patch: TransactionCodePatch,
     ) -> Result<TransactionOutputs, TransactionOutputError> {
         let (
             output_notes_commitment,

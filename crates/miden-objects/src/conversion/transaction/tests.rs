@@ -13,7 +13,6 @@ use miden_protocol::account::{
     AssetCallbackFlag,
 };
 use miden_protocol::batch::BatchAccountUpdate;
-use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::note::{Note, NoteType, PartialNote, PartialNoteMetadata};
 use miden_protocol::testing::dummy_execution_proof;
 use miden_protocol::transaction::{
@@ -26,6 +25,7 @@ use miden_protocol::transaction::{
     RawOutputNote,
     RawOutputNotes,
     TransactionArgs,
+    TransactionCodePatch,
     TransactionHeader,
     TransactionLog,
     TransactionLogDetails,
@@ -61,11 +61,13 @@ fn public_output_note_roundtrips_through_protobuf() {
 }
 
 #[rstest]
-#[case::empty(CodePatch::default())]
-#[case::non_empty(CodePatch::mock())]
-fn code_patch_roundtrips_through_protobuf(#[case] patch: CodePatch) -> anyhow::Result<()> {
-    let bytes = proto::transaction::CodePatch::from(&patch).encode_to_vec();
-    let decoded = proto::transaction::CodePatch::decode(bytes.as_slice())?;
+#[case::empty(TransactionCodePatch::default())]
+#[case::non_empty(TransactionCodePatch::mock())]
+fn code_patch_roundtrips_through_protobuf(
+    #[case] patch: TransactionCodePatch,
+) -> anyhow::Result<()> {
+    let bytes = proto::transaction::TransactionCodePatch::from(&patch).encode_to_vec();
+    let decoded = proto::transaction::TransactionCodePatch::decode(bytes.as_slice())?;
     assert_eq!(decoded.decode_fields()?.verify()?, patch);
     Ok(())
 }
@@ -166,7 +168,7 @@ fn submitted_transaction_logs_and_headers_roundtrip(#[case] account_type: Accoun
         3u32.into(),
         dummy_execution_proof(),
         data,
-        CodePatch::default(),
+        TransactionCodePatch::default(),
     )
     .unwrap();
     let bytes = proto::transaction::ProvenTransaction::from(&tx).encode_to_vec();

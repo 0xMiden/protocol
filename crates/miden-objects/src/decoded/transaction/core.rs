@@ -36,7 +36,7 @@ impl BuildUnchecked for TransactionHeader {
             input_notes,
             output_notes,
             self.logs_commitment,
-            miden_protocol::block::code_tree::CodePatchCommitment::from_raw(
+            miden_protocol::transaction::TransactionCodePatchCommitment::from_raw(
                 self.code_patch_commitment,
             ),
         )?;
@@ -76,10 +76,10 @@ impl Verify for TxAccountUpdate {
     }
 }
 
-pub use proto::transaction::DecodedCodePatch as CodePatch;
+pub use proto::transaction::DecodedTransactionCodePatch as TransactionCodePatch;
 
-impl Verify for CodePatch {
-    type Verified = miden_protocol::block::code_tree::CodePatch;
+impl Verify for TransactionCodePatch {
+    type Verified = miden_protocol::transaction::TransactionCodePatch;
     type Error = VerificationError;
     fn verify(self) -> Result<Self::Verified, Self::Error> {
         Ok(Self::Verified::new(alloc::sync::Arc::new(self.mast.verify()?))?)

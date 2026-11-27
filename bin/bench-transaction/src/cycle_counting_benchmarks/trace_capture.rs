@@ -5,9 +5,9 @@ use std::sync::Arc;
 use anyhow::{Context as _, Result};
 use miden_processor::FastProcessor;
 use miden_processor::trace::{TraceLenSummary, build_trace};
-use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::transaction::{
     AccountInputs,
+    TransactionCodePatch,
     TransactionInputs,
     TransactionKernel,
     TransactionMeasurements,
@@ -52,7 +52,7 @@ pub async fn capture_measurements_and_trace_summary(
 // duplicate-execute path. See https://github.com/0xMiden/protocol/issues/2841.
 async fn build_trace_summary(
     tx_inputs: TransactionInputs,
-    code_patch: CodePatch,
+    code_patch: TransactionCodePatch,
 ) -> Result<TraceLenSummary> {
     let (stack_inputs, tx_advice_inputs) = TransactionKernel::prepare_inputs(&tx_inputs);
 

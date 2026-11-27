@@ -41,7 +41,7 @@ use crate::account::{
 use crate::address::AddressType;
 use crate::asset::AssetClass;
 use crate::batch::BatchId;
-use crate::block::code_tree::{CodePatch, CodePatchCommitment, CodeTreeRoot};
+use crate::block::code_tree::CodeTreeRoot;
 use crate::block::{BlockNumber, ValidatorConfig};
 use crate::code::ProcedureRoot;
 use crate::note::{
@@ -55,7 +55,7 @@ use crate::note::{
 };
 use crate::protocol_config::KernelConfig;
 use crate::script::MastForestScriptError;
-use crate::transaction::{TransactionId, TransactionLogError};
+use crate::transaction::{TransactionCodePatchCommitment, TransactionId, TransactionLogError};
 use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
 use crate::{
@@ -1086,8 +1086,8 @@ pub enum TransactionOutputError {
         "code patch commitment {expected} from kernel does not match computed commitment {actual}"
     )]
     CodePatchCommitmentInconsistent {
-        expected: CodePatchCommitment,
-        actual: CodePatchCommitment,
+        expected: TransactionCodePatchCommitment,
+        actual: TransactionCodePatchCommitment,
     },
     #[error(
         "total number of output notes is {0} which exceeds the maximum of {MAX_OUTPUT_NOTES_PER_TX}"
@@ -1865,17 +1865,11 @@ pub enum CodeTreeError {
 
 #[derive(Debug, Error)]
 pub enum CodePatchError {
-    #[error(
-        "code patch has {0} created procedures, which exceeds the maximum of {max}",
-        max = CodePatch::MAX_ROOTS
-    )]
-    TooManyCreatedProcedures(usize),
+    #[error("code patch has {count} created procedures, which exceeds the maximum of {max}")]
+    TooManyCreatedProcedures { count: usize, max: usize },
 
-    #[error(
-        "code patch has {0} dependencies, which exceeds the maximum of {max}",
-        max = CodePatch::MAX_ROOTS
-    )]
-    TooManyDependencies(usize),
+    #[error("code patch has {count} dependencies, which exceeds the maximum of {max}")]
+    TooManyDependencies { count: usize, max: usize },
 
     #[error("created procedure {0} of code patch is duplicated")]
     DuplicateCreatedProcedure(ProcedureRoot),
@@ -1889,11 +1883,8 @@ pub enum CodePatchError {
     #[error("node {0} of the code patch MAST forest is not reachable from a created procedure")]
     UnreachableMastNode(Word),
 
-    #[error(
-        "code patch of size {size} bytes exceeds maximum patch size of {max_size} bytes",
-        max_size = CodePatch::MAX_SIZE
-    )]
-    SizeLimitExceeded { size: usize },
+    #[error("code patch of size {size} bytes exceeds maximum patch size of {max_size} bytes")]
+    SizeLimitExceeded { size: usize, max_size: u32 },
 
     #[error("advice map of the code patch MAST forest is not empty")]
     AdviceMapNotEmpty,

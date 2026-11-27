@@ -17,5 +17,5 @@ message TransactionWitnessV1 {
   TransactionInputsV1 tx_inputs = 1;
   account.AccountHeader final_account = 2;
   blockchain.BlockNumber expiration_block_num = 3;
-  CodePatch code_patch = 4;
+  TransactionCodePatch code_patch = 4;
 }

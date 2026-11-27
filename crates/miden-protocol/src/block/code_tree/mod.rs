@@ -17,7 +17,7 @@ mod partial;
 pub use partial::PartialCodeTree;
 
 mod patch;
-pub use patch::{CodePatch, CodePatchCommitment};
+pub(crate) use patch::{CodePatch, CodePatchKind};
 
 mod root;
 pub use root::CodeTreeRoot;

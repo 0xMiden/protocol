@@ -63,10 +63,7 @@ message TxAccountUpdate {
 }
 
 // The procedures a transaction adds to the code tree and the procedures it depends on.
-//
-// The patch containing procedures a transaction adds to the code tree and the procedures it
-// depends on.
-message CodePatch {
+message TransactionCodePatch {
   primitives.MastForest mast = 1;
 }
 
@@ -80,7 +77,7 @@ message ProvenTransaction {
   primitives.ExecutionProof proof = 7;
   // Complete public logs or only a private commitment.
   TransactionLogDetails log_details = 8;
-  CodePatch code_patch = 9;
+  TransactionCodePatch code_patch = 9;
 }
 
 message TransactionScript {

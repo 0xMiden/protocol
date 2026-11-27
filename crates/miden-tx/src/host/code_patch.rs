@@ -5,8 +5,9 @@ use alloc::vec::Vec;
 use miden_processor::advice::AdviceMutation;
 use miden_processor::mast::{MastForest, MastNodeExt};
 use miden_protocol::Felt;
-use miden_protocol::block::code_tree::{CodePatch, PartialCodeTree};
+use miden_protocol::block::code_tree::PartialCodeTree;
 use miden_protocol::code::ProcedureRoot;
+use miden_protocol::transaction::TransactionCodePatch;
 use miden_protocol::vm::AdviceMap;
 
 use crate::errors::TransactionKernelError;
@@ -20,8 +21,8 @@ use procedure_extraction::ExtractProcedures;
 /// The code that a transaction can register, merged into one [`MastForest`].
 ///
 /// The merge deduplicates equal nodes and replaces an external node with the code of its
-/// procedure if another forest contains it. Thus, building the [`CodePatch`] does not need to
-/// follow references across forests.
+/// procedure if another forest contains it. Thus, building the [`TransactionCodePatch`] does not
+/// need to follow references across forests.
 pub(crate) struct CodePatchSource {
     mast_forest: MastForest,
 }
@@ -69,7 +70,7 @@ impl CodePatchSource {
             .map(ProcedureRoot::from_raw)
     }
 
-    /// Builds the [`CodePatch`] of the provided top-level procedure roots.
+    /// Builds the [`TransactionCodePatch`] of the provided top-level procedure roots.
     ///
     /// The patch contains the code of each absent procedure that the top-level roots reach, as a
     /// procedure root. A reference to a present procedure becomes an external node, because its
@@ -84,12 +85,13 @@ impl CodePatchSource {
     /// - the code witness of a top-level root or of a dependency is not available. The kernel
     ///   verifies these witnesses, so the host must have them.
     /// - the code of an absent procedure is not in the source.
-    /// - the patch is not a valid [`CodePatch`], e.g. because it exceeds [`CodePatch::MAX_SIZE`].
+    /// - the patch is not a valid [`TransactionCodePatch`], e.g. because it exceeds
+    ///   [`TransactionCodePatch::MAX_SIZE`].
     pub(crate) fn build_code_patch(
         &self,
         top_level_roots: &BTreeSet<ProcedureRoot>,
         code_tree: &PartialCodeTree,
-    ) -> Result<CodePatch, TransactionKernelError> {
+    ) -> Result<TransactionCodePatch, TransactionKernelError> {
         // Only absent top-level roots add code. The source must contain their code.
         let mut absent_top_level_nodes = Vec::new();
         for top_level_root in top_level_roots {
@@ -117,7 +119,7 @@ impl CodePatchSource {
                 code_tree.contains(&ProcedureRoot::from_raw(digest)).unwrap_or(false)
             })
             .map_err(TransactionKernelError::CodePatchMastForest)?;
-        let code_patch = CodePatch::new(Arc::new(mast_forest))
+        let code_patch = TransactionCodePatch::new(Arc::new(mast_forest))
             .map_err(TransactionKernelError::InvalidCodePatch)?;
 
         // The extraction keeps the external nodes of the source as dependencies. Such a node
@@ -141,7 +143,7 @@ impl CodePatchSource {
 /// The lists are sorted, because the kernel asserts that they are unique and sorted. The advice
 /// stack layout is defined in `code_patch::load` in the transaction kernel. The kernel also needs
 /// the code witnesses of the lists (see [`code_witness_advice`]).
-pub(crate) fn code_patch_advice(code_patch: &CodePatch) -> AdviceMutation {
+pub(crate) fn code_patch_advice(code_patch: &TransactionCodePatch) -> AdviceMutation {
     let mut advice_stack = Vec::new();
     let mut patch_list = |list: &BTreeSet<ProcedureRoot>| {
         advice_stack.push(Felt::from(list.len() as u32));
@@ -441,13 +443,13 @@ mod tests {
         let code_patch = code_patch_source(&[])?.build_code_patch(&BTreeSet::new(), &code_tree)?;
 
         assert!(code_patch.is_empty());
-        assert_eq!(code_patch, CodePatch::default());
+        assert_eq!(code_patch, TransactionCodePatch::default());
 
         Ok(())
     }
 
-    /// The example of building the `CodePatch` in the design of the code tree: the tree contains
-    /// the core and protocol libraries, but not miden-standards.
+    /// The example of building the `TransactionCodePatch` in the design of the code tree: the tree
+    /// contains the core and protocol libraries, but not miden-standards.
     #[test]
     fn patch_of_standard_note_scripts() -> anyhow::Result<()> {
         let library_forests = [
