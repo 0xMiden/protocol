@@ -25,7 +25,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_PROC_NOT_AUTH_PROC,
     ERR_CODE_PATCH_AUTH_NOTE_SCRIPT_ABSENT,
 };
-use miden_protocol::note::{Note, NoteType, PartialNote};
+use miden_protocol::note::{Note, NoteScript, NoteType, PartialNote};
 use miden_protocol::testing::account_id::{ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{CoreLibrary, Felt, ProtocolLib, Word};
@@ -144,6 +144,48 @@ async fn block_registers_created_procedures() -> anyhow::Result<()> {
     let restored_chain = MockChain::try_from_bytes(&mock_chain.to_bytes())?;
     assert_eq!(restored_chain.code_registry(), mock_chain.code_registry());
     assert_eq!(restored_chain.code_tree(), mock_chain.code_tree());
+
+    Ok(())
+}
+
+/// A public note with a registered script carries only a reference to its script, and a later
+/// transaction resolves the script code from the code registry.
+#[tokio::test]
+async fn consumed_note_script_is_resolved_from_code_registry() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let account =
+        builder.add_existing_wallet_with_assets(Auth::IncrNonce, [FungibleAsset::mock(20)])?;
+    let mut mock_chain = builder.build()?;
+
+    let custom_note = create_custom_note(account.id(), ACTIVE_ACCOUNT_SCRIPT, NoteType::Public, 1)?;
+    let script = SendNotesTransactionScript::new(
+        &account.code_interface(),
+        &[PartialNote::from(custom_note.clone())],
+    )?;
+    let executed_tx = mock_chain
+        .build_transaction(account.id())
+        .send_notes_script(&script)
+        .expected_output_notes(vec![RawOutputNote::Full(custom_note.clone())])
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed_tx)?;
+    mock_chain.prove_next_block()?;
+
+    let committed_note = mock_chain
+        .get_public_note(&custom_note.id())
+        .context("custom note should be committed")?;
+    assert_eq!(
+        committed_note.note().script(),
+        &NoteScript::from_root(custom_note.script().root())
+    );
+
+    mock_chain
+        .build_transaction(account.id())
+        .authenticated_input_note(custom_note.id())
+        .build()?
+        .execute()
+        .await?;
 
     Ok(())
 }

@@ -19,7 +19,7 @@ use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::code_tree::{CodeTree, CodeTreeRoot, CodeWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
-use miden_protocol::code::ProcedureRoot;
+use miden_protocol::code::{CodeRegistry, ProcedureRoot};
 use miden_protocol::note::Note;
 use miden_protocol::protocol_config::ProtocolConfig;
 use miden_protocol::transaction::{
@@ -56,6 +56,7 @@ pub struct MockTransaction {
     pub(super) foreign_account_inputs: BTreeMap<AccountId, (Account, AccountWitness)>,
     pub(super) tx_inputs: TransactionInputs,
     pub(super) code_tree: CodeTree,
+    pub(super) code_registry: CodeRegistry,
     pub(super) mast_store: TransactionMastStore,
     pub(super) authenticator: Option<BasicAuthenticator>,
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
@@ -474,11 +475,19 @@ impl DataStore for MockTransaction {
         async move { Ok(self.code_to_register.clone()) }
     }
 
+    /// Returns the forest from the MAST store, which keeps the debug info of the default libraries,
+    /// or otherwise from the code registry.
     fn get_mast_forest(
         &self,
         procedure_root: ProcedureRoot,
     ) -> impl FutureMaybeSend<Result<Option<LoadedMastForest>, DataStoreError>> {
-        async move { Ok(self.mast_store.get(&procedure_root.as_word())) }
+        async move {
+            let procedure_root = procedure_root.as_word();
+            Ok(self
+                .mast_store
+                .get(&procedure_root)
+                .or_else(|| self.code_registry.get(&procedure_root)))
+        }
     }
 }
 
