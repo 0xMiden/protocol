@@ -1888,6 +1888,9 @@ pub enum CodePatchError {
 
     #[error("advice map of the code patch MAST forest is not empty")]
     AdviceMapNotEmpty,
+
+    #[error("failed to merge the MAST forests of the code patches")]
+    MastForestMerge(#[source] MastForestError),
 }
 
 // AUTH SCHEME ERROR
