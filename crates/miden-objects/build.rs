@@ -143,6 +143,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".transaction.TransactionScript",
             ".transaction.TransactionCodePatch",
             ".transaction.BatchCodePatch",
+            ".blockchain.BlockCodePatch",
             ".account.AccountVaultPatch",
             ".account.AccountCodePatch",
             ".account.AccountVaultPatchEntry",

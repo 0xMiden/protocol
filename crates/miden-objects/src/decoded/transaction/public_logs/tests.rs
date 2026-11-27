@@ -1,7 +1,7 @@
 use alloc::vec;
 
 use miden_protocol::batch::ProvenBatch;
-use miden_protocol::block::BlockBody;
+use miden_protocol::block::{BlockBody, BlockCodePatch};
 use miden_protocol::transaction::TransactionLogError;
 use prost::Message;
 use rstest::rstest;
@@ -104,9 +104,15 @@ fn logged_owners() -> (ProvenBatch, BlockBody) {
         OrderedTransactionHeaders::new_unchecked(headers.as_slice()[..2].to_vec()),
         OrderedTransactionHeaders::new_unchecked(headers.as_slice()[2..].to_vec()),
     ];
-    let body =
-        BlockBody::new(vec![], vec![], vec![], grouped_headers, public_logs, CodePatch::default())
-            .unwrap();
+    let body = BlockBody::new(
+        vec![],
+        vec![],
+        vec![],
+        grouped_headers,
+        public_logs,
+        BlockCodePatch::default(),
+    )
+    .unwrap();
     (batch, body)
 }
 

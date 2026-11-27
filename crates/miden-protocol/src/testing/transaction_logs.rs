@@ -147,8 +147,7 @@ mod tests {
     #[case::distinct(false)]
     #[case::duplicate(true)]
     fn mock_block_logs_preserve_grouping_and_private_headers(#[case] duplicate: bool) {
-        use crate::block::BlockBody;
-        use crate::block::code_tree::CodePatch;
+        use crate::block::{BlockBody, BlockCodePatch};
         use crate::errors::BlockBodyError;
 
         let first = public_header(1);
@@ -169,7 +168,7 @@ mod tests {
             assert_eq!(logs.entries().len(), 1);
             assert_eq!(batches[1].as_slice()[0].id(), first_id);
             assert!(
-                matches!(BlockBody::new(vec![], vec![], vec![], batches, logs, CodePatch::default()),
+                matches!(BlockBody::new(vec![], vec![], vec![], batches, logs, BlockCodePatch::default()),
                 Err(BlockBodyError::DuplicateTransaction(id)) if id == first_id)
             );
         } else {
@@ -177,7 +176,8 @@ mod tests {
             assert_eq!(logs.entries()[1].0, batches[1].as_slice()[0].id());
             logs.validate(batches.iter().flat_map(OrderedTransactionHeaders::as_slice))
                 .unwrap();
-            BlockBody::new(vec![], vec![], vec![], batches, logs, CodePatch::default()).unwrap();
+            BlockBody::new(vec![], vec![], vec![], batches, logs, BlockCodePatch::default())
+                .unwrap();
         }
     }
 }

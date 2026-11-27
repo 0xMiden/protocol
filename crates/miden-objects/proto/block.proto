@@ -68,7 +68,12 @@ message BlockBody {
   repeated BatchTransactions transactions = 4;
   transaction.PublicTransactionLogs public_logs = 5;
   // The merged code patch of the batches.
-  transaction.CodePatch code_patch = 6;
+  BlockCodePatch code_patch = 6;
+}
+
+// The merged code patch of the batches of a block.
+message BlockCodePatch {
+  primitives.MastForest mast = 1;
 }
 
 message SignedBlock {

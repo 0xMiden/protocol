@@ -30,11 +30,12 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetAmount, AssetId, FungibleAsset, TokenSymbol};
 use miden_protocol::block::account_tree::AccountTree;
-use miden_protocol::block::code_tree::{CodePatch, CodeTree};
+use miden_protocol::block::code_tree::CodeTree;
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{
     BlockAccountUpdate,
     BlockBody,
+    BlockCodePatch,
     BlockHeader,
     BlockNoteTree,
     BlockNumber,
@@ -259,7 +260,7 @@ impl MockChainBuilder {
             Vec::new(),
             Vec::new(),
             Default::default(),
-            CodePatch::default(),
+            BlockCodePatch::default(),
         );
 
         let prev_block_commitment = Word::empty();

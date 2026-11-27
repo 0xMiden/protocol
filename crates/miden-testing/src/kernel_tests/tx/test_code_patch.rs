@@ -135,7 +135,7 @@ async fn block_registers_created_procedures() -> anyhow::Result<()> {
     mock_chain.add_pending_executed_transaction(&executed_tx)?;
     let block = mock_chain.prove_next_block()?;
 
-    assert_eq!(block.body().code_patch(), executed_tx.code_patch());
+    assert_eq!(block.body().code_patch().mast(), executed_tx.code_patch().mast());
     assert!(mock_chain.code_tree().contains(&script_root));
     assert_eq!(block.header().code_tree_root(), mock_chain.code_tree().root());
 

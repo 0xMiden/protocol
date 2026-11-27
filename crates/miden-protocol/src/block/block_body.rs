@@ -4,9 +4,9 @@ use alloc::vec::Vec;
 use miden_core::Word;
 
 use crate::batch::{BatchId, BatchesCommitment};
-use crate::block::code_tree::CodePatch;
 use crate::block::{
     BlockAccountUpdate,
+    BlockCodePatch,
     BlockNoteIndex,
     BlockNoteTree,
     OutputNoteBatch,
@@ -48,7 +48,7 @@ pub struct BlockBody {
     public_logs: PublicTransactionLogs,
 
     /// The merged code patch of the batches in this block.
-    code_patch: CodePatch,
+    code_patch: BlockCodePatch,
 }
 
 impl BlockBody {
@@ -75,7 +75,7 @@ impl BlockBody {
         created_nullifiers: Vec<Nullifier>,
         transactions: Vec<OrderedTransactionHeaders>,
         public_logs: PublicTransactionLogs,
-        code_patch: CodePatch,
+        code_patch: BlockCodePatch,
     ) -> Result<Self, BlockBodyError> {
         if transactions.len() > MAX_BATCHES_PER_BLOCK {
             return Err(BlockBodyError::TooManyTransactionBatches(transactions.len()));
@@ -180,7 +180,7 @@ impl BlockBody {
         created_nullifiers: Vec<Nullifier>,
         transactions: Vec<OrderedTransactionHeaders>,
         public_logs: PublicTransactionLogs,
-        code_patch: CodePatch,
+        code_patch: BlockCodePatch,
     ) -> Self {
         Self {
             updated_accounts,
@@ -222,7 +222,7 @@ impl BlockBody {
     }
 
     /// Returns the merged code patch of the batches in this block.
-    pub fn code_patch(&self) -> &CodePatch {
+    pub fn code_patch(&self) -> &BlockCodePatch {
         &self.code_patch
     }
 
@@ -296,7 +296,7 @@ impl BlockBody {
         Vec<Nullifier>,
         Vec<OrderedTransactionHeaders>,
         PublicTransactionLogs,
-        CodePatch,
+        BlockCodePatch,
     ) {
         (
             self.updated_accounts,
@@ -317,7 +317,7 @@ impl Default for BlockBody {
             vec![],
             vec![],
             PublicTransactionLogs::default(),
-            CodePatch::default(),
+            BlockCodePatch::default(),
         )
     }
 }
@@ -377,7 +377,7 @@ mod tests {
     use super::BlockBody;
     use crate::account::{Account, AccountId, AccountPatch, AccountType, AccountUpdateDetails};
     use crate::batch::{BatchId, BatchesCommitment};
-    use crate::block::BlockAccountUpdate;
+    use crate::block::{BlockAccountUpdate, BlockCodePatch};
     use crate::errors::{BlockAccountUpdateError, BlockBodyError, TransactionHeaderError};
     use crate::note::{Note, NoteHeader};
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
@@ -497,7 +497,7 @@ mod tests {
                 vec![],
                 embedded_headers,
                 embedded_logs,
-                CodePatch::default(),
+                BlockCodePatch::default(),
             )
         }?;
 
@@ -521,7 +521,7 @@ mod tests {
                 vec![],
                 embedded_headers,
                 embedded_logs,
-                CodePatch::default(),
+                BlockCodePatch::default(),
             )
         };
 
@@ -577,7 +577,7 @@ mod tests {
                 created_nullifiers,
                 embedded_headers,
                 embedded_logs,
-                CodePatch::default(),
+                BlockCodePatch::default(),
             )
         }
         .unwrap();
@@ -617,7 +617,7 @@ mod tests {
                 vec![],
                 embedded_headers,
                 embedded_logs,
-                CodePatch::default(),
+                BlockCodePatch::default(),
             )
         }
         .unwrap();
@@ -650,7 +650,7 @@ mod tests {
                 vec![input_note.nullifier()],
                 embedded_headers,
                 embedded_logs,
-                CodePatch::default(),
+                BlockCodePatch::default(),
             )
         }
         .unwrap();
@@ -671,7 +671,7 @@ mod tests {
                 vec![nullifier, nullifier],
                 embedded_headers,
                 embedded_logs,
-                CodePatch::default(),
+                BlockCodePatch::default(),
             )
         };
 
@@ -696,7 +696,7 @@ mod tests {
                 vec![],
                 embedded_headers,
                 embedded_logs,
-                CodePatch::default(),
+                BlockCodePatch::default(),
             )
         };
 
@@ -737,7 +737,7 @@ mod tests {
                 vec![note.nullifier()],
                 embedded_headers,
                 embedded_logs,
-                CodePatch::default(),
+                BlockCodePatch::default(),
             )
         }
         .unwrap();
@@ -754,7 +754,7 @@ mod tests {
             vec![],
             transactions,
             Default::default(),
-            CodePatch::default(),
+            BlockCodePatch::default(),
         );
 
         assert_matches!(result, Err(BlockBodyError::EmptyTransactionBatch { batch_index: 1 }));
@@ -771,7 +771,7 @@ mod tests {
             vec![],
             transactions,
             Default::default(),
-            CodePatch::default(),
+            BlockCodePatch::default(),
         );
 
         assert_matches!(
@@ -791,7 +791,7 @@ mod tests {
             vec![],
             transactions,
             Default::default(),
-            CodePatch::default(),
+            BlockCodePatch::default(),
         );
 
         assert_matches!(
@@ -803,7 +803,8 @@ mod tests {
 
     fn body_with_batches(transactions: Vec<OrderedTransactionHeaders>) -> BlockBody {
         let (transactions, logs) = PublicTransactionLogs::mock_for_block(transactions);
-        BlockBody::new(vec![], vec![], vec![], transactions, logs, CodePatch::default()).unwrap()
+        BlockBody::new(vec![], vec![], vec![], transactions, logs, BlockCodePatch::default())
+            .unwrap()
     }
 
     /// Regrouping the same transactions into different batches keeps the transaction commitment

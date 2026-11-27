@@ -7,11 +7,16 @@ use assert_matches::assert_matches;
 use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountId, AccountType, AccountUpdateDetails};
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::block::code_tree::CodePatch;
-use miden_protocol::block::{BlockInputs, ProposedBlock};
+use miden_protocol::batch::BatchCodePatch;
+use miden_protocol::block::{BlockCodePatch, BlockInputs, ProposedBlock};
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
-use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, TransactionHeader};
+use miden_protocol::transaction::{
+    ExecutedTransaction,
+    RawOutputNote,
+    TransactionCodePatch,
+    TransactionHeader,
+};
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::LocalTransactionProver;
@@ -123,7 +128,7 @@ fn proposed_block_merges_code_patches() -> anyhow::Result<()> {
     let account1 = generate_account(&mut builder);
     let chain = builder.build()?;
 
-    let first_patch = CodePatch::mock();
+    let first_patch = TransactionCodePatch::mock();
     let second_patch = code_patch_sharing_mock_code()?;
     let batches = [
         create_code_patch_batch(&chain, &account0, first_patch.clone())?,
@@ -133,7 +138,10 @@ fn proposed_block_merges_code_patches() -> anyhow::Result<()> {
 
     let proposed_block = ProposedBlock::new(block_inputs, batches.to_vec())?;
 
-    let expected_patch = CodePatch::merge([&first_patch, &second_patch])?;
+    let expected_patch = BlockCodePatch::merge([
+        &BatchCodePatch::merge([&first_patch])?,
+        &BatchCodePatch::merge([&second_patch])?,
+    ])?;
     assert_eq!(proposed_block.code_patch(), &expected_patch);
 
     let mut expected_code_tree = chain.code_tree().clone();

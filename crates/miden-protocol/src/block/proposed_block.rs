@@ -8,11 +8,12 @@ use crate::batch::note_tracker::{NoteTracker, TrackerOutput};
 use crate::batch::{BatchAccountUpdate, BatchId, OrderedBatches, ProvenBatch};
 use crate::block::account_tree::{AccountWitness, PartialAccountTree};
 use crate::block::block_inputs::BlockInputs;
-use crate::block::code_tree::{CodePatch, CodeTreeRoot, PartialCodeTree};
+use crate::block::code_tree::{CodeTreeRoot, PartialCodeTree};
 use crate::block::nullifier_tree::{NullifierWitness, PartialNullifierTree};
 use crate::block::{
     AccountUpdateWitness,
     BlockBody,
+    BlockCodePatch,
     BlockHeader,
     BlockNoteIndex,
     BlockNoteTree,
@@ -62,7 +63,7 @@ pub struct ProposedBlock {
     /// the nullifiers of all _authenticated_ notes consumed in the block.
     created_nullifiers: BTreeMap<Nullifier, NullifierWitness>,
     /// The merged code patch of the batches in this block.
-    code_patch: CodePatch,
+    code_patch: BlockCodePatch,
     /// The code tree at the state of the previous block header with the witnesses of the created
     /// procedures of the code patch.
     partial_code_tree: PartialCodeTree,
@@ -155,7 +156,7 @@ impl ProposedBlock {
     ///
     /// ## Code
     ///
-    /// - The code patches of the batches cannot be merged (see [`CodePatch::merge`]).
+    /// - The code patches of the batches cannot be merged (see [`BlockCodePatch::merge`]).
     ///
     /// ## Time
     ///
@@ -266,7 +267,7 @@ impl ProposedBlock {
         // Merge the code patches of the batches.
         // --------------------------------------------------------------------------------------------
 
-        let code_patch = CodePatch::merge(batches.iter().map(ProvenBatch::code_patch))
+        let code_patch = BlockCodePatch::merge(batches.iter().map(ProvenBatch::code_patch))
             .map_err(ProposedBlockError::CodePatchMerge)?;
 
         // Build proposed blocks from parts.
@@ -404,7 +405,7 @@ impl ProposedBlock {
     }
 
     /// Returns the merged code patch of the batches in this block.
-    pub fn code_patch(&self) -> &CodePatch {
+    pub fn code_patch(&self) -> &BlockCodePatch {
         &self.code_patch
     }
 
@@ -663,7 +664,7 @@ impl ProposedBlock {
         Vec<(AccountId, AccountUpdateWitness)>,
         Vec<OutputNoteBatch>,
         BTreeMap<Nullifier, NullifierWitness>,
-        CodePatch,
+        BlockCodePatch,
         PartialCodeTree,
         PartialBlockchain,
         BlockHeader,

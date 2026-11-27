@@ -6,11 +6,12 @@ use assert_matches::assert_matches;
 use miden_processor::crypto::merkle::MerklePath;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::batch::ProvenBatch;
-use miden_protocol::block::code_tree::{CodePatch, CodeTreeRoot, PartialCodeTree};
+use miden_protocol::block::code_tree::{CodeTreeRoot, PartialCodeTree};
 use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::errors::ProposedBlockError;
 use miden_protocol::note::{NoteInclusionProof, NoteType};
+use miden_protocol::transaction::TransactionCodePatch;
 use miden_protocol::{MAX_BATCHES_PER_BLOCK, Word};
 use miden_tx::LocalTransactionProver;
 use rstest::rstest;
@@ -840,7 +841,7 @@ fn proposed_block_fails_on_missing_code_witness() -> anyhow::Result<()> {
     let account = generate_account(&mut builder);
     let chain = builder.build()?;
 
-    let batch = create_code_patch_batch(&chain, &account, CodePatch::mock())?;
+    let batch = create_code_patch_batch(&chain, &account, TransactionCodePatch::mock())?;
     let mut block_inputs = chain.get_block_inputs(slice::from_ref(&batch))?;
     *block_inputs.partial_code_tree_mut() = PartialCodeTree::new(chain.code_tree().root());
 
@@ -862,7 +863,7 @@ fn proposed_block_fails_on_stale_code_tree_root() -> anyhow::Result<()> {
     let account = generate_account(&mut builder);
     let chain = builder.build()?;
 
-    let batch = create_code_patch_batch(&chain, &account, CodePatch::mock())?;
+    let batch = create_code_patch_batch(&chain, &account, TransactionCodePatch::mock())?;
     let mut block_inputs = chain.get_block_inputs(slice::from_ref(&batch))?;
     let stale_code_tree_root = CodeTreeRoot::from_raw(Word::from([1, 2, 3, 4u32]));
     *block_inputs.partial_code_tree_mut() = PartialCodeTree::new(stale_code_tree_root);
