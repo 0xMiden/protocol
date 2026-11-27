@@ -1130,6 +1130,10 @@ pub enum TransactionSummaryError {
         "transaction summary preimage contains {actual} elements but expected {expected} elements"
     )]
     InvalidPreimageLength { actual: usize, expected: usize },
+    #[error(
+        "transaction summary user parameters contain {actual} elements but expected {expected} elements"
+    )]
+    InvalidUserParamsLength { actual: usize, expected: usize },
     #[error("transaction summary metadata element {0} sets bits above the packed fields")]
     MetadataOutOfRange(Felt),
     #[error(
@@ -1796,8 +1800,8 @@ pub enum ValidatorConfigError {
     TooManyKeys { count: usize },
     #[error("validator set contains duplicate public keys")]
     DuplicateKey,
-    #[error("quorum is {quorum} but must equal the validator count of {count}")]
-    QuorumMustEqualValidatorCount { quorum: u16, count: usize },
+    #[error("quorum is {quorum} but must be between 1 and the validator count of {count}")]
+    QuorumOutOfRange { quorum: u16, count: usize },
 }
 
 // NULLIFIER TREE ERROR

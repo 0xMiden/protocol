@@ -1,4 +1,4 @@
-use {NoteRecipient, NoteTag, NoteType} from miden::protocol::types
+use {NoteRecipient, NoteTag, NoteType, OutputNoteIndex} from miden::protocol::types
 use miden::protocol::output_note
 
 # PUBLIC API
@@ -26,7 +26,7 @@ use miden::protocol::output_note
 #!
 #! Invocation: call
 @account_procedure
-pub proc create_note(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> u16
+pub proc create_note(tag: NoteTag, note_type: NoteType, recipient: NoteRecipient) -> OutputNoteIndex
     exec.output_note::create
     # => [note_idx, pad(15)]
 end
