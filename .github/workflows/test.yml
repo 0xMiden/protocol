@@ -51,9 +51,7 @@ jobs:
       - uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           # Both shards use the same dependencies. Only one needs to save the cache.
-          save-if: >-
-            ${{ matrix.shard == 1 && ((github.event_name == 'push' && github.ref == 'refs/heads/next') ||
-                github.event.pull_request.number == 4293) }}
+          save-if: ${{ matrix.shard == 1 && github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install rust
         run: rustup update --no-self-update
       - uses: ./.github/actions/restore-masp
