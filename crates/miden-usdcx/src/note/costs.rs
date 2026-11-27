@@ -9,14 +9,14 @@ use super::xreserve_admin::XReserveSetAttesterNote;
 use super::xreserve_burn::XReserveBurnNote;
 use super::xreserve_mint::XUsdcMintNote;
 
-/// Cycles of consuming an xUSDC MINT note: empty hook data 45506, maximum hook data 63984.
-pub const XUSDC_MINT_CONSUMPTION_CYCLES: u32 = 63984;
+/// Cycles of consuming an xUSDC MINT note: empty hook data 47815, maximum hook data 66293.
+pub const XUSDC_MINT_CONSUMPTION_CYCLES: u32 = 66293;
 
 /// Cycles of consuming an xUSDC BURN note.
-pub const XUSDC_BURN_CONSUMPTION_CYCLES: u32 = 35118;
+pub const XUSDC_BURN_CONSUMPTION_CYCLES: u32 = 36837;
 
-/// Cycles of consuming an xUSDC set-attester note: enable 31245, disable 31092.
-pub const XRESERVE_SET_ATTESTER_CONSUMPTION_CYCLES: u32 = 31245;
+/// Cycles of consuming an xUSDC set-attester note: enable 32964, disable 32811.
+pub const XRESERVE_SET_ATTESTER_CONSUMPTION_CYCLES: u32 = 32964;
 
 impl NoteConsumptionCost for XUsdcMintNote {
     fn consumption_cycles() -> u32 {
