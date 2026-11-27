@@ -898,8 +898,11 @@ async fn issuer_tracks_private_bond_transfers() -> anyhow::Result<()> {
         .await?;
     commit_private(&mut mock_chain, &mut setup.creditor, &consume_issue_note_tx)?;
 
-    // the originator sees on-chain that the creditor took the bond
+    // The terms name the creditor as the taker of the issue note, so once the originator sees
+    // on-chain that the note is consumed, it knows that the creditor holds the bond. The
+    // creditor's own state confirms it.
     assert!(mock_chain.is_note_consumed(&issue_nullifier));
+    assert_eq!(setup.creditor.vault().get(bond.id()), Some(bond));
 
     let [loan_note_header] = non_fee_output_notes(&consume_issue_note_tx)[..] else {
         anyhow::bail!("filling the issue note must create exactly the loan note");
