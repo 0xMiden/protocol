@@ -51,12 +51,10 @@ jobs:
     check-features:
       if: >-
         ${{
-          (github.event.pull_request.number != 4285 || github.event.pull_request.draft != true) && (
           github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.full_name != github.repository ||
           github.event.pull_request.head.ref != 'next' ||
           github.event.pull_request.base.ref != 'main'
-          )
         }}
       name: check all feature combinations
       runs-on: warp-ubuntu-latest-x64-8x
@@ -78,7 +76,10 @@ jobs:
           with:
             tool: cargo-hack
         - name: Check all feature combinations
-          run: make check-features
+          run: |
+            cache_dir=$(mktemp -d "${RUNNER_TEMP}/standards-masp.XXXXXX")
+            MIDEN_STANDARDS_MASP_CACHE_DIR="$cache_dir" make check-features
+            find "$cache_dir" -name '*.lock' -exec cat {} + | sort | uniq -c
 
     build-benches:
       if: >-

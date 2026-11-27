@@ -96,6 +96,7 @@ serde            = { default-features = false, version = "1.0" }
 serde_json       = { default-features = false, version = "1.0" }
 sha3             = { default-features = false, version = "0.12" }
 syn              = { features = ["full"], version = "2" }
+tempfile         = { version = "3.19" }
 thiserror        = { default-features = false, version = "2.0" }
 tokio            = { default-features = false, features = ["sync"], version = "1" }
 toml             = { version = "1.0" }
