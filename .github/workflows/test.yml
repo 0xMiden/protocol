@@ -30,7 +30,7 @@ jobs:
 
   test:
     needs: prepare-masp
-    name: test
+    name: Build test archive
     runs-on: warp-ubuntu-latest-x64-8x
     env:
       CARGO_PROFILE_TEST_DEV_DEBUG: "0"
@@ -52,12 +52,60 @@ jobs:
       - uses: ./.github/actions/restore-masp
         with:
           cache-key: ${{ needs.prepare-masp.outputs.cache-key }}
-      - name: Build tests
-        run: make test-release-build
-      - name: test
-        run: make test-release # runs without debug mode
+      - name: Build test archive
+        run: |
+          cargo nextest archive --locked --cargo-profile test-dev --no-default-features \
+            --features concurrent,testing,std --archive-file "$RUNNER_TEMP/tests.tar.zst"
       - name: Test protobuf build support
         run: cargo test -p miden-protobuf --all-features --locked
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ runner.temp }}/tests.tar.zst
+          # Nextest already compresses the archive and preserves executable permissions.
+          archive: false
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 7
+
+  test-shards:
+    needs: test
+    name: Test shard ${{ matrix.shard }}/2
+    runs-on: warp-ubuntu-latest-x64-8x
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+        with:
+          tool: cargo-nextest
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tests.tar.zst
+          path: ${{ runner.temp }}
+          skip-decompress: true
+      - name: Run tests
+        env:
+          SHARD: ${{ matrix.shard }}
+          RUST_BACKTRACE: "1"
+        run: |
+          cargo nextest run --archive-file "$RUNNER_TEMP/tests.tar.zst" \
+            --workspace-remap "$GITHUB_WORKSPACE" --partition "hash:$SHARD/2"
+
+  test-result:
+    # Branch protection requires a single check named "test" for the entire suite.
+    name: test
+    needs: [prepare-masp, test-shards]
+    if: ${{ !cancelled() && needs.prepare-masp.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check shard results
+        env:
+          RESULT: ${{ needs.test-shards.result }}
+        run: test "$RESULT" = success
 
   doc-tests:
     needs: prepare-masp
