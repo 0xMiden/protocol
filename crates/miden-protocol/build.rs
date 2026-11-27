@@ -91,8 +91,9 @@ fn main() -> Result<()> {
     {
         let assets = Path::new(&previous_out).join(ASSETS_DIR);
         println!("cargo::rerun-if-changed={}", assets.display());
+        // Cargo tracks the copied packages. Preserve their input timestamps across builds.
         let status = Command::new("cp")
-            .arg("-R")
+            .arg("-Rp")
             .arg(&assets)
             .arg(&build_dir)
             .status()
