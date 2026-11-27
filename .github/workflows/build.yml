@@ -88,10 +88,7 @@ jobs:
           with:
             # Keep cargo check artifacts separate from the previous cargo build cache.
             key: cargo-check
-            # Let this PR populate the cache for a warm benchmark timing.
-            save-if: >-
-              ${{ (github.event_name == 'push' && github.ref == 'refs/heads/next') ||
-                  github.event.pull_request.number == 4285 }}
+            save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
         - uses: ./.github/actions/restore-masp
           with:
             cache-key: ${{ needs.prepare-masp.outputs.cache-key }}
