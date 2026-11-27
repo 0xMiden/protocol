@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::env;
 use std::fmt::Write;
 use std::path::Path;
+use std::process::Command;
 use std::sync::Arc;
 
 use fs_err as fs;
@@ -57,12 +58,27 @@ const AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME: &str = "agglayer_constants.rs";
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
-    println!("cargo::rerun-if-env-changed=MIDEN_SKIP_MASP_ASSEMBLY");
+    println!("cargo::rerun-if-env-changed=MIDEN_AGGLAYER_MASP_DIR");
     println!("cargo::rerun-if-env-changed=REGENERATE_CANONICAL_ZEROS");
 
-    let skip_assembly = env::var("MIDEN_SKIP_MASP_ASSEMBLY").as_deref() == Ok("1");
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let build_dir = env::var("OUT_DIR").unwrap();
+    let previous_out = env::var_os("MIDEN_AGGLAYER_MASP_DIR");
+    let skip_assembly = previous_out.is_some();
+    if let Some(previous_out) = previous_out
+        && Path::new(&previous_out) != Path::new(&build_dir)
+    {
+        let assets = Path::new(&previous_out).join(ASSETS_DIR);
+        println!("cargo::rerun-if-changed={}", assets.display());
+        let status = Command::new("cp")
+            .arg("-R")
+            .arg(&assets)
+            .arg(&build_dir)
+            .status()
+            .into_diagnostic()?;
+        assert!(status.success(), "failed to copy {}", assets.display());
+    }
+
     let crate_path = Path::new(&crate_dir);
 
     // validate (or regenerate) canonical zeros in `asm/agglayer/bridge/canonical_zeros.masm`
