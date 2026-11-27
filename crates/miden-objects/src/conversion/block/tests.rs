@@ -2,7 +2,8 @@ use alloc::vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::AccountUpdateDetails;
-use miden_protocol::block::{BlockAccountUpdate, BlockBody, BlockHeader};
+use miden_protocol::batch::BatchCodePatch;
+use miden_protocol::block::{BlockAccountUpdate, BlockBody, BlockCodePatch, BlockHeader};
 use miden_protocol::transaction::{
     InputNotes,
     OrderedTransactionHeaders,
@@ -40,6 +41,8 @@ fn block_body_and_transaction_header_roundtrip() {
         vec![],
         vec![OrderedTransactionHeaders::new_unchecked(vec![transaction])],
         Default::default(),
+        BlockCodePatch::merge([&BatchCodePatch::merge([&TransactionCodePatch::mock()]).unwrap()])
+            .unwrap(),
     )
     .unwrap();
 

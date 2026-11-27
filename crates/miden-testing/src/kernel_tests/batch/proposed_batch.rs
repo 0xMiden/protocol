@@ -21,7 +21,6 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::AccountIdBuilder;
-use miden_protocol::testing::assembler::assemble_test_package;
 use miden_protocol::transaction::{
     InputNote,
     InputNoteCommitment,
@@ -41,6 +40,7 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
 use super::proven_tx_builder::MockProvenTxBuilder;
+use crate::kernel_tests::block::utils::code_patch_sharing_mock_code;
 use crate::utils::create_p2any_note;
 use crate::{AccountState, Auth, MockChain, MockChainBuilder};
 
@@ -77,7 +77,7 @@ pub fn setup_chain() -> TestSetup {
     TestSetup { chain, account1, account2, note1 }
 }
 
-fn generate_account(chain: &mut MockChainBuilder) -> Account {
+pub fn generate_account(chain: &mut MockChainBuilder) -> Account {
     let account_builder = Account::builder(rand::rng().random())
         .account_type(AccountType::Private)
         .with_component(MockAccountComponent::with_empty_slots());
@@ -1055,23 +1055,7 @@ fn batch_carries_merged_code_patch() -> anyhow::Result<()> {
     let block2 = chain.prove_next_block()?;
 
     let first_patch = TransactionCodePatch::mock();
-    // Shares `foo` with the mock patch.
-    let second_mast = assemble_test_package(
-        "test-batch-code-patch",
-        "test::batch_code_patch",
-        "
-        pub proc foo
-            push.1 drop
-        end
-
-        pub proc baz
-            push.3 drop
-        end
-        ",
-    )
-    .mast_forest()
-    .clone();
-    let second_patch = TransactionCodePatch::new(second_mast)?;
+    let second_patch = code_patch_sharing_mock_code()?;
 
     let tx1 =
         MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())

@@ -395,6 +395,7 @@ async fn proven_block_succeeds_with_empty_batches() -> anyhow::Result<()> {
         BTreeMap::default(),
         BTreeMap::default(),
         BTreeMap::default(),
+        Default::default(),
     );
 
     let batches = Vec::new();

@@ -1,6 +1,9 @@
 mod header;
 pub use header::{BlockHeader, FeeParameters};
 
+mod code_patch;
+pub use code_patch::{BlockCodePatch, BlockCodePatchCommitment};
+
 mod block_body;
 pub use block_body::BlockBody;
 

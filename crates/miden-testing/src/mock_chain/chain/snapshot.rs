@@ -116,6 +116,7 @@ impl MockChain {
                     block.body.created_nullifiers.map(Nullifier::from_raw),
                     embedded_headers,
                     embedded_logs,
+                    block.body.code_patch.verify()?,
                 )
             };
             let signatures = BlockSignatures::new(block.signatures.verify_infallible())?;

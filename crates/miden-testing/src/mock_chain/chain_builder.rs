@@ -35,6 +35,7 @@ use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{
     BlockAccountUpdate,
     BlockBody,
+    BlockCodePatch,
     BlockHeader,
     BlockNoteTree,
     BlockNumber,
@@ -259,6 +260,7 @@ impl MockChainBuilder {
             Vec::new(),
             Vec::new(),
             Default::default(),
+            BlockCodePatch::default(),
         );
 
         let prev_block_commitment = Word::empty();

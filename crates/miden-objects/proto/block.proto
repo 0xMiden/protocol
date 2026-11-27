@@ -67,6 +67,13 @@ message BlockBody {
   repeated primitives.Word created_nullifiers = 3;
   repeated BatchTransactions transactions = 4;
   transaction.PublicTransactionLogs public_logs = 5;
+  // The merged code patch of the batches.
+  BlockCodePatch code_patch = 6;
+}
+
+// The merged code patch of the batches of a block.
+message BlockCodePatch {
+  primitives.MastForest mast = 1;
 }
 
 // A validator's signature over a block header and the public key of the validator that produced

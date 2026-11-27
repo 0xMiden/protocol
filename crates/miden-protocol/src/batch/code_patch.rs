@@ -104,6 +104,11 @@ impl BatchCodePatch {
     pub fn commitment(&self) -> BatchCodePatchCommitment {
         BatchCodePatchCommitment::from_raw(self.0.commitment())
     }
+
+    /// Returns the shared code patch implementation.
+    pub(crate) fn as_core(&self) -> &CodePatch<BatchCodePatch> {
+        &self.0
+    }
 }
 
 impl CodePatchKind for BatchCodePatch {

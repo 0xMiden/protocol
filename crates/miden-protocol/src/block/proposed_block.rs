@@ -8,10 +8,12 @@ use crate::batch::note_tracker::{NoteTracker, TrackerOutput};
 use crate::batch::{BatchAccountUpdate, BatchId, OrderedBatches, ProvenBatch};
 use crate::block::account_tree::{AccountWitness, PartialAccountTree};
 use crate::block::block_inputs::BlockInputs;
+use crate::block::code_tree::{CodeTreeRoot, PartialCodeTree};
 use crate::block::nullifier_tree::{NullifierWitness, PartialNullifierTree};
 use crate::block::{
     AccountUpdateWitness,
     BlockBody,
+    BlockCodePatch,
     BlockHeader,
     BlockNoteIndex,
     BlockNoteTree,
@@ -60,6 +62,11 @@ pub struct ProposedBlock {
     /// These are the nullifiers of all input notes after note erasure has been done, so these are
     /// the nullifiers of all _authenticated_ notes consumed in the block.
     created_nullifiers: BTreeMap<Nullifier, NullifierWitness>,
+    /// The merged code patch of the batches in this block.
+    code_patch: BlockCodePatch,
+    /// The code tree at the state of the previous block header with the witnesses of the created
+    /// procedures of the code patch.
+    partial_code_tree: PartialCodeTree,
     /// The [`PartialBlockchain`] at the state of the previous block header. It is used to:
     /// - authenticate unauthenticated notes whose note inclusion proof references a block.
     /// - authenticate all reference blocks of the batches in this block.
@@ -147,6 +154,10 @@ impl ProposedBlock {
     /// - Account updates cannot be merged, i.e. if [`AccountUpdateDetails::merge`] fails on the
     ///   updates from two batches.
     ///
+    /// ## Code
+    ///
+    /// - The code patches of the batches cannot be merged (see [`BlockCodePatch::merge`]).
+    ///
     /// ## Time
     ///
     /// - The given `timestamp` does not increase monotonically compared to the previous block
@@ -225,8 +236,14 @@ impl ProposedBlock {
         // Check for nullifiers proofs and unspent nullifiers.
         // --------------------------------------------------------------------------------------------
 
-        let (prev_block_header, partial_blockchain, account_witnesses, mut nullifier_witnesses, _) =
-            block_inputs.into_parts();
+        let (
+            prev_block_header,
+            partial_blockchain,
+            account_witnesses,
+            mut nullifier_witnesses,
+            _,
+            partial_code_tree,
+        ) = block_inputs.into_parts();
 
         // Remove nullifiers of erased notes, so we only add the nullifiers of actual input notes to
         // the proposed block.
@@ -247,6 +264,12 @@ impl ProposedBlock {
 
         let output_note_batches = compute_block_output_notes(&batches, block_output_notes);
 
+        // Merge the code patches of the batches.
+        // --------------------------------------------------------------------------------------------
+
+        let code_patch = BlockCodePatch::merge(batches.iter().map(ProvenBatch::code_patch))
+            .map_err(ProposedBlockError::CodePatchMerge)?;
+
         // Build proposed blocks from parts.
         // --------------------------------------------------------------------------------------------
 
@@ -259,6 +282,8 @@ impl ProposedBlock {
             account_updated_witnesses,
             output_note_batches,
             created_nullifiers,
+            code_patch,
+            partial_code_tree,
             partial_blockchain,
             prev_block_header,
             next_validator_config,
@@ -379,6 +404,11 @@ impl ProposedBlock {
         self.next_protocol_config.as_ref()
     }
 
+    /// Returns the merged code patch of the batches in this block.
+    pub fn code_patch(&self) -> &BlockCodePatch {
+        &self.code_patch
+    }
+
     // COMMITMENT COMPUTATIONS
     // --------------------------------------------------------------------------------------------
 
@@ -463,6 +493,36 @@ impl ProposedBlock {
         Ok(partial_nullifier_tree.root())
     }
 
+    /// Computes the new code tree root by inserting the created procedures of the code patch into
+    /// the partial code tree.
+    ///
+    /// A created procedure that is already present stays unchanged, because a transaction can prove
+    /// its absence against an older code tree root.
+    pub fn compute_code_tree_root(&self) -> Result<CodeTreeRoot, ProposedBlockError> {
+        let prev_block_code_tree_root = self.prev_block_header.code_tree_root();
+
+        // If no procedures were created, the code tree root is unchanged.
+        if self.code_patch.is_empty() {
+            return Ok(prev_block_code_tree_root);
+        }
+
+        if prev_block_code_tree_root != self.partial_code_tree.root() {
+            return Err(ProposedBlockError::StaleCodeTreeRoot {
+                prev_block_code_tree_root,
+                stale_code_tree_root: self.partial_code_tree.root(),
+            });
+        }
+
+        let mut partial_code_tree = self.partial_code_tree.clone();
+        for procedure_root in self.code_patch.created_procedures() {
+            partial_code_tree
+                .insert(procedure_root)
+                .map_err(ProposedBlockError::CodeTreeUpdate)?;
+        }
+
+        Ok(partial_code_tree.root())
+    }
+
     /// Compute the block note tree from the output note batches.
     pub fn compute_block_note_tree(&self) -> BlockNoteTree {
         let output_notes_iter =
@@ -505,6 +565,7 @@ impl ProposedBlock {
     /// updates encapsulated by the provided [`ProposedBlock`]:
     /// - the account root;
     /// - the nullifier root;
+    /// - the code tree root;
     /// - the note root;
     /// - the transaction commitment; and
     /// - the chain commitment.
@@ -528,6 +589,12 @@ impl ProposedBlock {
     ///   mismatch between witnesses).
     /// - The nullifier root in the previous block header does not match the root of the
     ///   reconstructed partial nullifier tree (stale nullifier tree root).
+    ///
+    /// ## Code Tree
+    ///
+    /// - The code tree root in the previous block header does not match the root of the partial
+    ///   code tree (stale code tree root).
+    /// - The partial code tree does not track a created procedure.
     pub fn into_header_and_body(self) -> Result<(BlockHeader, BlockBody), ProposedBlockError> {
         // Get fields from the proposed block before it is consumed.
         let block_num = self.block_num();
@@ -542,6 +609,9 @@ impl ProposedBlock {
 
         // Insert the created nullifiers into the nullifier tree to compute its new root.
         let new_nullifier_root = self.compute_nullifier_root()?;
+
+        // Insert the created procedures into the code tree to compute its new root.
+        let new_code_tree_root = self.compute_code_tree_root()?;
 
         // Compute the root of the block note tree.
         let note_tree = self.compute_block_note_tree();
@@ -565,8 +635,6 @@ impl ProposedBlock {
         // updated based on the demand in the currently proposed block.
         let fee_parameters = prev_block_header.fee_parameters().clone();
         let protocol_config_commitment = prev_block_header.protocol_config_commitment();
-        // Blocks do not register code yet, so the code tree stays unchanged.
-        let code_tree_root = prev_block_header.code_tree_root();
 
         let header = BlockHeader::new(
             prev_block_commitment,
@@ -574,7 +642,7 @@ impl ProposedBlock {
             new_chain_commitment,
             new_account_root,
             new_nullifier_root,
-            code_tree_root,
+            new_code_tree_root,
             note_root,
             tx_commitment,
             next_validator_config,
@@ -596,6 +664,8 @@ impl ProposedBlock {
         Vec<(AccountId, AccountUpdateWitness)>,
         Vec<OutputNoteBatch>,
         BTreeMap<Nullifier, NullifierWitness>,
+        BlockCodePatch,
+        PartialCodeTree,
         PartialBlockchain,
         BlockHeader,
     ) {
@@ -604,6 +674,8 @@ impl ProposedBlock {
             self.account_updated_witnesses,
             self.output_note_batches,
             self.created_nullifiers,
+            self.code_patch,
+            self.partial_code_tree,
             self.partial_blockchain,
             self.prev_block_header,
         )

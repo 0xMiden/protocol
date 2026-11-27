@@ -1,0 +1,1 @@
+[BREAKING] `BlockBody` now carries a `BlockCodePatch`, the merge of the `BatchCodePatch` of its batches, `BlockInputs` carry a `PartialCodeTree`, and blocks insert the created procedures into the code tree.

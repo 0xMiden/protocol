@@ -100,6 +100,14 @@ miden_crypto::eidos_domain_registry! {
                 schema: "param0 = 8 Felts; param1 = param2 = 0; \
                     created procedures commitment, dependencies commitment",
             }
+            pub BLOCK_CODE_PATCH_COMMITMENT_DOMAIN: BlockCodePatchCommitmentDomain {
+                local_id: 8,
+                version: DomainVersion::numbered(1),
+                encoding: FeltSequence,
+                description: "Block code patch commitments.",
+                schema: "param0 = 8 Felts; param1 = param2 = 0; \
+                    created procedures commitment, dependencies commitment",
+            }
         }
     }
 }

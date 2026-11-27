@@ -1,6 +1,7 @@
 use miden_protocol::block::{
     BlockAccountUpdate,
     BlockBody,
+    BlockCodePatch,
     BlockHeader,
     BlockNumber,
     FeeParameters,
@@ -83,6 +84,7 @@ impl From<&BlockBody> for proto::blockchain::BlockBody {
                 .collect(),
             transactions: body.transactions().iter().map(Into::into).collect(),
             public_logs: Some(body.public_logs().into()),
+            code_patch: Some(body.code_patch().into()),
         }
     }
 }
@@ -95,6 +97,12 @@ impl From<BlockBody> for proto::blockchain::BlockBody {
 
 // BLOCK BODY COMPONENTS
 // ================================================================================================
+
+impl From<&BlockCodePatch> for proto::blockchain::BlockCodePatch {
+    fn from(value: &BlockCodePatch) -> Self {
+        Self { mast: Some(value.mast().as_ref().into()) }
+    }
+}
 
 impl From<&BlockAccountUpdate> for proto::blockchain::BlockAccountUpdate {
     fn from(update: &BlockAccountUpdate) -> Self {

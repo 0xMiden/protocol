@@ -162,6 +162,16 @@ impl crate::BuildUnchecked for BatchTransactions {
     }
 }
 
+pub use proto::blockchain::DecodedBlockCodePatch as BlockCodePatch;
+
+impl Verify for BlockCodePatch {
+    type Verified = miden_protocol::block::BlockCodePatch;
+    type Error = VerificationError;
+    fn verify(self) -> Result<Self::Verified, Self::Error> {
+        Ok(Self::Verified::new(alloc::sync::Arc::new(self.mast.verify()?))?)
+    }
+}
+
 pub use proto::blockchain::DecodedBlockBody as BlockBody;
 
 /// Checks body invariants, but trusts transaction ordering and unchecked input-note commitments.
@@ -174,7 +184,14 @@ impl crate::BuildUnchecked for BlockBody {
         let nullifiers = self.created_nullifiers.map(miden_protocol::note::Nullifier::from_raw);
         let transactions = self.transactions.build_unchecked()?;
         let public_logs = VerifyWith::verify_with(self.public_logs, transactions.as_slice())?;
-        Ok(Self::Output::new(updates, notes, nullifiers, transactions, public_logs)?)
+        Ok(Self::Output::new(
+            updates,
+            notes,
+            nullifiers,
+            transactions,
+            public_logs,
+            self.code_patch.verify()?,
+        )?)
     }
 }
 
