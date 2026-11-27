@@ -4,7 +4,7 @@ use miden_crypto_derive::WordWrapper;
 
 use super::{Hasher, ProvenTransaction, Word};
 use crate::Felt;
-use crate::block::code_tree::CodePatchCommitment;
+use crate::transaction::TransactionCodePatchCommitment;
 
 // TRANSACTION ID
 // ================================================================================================
@@ -36,7 +36,7 @@ impl TransactionId {
         input_notes_commitment: Word,
         output_notes_commitment: Word,
         logs_commitment: Word,
-        code_patch_commitment: CodePatchCommitment,
+        code_patch_commitment: TransactionCodePatchCommitment,
     ) -> Self {
         let mut elements = [Felt::ZERO; 6 * Word::NUM_ELEMENTS];
         elements[..4].copy_from_slice(init_account_commitment.as_elements());

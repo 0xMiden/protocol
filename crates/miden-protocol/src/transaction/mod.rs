@@ -2,6 +2,7 @@ use super::account::{AccountHeader, AccountId};
 use super::note::{NoteId, Nullifier};
 use super::{Felt, Hasher, Word};
 
+mod code_patch;
 mod effects;
 mod executed_tx;
 mod fee;
@@ -21,6 +22,7 @@ mod tx_summary;
 mod tx_witness;
 mod verifier;
 
+pub use code_patch::{TransactionCodePatch, TransactionCodePatchCommitment};
 pub use effects::TransactionEffects;
 pub use executed_tx::{ExecutedTransaction, TransactionMeasurements};
 pub use fee::{TransactionFee, TransactionFeeError};

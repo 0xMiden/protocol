@@ -26,7 +26,7 @@ use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::block::code_tree::{CodePatch, CodeTreeRoot, CodeWitness, PartialCodeTree};
+use miden_protocol::block::code_tree::{CodeTreeRoot, CodeWitness, PartialCodeTree};
 use miden_protocol::code::ProcedureRoot;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::errors::TransactionInputError;
@@ -38,6 +38,7 @@ use miden_protocol::transaction::{
     InputNotes,
     RawOutputNote,
     TransactionAdviceInputs,
+    TransactionCodePatch,
     TransactionInputs,
     TransactionLogs,
     TransactionSummary,
@@ -447,7 +448,7 @@ where
         TransactionLogs,
         TransactionProgress,
         LazyLoadedData,
-        CodePatch,
+        TransactionCodePatch,
     ) {
         let (account_patch, input_notes, output_notes, logs, code_patch) =
             self.base_host.into_parts();

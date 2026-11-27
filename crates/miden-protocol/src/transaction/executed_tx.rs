@@ -14,9 +14,8 @@ use super::{
 };
 use crate::Word;
 use crate::account::{AccountPatch, PartialAccount};
-use crate::block::code_tree::CodePatch;
 use crate::block::{BlockHeader, BlockNumber};
-use crate::transaction::TransactionInputs;
+use crate::transaction::{TransactionCodePatch, TransactionInputs};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -132,7 +131,7 @@ impl ExecutedTransaction {
     }
 
     /// Returns the code patch of this transaction.
-    pub fn code_patch(&self) -> &CodePatch {
+    pub fn code_patch(&self) -> &TransactionCodePatch {
         self.tx_outputs.code_patch()
     }
 

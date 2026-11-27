@@ -63,7 +63,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::block::code_tree::{CodePatch, CodeWitness, PartialCodeTree};
+use miden_protocol::block::code_tree::{CodeWitness, PartialCodeTree};
 use miden_protocol::code::ProcedureRoot;
 use miden_protocol::crypto::ecdh::ecgfp5::PublicKey;
 use miden_protocol::note::{
@@ -80,6 +80,7 @@ use miden_protocol::transaction::{
     InputNotes,
     RawOutputNote,
     RawOutputNotes,
+    TransactionCodePatch,
     TransactionMeasurements,
     TransactionSummary,
     TransactionSummaryMetadata,
@@ -145,7 +146,7 @@ pub struct TransactionBaseHost<'store, STORE> {
     code_tree: PartialCodeTree,
 
     /// The code patch that the kernel loads, or `None` before it is known.
-    code_patch: Option<CodePatch>,
+    code_patch: Option<TransactionCodePatch>,
 
     /// The recipients of the output notes the transaction is expected to create.
     ///
@@ -300,7 +301,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         InputNotes<InputNote>,
         Vec<RawOutputNote>,
         TransactionLogs,
-        Option<CodePatch>,
+        Option<TransactionCodePatch>,
     ) {
         let output_notes = self.output_notes.into_values().map(|builder| builder.build()).collect();
 
@@ -315,7 +316,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     }
 
     /// Returns the code patch that the kernel loads, or `None` before it is known.
-    pub(crate) fn code_patch(&self) -> Option<&CodePatch> {
+    pub(crate) fn code_patch(&self) -> Option<&TransactionCodePatch> {
         self.code_patch.as_ref()
     }
 
@@ -328,7 +329,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     // --------------------------------------------------------------------------------------------
 
     /// Sets the code patch that the kernel loads.
-    pub(crate) fn set_code_patch(&mut self, code_patch: CodePatch) {
+    pub(crate) fn set_code_patch(&mut self, code_patch: TransactionCodePatch) {
         self.code_patch = Some(code_patch);
     }
 
@@ -886,7 +887,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub(crate) fn build_code_patch(
         &self,
         source: &CodePatchSource,
-    ) -> Result<CodePatch, TransactionKernelError> {
+    ) -> Result<TransactionCodePatch, TransactionKernelError> {
         source.build_code_patch(&self.code_patch_top_level_roots(), &self.code_tree)
     }
 
@@ -897,7 +898,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Returns an error if a code witness that the kernel needs is not available.
     pub fn code_patch_witness_advice(
         &self,
-        code_patch: &CodePatch,
+        code_patch: &TransactionCodePatch,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let created_procedures = code_patch.created_procedures();
         let dependencies = code_patch.dependencies();

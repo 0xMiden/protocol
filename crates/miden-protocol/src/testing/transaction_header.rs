@@ -1,9 +1,8 @@
 use alloc::vec::Vec;
 
 use crate::Word;
-use crate::block::code_tree::CodePatch;
 use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
-use crate::transaction::{InputNotes, TransactionHeader};
+use crate::transaction::{InputNotes, TransactionCodePatch, TransactionHeader};
 
 impl TransactionHeader {
     /// Creates a transaction header without notes against a fixed private account, whose state
@@ -16,7 +15,7 @@ impl TransactionHeader {
             InputNotes::default(),
             Vec::new(),
             Word::empty(),
-            CodePatch::default().commitment(),
+            TransactionCodePatch::default().commitment(),
         )
         .expect("mock transaction header should be valid")
     }

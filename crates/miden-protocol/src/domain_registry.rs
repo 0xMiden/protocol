@@ -74,11 +74,11 @@ miden_crypto::eidos_domain_registry! {
                 schema: "param0 = 8 Felts; param1 = param2 = 0; \
                     emitter suffix, emitter prefix, topic suffix, topic prefix, content commitment",
             }
-            pub CODE_PATCH_COMMITMENT_DOMAIN: CodePatchCommitmentDomain {
+            pub TRANSACTION_CODE_PATCH_COMMITMENT_DOMAIN: TransactionCodePatchCommitmentDomain {
                 local_id: 5,
                 version: DomainVersion::numbered(1),
                 encoding: FeltSequence,
-                description: "Code patch commitments.",
+                description: "Transaction code patch commitments.",
                 schema: "param0 = 8 Felts; param1 = param2 = 0; \
                     created procedures commitment, dependencies commitment",
             }

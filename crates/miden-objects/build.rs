@@ -147,7 +147,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".transaction.TransactionArgs",
             ".transaction.NoteArgument",
             ".transaction.TransactionScript",
-            ".transaction.CodePatch",
+            ".transaction.TransactionCodePatch",
             ".account.AccountVaultPatch",
             ".account.AccountCodePatch",
             ".account.AccountVaultPatchEntry",

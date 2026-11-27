@@ -13,7 +13,6 @@ fn logged_owners() -> (ProvenBatch, BlockBody) {
     use miden_protocol::Word;
     use miden_protocol::account::{AccountId, AccountPatch, AccountUpdateDetails};
     use miden_protocol::batch::BatchAccountUpdate;
-    use miden_protocol::block::code_tree::CodePatch;
     use miden_protocol::testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER,
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
@@ -23,6 +22,7 @@ fn logged_owners() -> (ProvenBatch, BlockBody) {
         InputNotes,
         OrderedTransactionHeaders,
         PublicTransactionLogs,
+        TransactionCodePatch,
         TransactionHeader,
         TransactionLog,
         TransactionLogs,
@@ -39,7 +39,7 @@ fn logged_owners() -> (ProvenBatch, BlockBody) {
             InputNotes::default(),
             vec![],
             logs.commitment(),
-            CodePatch::default().commitment(),
+            TransactionCodePatch::default().commitment(),
         )
         .unwrap(),
         TransactionHeader::new(
@@ -49,7 +49,7 @@ fn logged_owners() -> (ProvenBatch, BlockBody) {
             InputNotes::default(),
             vec![],
             Word::from([99u32; 4]),
-            CodePatch::default().commitment(),
+            TransactionCodePatch::default().commitment(),
         )
         .unwrap(),
         TransactionHeader::new(
@@ -59,7 +59,7 @@ fn logged_owners() -> (ProvenBatch, BlockBody) {
             InputNotes::default(),
             vec![],
             Word::empty(),
-            CodePatch::default().commitment(),
+            TransactionCodePatch::default().commitment(),
         )
         .unwrap(),
     ]);

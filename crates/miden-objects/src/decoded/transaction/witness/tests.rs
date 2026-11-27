@@ -1,7 +1,6 @@
 use miden_protocol::account::AccountHeader;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::block::code_tree::CodePatch;
-use miden_protocol::transaction::TransactionWitness;
+use miden_protocol::transaction::{TransactionCodePatch, TransactionWitness};
 use prost::Message;
 
 use crate::decoded::transaction::inputs::tests::common;
@@ -15,7 +14,7 @@ fn transaction_witness_roundtrips_through_protobuf() -> anyhow::Result<()> {
         tx_inputs,
         final_account,
         BlockNumber::from(42_u32),
-        CodePatch::mock(),
+        TransactionCodePatch::mock(),
     );
 
     let encoded = proto::transaction::TransactionWitness::from(&expected).encode_to_vec();

@@ -1,7 +1,6 @@
 use alloc::vec;
 
 use miden_protocol::block::BlockNumber;
-use miden_protocol::block::code_tree::CodePatch;
 use miden_protocol::note::{Note, PartialNote};
 use miden_protocol::transaction::{
     InputNote,
@@ -9,6 +8,7 @@ use miden_protocol::transaction::{
     LogTopic,
     RawOutputNote,
     RawOutputNotes,
+    TransactionCodePatch,
     TransactionEffects,
     TransactionLog,
     TransactionLogs,
@@ -48,7 +48,7 @@ fn transaction_effects() -> TransactionEffects {
         .ref_block_commitment(dummy_word(6))
         .expiration_block_num(BlockNumber::from(42_u32))
         .logs(logs)
-        .code_patch(CodePatch::default())
+        .code_patch(TransactionCodePatch::default())
         .build()
 }
 

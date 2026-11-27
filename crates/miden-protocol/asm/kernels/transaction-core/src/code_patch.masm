@@ -38,7 +38,7 @@ const PRESENT = 1
 const ABSENT = 0
 
 # Eidos domain tag.
-const CODE_PATCH_DOMAIN = 0x02000501
+const TRANSACTION_CODE_PATCH_DOMAIN = 0x02000501
 
 # EVENTS
 # =================================================================================================
@@ -112,7 +112,7 @@ pub proc load()
     or assert.err=ERR_CODE_PATCH_DEPENDENCIES_WITHOUT_CREATED_PROCS
     # => [DEPENDENCIES_COMMITMENT, CREATED_PROCS_COMMITMENT]
 
-    swapw push.CODE_PATCH_DOMAIN exec.eidos::hash_double_word_in_domain
+    swapw push.TRANSACTION_CODE_PATCH_DOMAIN exec.eidos::hash_double_word_in_domain
     # => [CODE_PATCH_COMMITMENT]
 
     exec.memory::set_code_patch_commitment

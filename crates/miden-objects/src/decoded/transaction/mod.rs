@@ -5,8 +5,8 @@ pub(crate) mod test_utils;
 
 mod core;
 pub use core::{
-    CodePatch,
     ProvenTransaction,
+    TransactionCodePatch,
     TransactionHeader,
     TransactionHeaderBuildError,
     TransactionId,

@@ -10,13 +10,14 @@ use miden_protocol::account::{AccountPatch, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::block::code_tree::{CodePatch, PartialCodeTree};
+use miden_protocol::block::code_tree::PartialCodeTree;
 use miden_protocol::note::NoteRecipient;
 use miden_protocol::transaction::{
     IesSealSeed,
     InputNote,
     InputNotes,
     RawOutputNote,
+    TransactionCodePatch,
     TransactionLogs,
 };
 use miden_protocol::vm::{EventId, EventName};
@@ -66,7 +67,7 @@ where
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
         code_tree: PartialCodeTree,
-        code_patch: CodePatch,
+        code_patch: TransactionCodePatch,
         expected_output_note_recipients: Vec<NoteRecipient>,
         ies_seal_seed: Option<IesSealSeed>,
     ) -> Result<Self, TransactionKernelError> {

@@ -1,1 +1,1 @@
-Added `CodePatch` to describe the procedures a transaction creates and depends on.
+Added `TransactionCodePatch` to describe the procedures a transaction creates and depends on.

@@ -8,7 +8,6 @@ use super::{PrivateOutputNote, PublicOutputNote, RawOutputNote, RawOutputNotes};
 use crate::account::{AccountHeader, AccountId};
 use crate::assembly::mast::{DenseMastForestBuilder, ExternalNodeBuilder, JoinNodeBuilder};
 use crate::asset::FungibleAsset;
-use crate::block::code_tree::CodePatch;
 use crate::constants::NOTE_MAX_SIZE;
 use crate::errors::{OutputNoteError, TransactionOutputError};
 use crate::note::{
@@ -35,6 +34,7 @@ use crate::testing::account_id::{
 };
 use crate::transaction::{
     LogTopic,
+    TransactionCodePatch,
     TransactionLog,
     TransactionLogDetails,
     TransactionLogs,
@@ -64,7 +64,7 @@ fn transaction_outputs_preserve_logs_and_apply_submission_visibility(#[case] acc
             RawOutputNotes::new(vec![]).unwrap(),
             1u32.into(),
             logs.clone(),
-            CodePatch::default(),
+            TransactionCodePatch::default(),
         );
         assert_eq!(outputs.logs(), &logs);
         assert_eq!(outputs.logs_commitment(), logs.commitment());

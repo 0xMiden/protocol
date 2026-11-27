@@ -2,7 +2,6 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use crate::Word;
-use crate::block::code_tree::CodePatchCommitment;
 use crate::errors::TransactionHeaderError;
 use crate::note::NoteHeader;
 use crate::transaction::{
@@ -12,6 +11,7 @@ use crate::transaction::{
     InputNotes,
     ProvenTransaction,
     RawOutputNotes,
+    TransactionCodePatchCommitment,
     TransactionId,
 };
 
@@ -32,7 +32,7 @@ pub struct TransactionHeader {
     input_notes: InputNotes<InputNoteCommitment>,
     output_notes: Vec<NoteHeader>,
     logs_commitment: Word,
-    code_patch_commitment: CodePatchCommitment,
+    code_patch_commitment: TransactionCodePatchCommitment,
 }
 
 impl TransactionHeader {
@@ -64,7 +64,7 @@ impl TransactionHeader {
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<NoteHeader>,
         logs_commitment: Word,
-        code_patch_commitment: CodePatchCommitment,
+        code_patch_commitment: TransactionCodePatchCommitment,
     ) -> Result<Self, TransactionHeaderError> {
         let mut input_nullifiers = BTreeSet::new();
         for input_note in &input_notes {
@@ -124,7 +124,7 @@ impl TransactionHeader {
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<NoteHeader>,
         logs_commitment: Word,
-        code_patch_commitment: CodePatchCommitment,
+        code_patch_commitment: TransactionCodePatchCommitment,
     ) -> Self {
         Self {
             id,
@@ -147,7 +147,7 @@ impl TransactionHeader {
     }
 
     /// Returns the commitment to the code patch of the transaction.
-    pub fn code_patch_commitment(&self) -> CodePatchCommitment {
+    pub fn code_patch_commitment(&self) -> TransactionCodePatchCommitment {
         self.code_patch_commitment
     }
 
@@ -240,11 +240,10 @@ mod tests {
     use super::TransactionHeader;
     use crate::Word;
     use crate::account::AccountId;
-    use crate::block::code_tree::CodePatch;
     use crate::errors::TransactionHeaderError;
     use crate::note::Note;
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
-    use crate::transaction::{InputNoteCommitment, InputNotes};
+    use crate::transaction::{InputNoteCommitment, InputNotes, TransactionCodePatch};
 
     fn account_id() -> AccountId {
         AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap()
@@ -264,7 +263,7 @@ mod tests {
             inputs,
             vec![],
             Word::empty(),
-            CodePatch::default().commitment(),
+            TransactionCodePatch::default().commitment(),
         )
         .unwrap_err();
 
@@ -286,7 +285,7 @@ mod tests {
             InputNotes::default(),
             vec![*note.header(), *note.header()],
             Word::empty(),
-            CodePatch::default().commitment(),
+            TransactionCodePatch::default().commitment(),
         )
         .unwrap_err();
 
@@ -309,7 +308,7 @@ mod tests {
             InputNotes::new(vec![input]).unwrap(),
             vec![*note.header()],
             Word::empty(),
-            CodePatch::default().commitment(),
+            TransactionCodePatch::default().commitment(),
         )
         .unwrap_err();
 

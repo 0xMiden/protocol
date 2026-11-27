@@ -1,7 +1,6 @@
 use super::*;
 use crate::Word;
 use crate::batch::{BatchId, OrderedBatches, ProvenBatch};
-use crate::block::code_tree::CodePatch;
 use crate::block::{BlockBody, BlockHeader};
 use crate::errors::ProvenBatchError;
 use crate::testing::account_id::{
@@ -12,6 +11,7 @@ use crate::testing::dummy_execution_proof;
 use crate::transaction::{
     InputNotes,
     OrderedTransactionHeaders,
+    TransactionCodePatch,
     TransactionHeader,
     TransactionLog,
 };
@@ -30,7 +30,7 @@ fn header(seed: u32, public: bool, logs: &TransactionLogs) -> TransactionHeader 
         InputNotes::default(),
         vec![],
         logs.commitment(),
-        CodePatch::default().commitment(),
+        TransactionCodePatch::default().commitment(),
     )
     .unwrap()
 }
@@ -451,7 +451,7 @@ fn block_rejects_transaction_repeated_across_distinct_batches(#[case] public: bo
             InputNotes::default(),
             vec![],
             logs.commitment(),
-            CodePatch::default().commitment(),
+            TransactionCodePatch::default().commitment(),
         )
         .unwrap()
     };

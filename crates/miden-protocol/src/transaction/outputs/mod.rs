@@ -3,8 +3,12 @@ use core::fmt::Debug;
 use crate::Word;
 use crate::account::AccountHeader;
 use crate::block::BlockNumber;
-use crate::block::code_tree::CodePatch;
-use crate::transaction::{TransactionKernel, TransactionLogDetails, TransactionLogs};
+use crate::transaction::{
+    TransactionCodePatch,
+    TransactionKernel,
+    TransactionLogDetails,
+    TransactionLogs,
+};
 use crate::vm::StackOutputs;
 
 mod notes;
@@ -44,7 +48,7 @@ pub struct TransactionOutputs {
     /// The logs that the transaction emitted.
     logs: TransactionLogs,
     /// The procedures the transaction adds to the code tree and the procedures it depends on.
-    code_patch: CodePatch,
+    code_patch: TransactionCodePatch,
 }
 
 impl TransactionOutputs {
@@ -77,7 +81,7 @@ impl TransactionOutputs {
         output_notes: RawOutputNotes,
         expiration_block_num: BlockNumber,
         logs: TransactionLogs,
-        code_patch: CodePatch,
+        code_patch: TransactionCodePatch,
     ) -> Self {
         Self {
             account,
@@ -123,7 +127,7 @@ impl TransactionOutputs {
     }
 
     /// Returns the code patch of the transaction.
-    pub fn code_patch(&self) -> &CodePatch {
+    pub fn code_patch(&self) -> &TransactionCodePatch {
         &self.code_patch
     }
 
@@ -147,7 +151,9 @@ impl TransactionOutputs {
     ///
     /// The log details contain complete logs for a public native account and only their
     /// commitment for a private native account.
-    pub fn into_parts(self) -> (AccountHeader, RawOutputNotes, TransactionLogDetails, CodePatch) {
+    pub fn into_parts(
+        self,
+    ) -> (AccountHeader, RawOutputNotes, TransactionLogDetails, TransactionCodePatch) {
         let log_details = if self.account.id().is_public() {
             TransactionLogDetails::Public(self.logs)
         } else {

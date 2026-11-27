@@ -2,60 +2,50 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::fmt::Display;
+use core::marker::PhantomData;
 
 use miden_core::mast::MastNodeExt;
-use miden_crypto_derive::WordWrapper;
+use miden_crypto::hash::eidos::domain::{EidosDomain, FeltSequence};
 
 use crate::code::ProcedureRoot;
-use crate::domain_registry::CODE_PATCH_COMMITMENT_DOMAIN;
 use crate::errors::CodePatchError;
 use crate::{Hasher, MastForest, Word};
+
+// CODE PATCH KIND
+// ================================================================================================
+
+/// The parameters of a level of code patches, e.g. the patches of transactions.
+///
+/// Each level has its own limits, because a merged patch contains the code of many patches, and
+/// its own commitment domain, so that the commitments of different levels cannot be confused.
+pub(crate) trait CodePatchKind {
+    /// The domain of the commitment to the patch.
+    type CommitmentDomain: EidosDomain<Encoding = FeltSequence>;
+
+    /// The value of [`Self::CommitmentDomain`].
+    const COMMITMENT_DOMAIN: Self::CommitmentDomain;
+
+    /// The maximum size of a serialized patch in bytes.
+    const MAX_SIZE: u32;
+
+    /// The maximum number of procedure roots in each list of a patch.
+    const MAX_ROOTS: usize;
+}
 
 // CODE PATCH
 // ================================================================================================
 
-/// The procedures a transaction creates, i.e. the code it adds to the
-/// [`CodeTree`](super::CodeTree) and its code registry, and the procedures it depends on.
+/// The shared implementation of the code patches of all levels.
 ///
-/// The created procedures are the procedure roots of the contained [`MastForest`]. The
-/// dependencies are the procedures that the external nodes of the forest reference and that the
-/// transaction proves present in the code tree. A present top-level root, e.g. a note script root,
-/// is a dependency only if a created procedure references it.
-///
-/// Both lists are sorted, so their commitments are the interface and dependency commitments of the
-/// forest and are equal to the commitments over the strictly sorted lists of the transaction
-/// kernel. Hence, the procedure roots and the external nodes must each be unique, since a duplicate
-/// would make the forest commitments differ from the kernel's.
-///
-/// A dependency must not be a created procedure, i.e. an external node must not reference a
-/// created procedure. Building the forest with [`MastForest::merge`] replaces such references with
-/// the procedure itself. This rejects a procedure root that is a single external node, which would
-/// register a reference instead of code. It does not prevent a host from making an inner node of a
-/// created procedure a separate root, which adds a code tree entry that the account pays for.
-///
-/// Every node of the forest must be reachable from a created procedure. The commitments do not
-/// cover the code of unreachable nodes, so they could add arbitrary data to the registry without
-/// changing the commitment.
-///
-/// The advice map of the forest must be empty. Advice is expected to be removed from
-/// [`MastForest`], so the code tree and its registry do not commit to or store it.
+/// See [`TransactionCodePatch`](crate::transaction::TransactionCodePatch) for the invariants.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CodePatch {
+pub(crate) struct CodePatch<Kind> {
     mast: Arc<MastForest>,
-    commitment: CodePatchCommitment,
+    commitment: Word,
+    kind: PhantomData<Kind>,
 }
 
-impl CodePatch {
-    // CONSTANTS
-    // --------------------------------------------------------------------------------------------
-
-    /// The maximum size of a serialized patch in bytes (256 KiB).
-    pub const MAX_SIZE: u32 = 2u32.pow(18);
-
-    /// The maximum number of procedure roots in each code patch list of a single transaction.
-    pub const MAX_ROOTS: usize = 512;
-
+impl<Kind: CodePatchKind> CodePatch<Kind> {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -64,21 +54,28 @@ impl CodePatch {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the number of procedure roots or external nodes of the forest exceeds [`Self::MAX_ROOTS`].
+    /// - the number of procedure roots or external nodes of the forest exceeds
+    ///   [`CodePatchKind::MAX_ROOTS`].
     /// - a procedure root or an external node digest of the forest is duplicated.
     /// - an external node references a procedure root of the forest.
     /// - a node of the forest is not reachable from a procedure root.
     /// - the advice map of the forest is not empty.
-    /// - the serialized forest exceeds [`Self::MAX_SIZE`].
-    pub fn new(mast: Arc<MastForest>) -> Result<Self, CodePatchError> {
+    /// - the serialized forest exceeds [`CodePatchKind::MAX_SIZE`].
+    pub(crate) fn new(mast: Arc<MastForest>) -> Result<Self, CodePatchError> {
         let num_created_procedures = mast.procedure_roots().len();
-        if num_created_procedures > Self::MAX_ROOTS {
-            return Err(CodePatchError::TooManyCreatedProcedures(num_created_procedures));
+        if num_created_procedures > Kind::MAX_ROOTS {
+            return Err(CodePatchError::TooManyCreatedProcedures {
+                count: num_created_procedures,
+                max: Kind::MAX_ROOTS,
+            });
         }
 
         let num_dependencies = external_node_digests(&mast).count();
-        if num_dependencies > Self::MAX_ROOTS {
-            return Err(CodePatchError::TooManyDependencies(num_dependencies));
+        if num_dependencies > Kind::MAX_ROOTS {
+            return Err(CodePatchError::TooManyDependencies {
+                count: num_dependencies,
+                max: Kind::MAX_ROOTS,
+            });
         }
 
         let created_procedures = unique_procedure_roots(mast.procedure_digests())
@@ -102,8 +99,11 @@ impl CodePatch {
         // becomes available.
         let mut serialized_mast = Vec::new();
         mast.write_hashless(&mut serialized_mast);
-        if serialized_mast.len() > Self::MAX_SIZE as usize {
-            return Err(CodePatchError::SizeLimitExceeded { size: serialized_mast.len() });
+        if serialized_mast.len() > Kind::MAX_SIZE as usize {
+            return Err(CodePatchError::SizeLimitExceeded {
+                size: serialized_mast.len(),
+                max_size: Kind::MAX_SIZE,
+            });
         }
 
         Ok(Self::new_unchecked(mast))
@@ -113,30 +113,27 @@ impl CodePatch {
     fn new_unchecked(mast: Arc<MastForest>) -> Self {
         let commitment = Hasher::hash_elements_in_domain(
             Word::words_as_elements(&[mast.interface_commitment(), mast.dependency_commitment()]),
-            CODE_PATCH_COMMITMENT_DOMAIN,
+            Kind::COMMITMENT_DOMAIN,
         );
 
-        Self {
-            mast,
-            commitment: CodePatchCommitment::from_raw(commitment),
-        }
+        Self { mast, commitment, kind: PhantomData }
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
     /// Returns the MAST forest containing the created procedures.
-    pub fn mast(&self) -> &Arc<MastForest> {
+    pub(crate) fn mast(&self) -> &Arc<MastForest> {
         &self.mast
     }
 
     /// Returns the set of created procedure roots.
-    pub fn created_procedures(&self) -> BTreeSet<ProcedureRoot> {
+    pub(crate) fn created_procedures(&self) -> BTreeSet<ProcedureRoot> {
         self.mast.procedure_digests().map(ProcedureRoot::from_raw).collect()
     }
 
     /// Returns the set of dependencies.
-    pub fn dependencies(&self) -> BTreeSet<ProcedureRoot> {
+    pub(crate) fn dependencies(&self) -> BTreeSet<ProcedureRoot> {
         external_node_digests(&self.mast).map(ProcedureRoot::from_raw).collect()
     }
 
@@ -144,45 +141,32 @@ impl CodePatch {
     ///
     /// Such a patch has no dependencies either, since every node is reachable from a created
     /// procedure.
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.mast.procedure_roots().is_empty()
     }
 
     /// Returns the commitment to the created procedures.
-    pub fn created_commitment(&self) -> Word {
+    pub(crate) fn created_commitment(&self) -> Word {
         self.mast.interface_commitment()
     }
 
     /// Returns the commitment to the dependencies.
-    pub fn dependencies_commitment(&self) -> Word {
+    pub(crate) fn dependencies_commitment(&self) -> Word {
         self.mast.dependency_commitment()
     }
 
     /// Returns the commitment to this patch.
     ///
-    /// The commitment is the domain-separated merge of [`Self::created_commitment`] and
-    /// [`Self::dependencies_commitment`].
-    pub fn commitment(&self) -> CodePatchCommitment {
+    /// The commitment is the merge of [`Self::created_commitment`] and
+    /// [`Self::dependencies_commitment`] in the [`CodePatchKind::CommitmentDomain`].
+    pub(crate) fn commitment(&self) -> Word {
         self.commitment
     }
 }
 
-impl Default for CodePatch {
+impl<Kind: CodePatchKind> Default for CodePatch<Kind> {
     fn default() -> Self {
         Self::new_unchecked(Arc::new(MastForest::new()))
-    }
-}
-
-// CODE PATCH COMMITMENT
-// ================================================================================================
-
-/// The commitment to a [`CodePatch`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, WordWrapper)]
-pub struct CodePatchCommitment(Word);
-
-impl Display for CodePatchCommitment {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", self.as_word())
     }
 }
 
@@ -247,9 +231,14 @@ mod tests {
     use super::*;
     use crate::Felt;
     use crate::assembly::mast::MastNodeId;
+    use crate::domain_registry::TRANSACTION_CODE_PATCH_COMMITMENT_DOMAIN;
     use crate::testing::assembler::assemble_test_package;
+    use crate::transaction::TransactionCodePatch;
     use crate::utils::{IndexVec, create_external_node_forest};
     use crate::vm::AdviceMap;
+
+    /// The core with the limits and the commitment domain of transaction patches.
+    type CodePatch = super::CodePatch<TransactionCodePatch>;
 
     /// The digest `[1, 2, 3, 4]` called by `bar`, which becomes an external node of the forest.
     const EXTERNAL_DIGEST: Word =
@@ -304,10 +293,10 @@ mod tests {
         assert_eq!(patch.dependencies().len(), 0);
         let empty_list_commitment = Hasher::hash_elements::<Felt>(&[]);
         assert_eq!(
-            patch.commitment().as_word(),
+            patch.commitment(),
             Hasher::hash_elements_in_domain(
                 Word::words_as_elements(&[empty_list_commitment, empty_list_commitment]),
-                CODE_PATCH_COMMITMENT_DOMAIN,
+                TRANSACTION_CODE_PATCH_COMMITMENT_DOMAIN,
             )
         );
         assert_eq!(patch, CodePatch::default());
@@ -350,13 +339,13 @@ mod tests {
         assert_eq!(patch.created_commitment(), expected_created_commitment);
         assert_eq!(patch.dependencies_commitment(), expected_dependencies_commitment);
         assert_eq!(
-            patch.commitment().as_word(),
+            patch.commitment(),
             Hasher::hash_elements_in_domain(
                 Word::words_as_elements(&[
                     expected_created_commitment,
                     expected_dependencies_commitment
                 ]),
-                CODE_PATCH_COMMITMENT_DOMAIN,
+                TRANSACTION_CODE_PATCH_COMMITMENT_DOMAIN,
             )
         );
 
@@ -365,7 +354,7 @@ mod tests {
 
     #[test]
     fn new_rejects_too_many_created_procedures() -> anyhow::Result<()> {
-        let num_roots = CodePatch::MAX_ROOTS + 1;
+        let num_roots = TransactionCodePatch::MAX_ROOTS + 1;
         let mut nodes: IndexVec<MastNodeId, MastNode> = IndexVec::new();
         let mut roots = Vec::with_capacity(num_roots);
         for value in 0..num_roots {
@@ -376,7 +365,7 @@ mod tests {
         let error = CodePatch::new(Arc::new(mast)).unwrap_err();
         assert_matches!(
             error,
-            CodePatchError::TooManyCreatedProcedures(count) if count == num_roots
+            CodePatchError::TooManyCreatedProcedures { count, .. } if count == num_roots
         );
 
         Ok(())
@@ -384,7 +373,7 @@ mod tests {
 
     #[test]
     fn new_rejects_too_many_dependencies() -> anyhow::Result<()> {
-        let num_external_nodes = CodePatch::MAX_ROOTS + 1;
+        let num_external_nodes = TransactionCodePatch::MAX_ROOTS + 1;
         let mut nodes: IndexVec<MastNodeId, MastNode> = IndexVec::new();
         for value in 0..num_external_nodes {
             let digest = ProcedureRoot::mock(u32::try_from(value)?).as_word();
@@ -396,7 +385,7 @@ mod tests {
         let error = CodePatch::new(Arc::new(mast)).unwrap_err();
         assert_matches!(
             error,
-            CodePatchError::TooManyDependencies(count) if count == num_external_nodes
+            CodePatchError::TooManyDependencies { count, .. } if count == num_external_nodes
         );
 
         Ok(())
@@ -470,7 +459,7 @@ mod tests {
     #[test]
     fn new_rejects_oversized_forest() -> anyhow::Result<()> {
         // Each push serializes its immediate, so the block exceeds the size limit.
-        let push_count = CodePatch::MAX_SIZE as usize / size_of::<u64>();
+        let push_count = TransactionCodePatch::MAX_SIZE as usize / size_of::<u64>();
         let operations = vec![Operation::Push(Felt::from_u32(u32::MAX)); push_count];
         let mut nodes: IndexVec<MastNodeId, MastNode> = IndexVec::new();
         let node_id = nodes.push(BasicBlockNodeBuilder::new(operations).build()?.into())?;
@@ -479,7 +468,7 @@ mod tests {
         let error = CodePatch::new(Arc::new(mast)).unwrap_err();
         assert_matches!(
             error,
-            CodePatchError::SizeLimitExceeded { size } if size > CodePatch::MAX_SIZE as usize
+            CodePatchError::SizeLimitExceeded { size, .. } if size > TransactionCodePatch::MAX_SIZE as usize
         );
 
         Ok(())

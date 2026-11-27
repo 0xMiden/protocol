@@ -1,7 +1,7 @@
 use super::{ExecutedTransaction, TransactionInputs};
 use crate::account::AccountHeader;
 use crate::block::BlockNumber;
-use crate::block::code_tree::CodePatch;
+use crate::transaction::TransactionCodePatch;
 
 // TRANSACTION WITNESS
 // ================================================================================================
@@ -16,7 +16,7 @@ pub struct TransactionWitness {
     tx_inputs: TransactionInputs,
     final_account: AccountHeader,
     expiration_block_num: BlockNumber,
-    code_patch: CodePatch,
+    code_patch: TransactionCodePatch,
 }
 
 impl TransactionWitness {
@@ -31,7 +31,7 @@ impl TransactionWitness {
         tx_inputs: TransactionInputs,
         final_account: AccountHeader,
         expiration_block_num: BlockNumber,
-        code_patch: CodePatch,
+        code_patch: TransactionCodePatch,
     ) -> Self {
         Self {
             tx_inputs,
@@ -60,7 +60,7 @@ impl TransactionWitness {
     }
 
     /// Returns the code patch of the transaction.
-    pub fn code_patch(&self) -> &CodePatch {
+    pub fn code_patch(&self) -> &TransactionCodePatch {
         &self.code_patch
     }
 
@@ -69,7 +69,9 @@ impl TransactionWitness {
 
     /// Consumes self and returns the transaction inputs, the final account header, the expiration
     /// block number and the code patch.
-    pub fn into_parts(self) -> (TransactionInputs, AccountHeader, BlockNumber, CodePatch) {
+    pub fn into_parts(
+        self,
+    ) -> (TransactionInputs, AccountHeader, BlockNumber, TransactionCodePatch) {
         (self.tx_inputs, self.final_account, self.expiration_block_num, self.code_patch)
     }
 }
