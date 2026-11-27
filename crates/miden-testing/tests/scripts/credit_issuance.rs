@@ -296,14 +296,14 @@ fn compute_interest(principal: AssetAmount, interest_percent: u8) -> anyhow::Res
 
 /// The accounts of the flow and the terms the parties agreed on.
 ///
-/// `originator`, `creditor`, `borrower` and `fund` are the parties' own copies of their private
-/// account states, which [`commit_private`] keeps current. The fund is a second creditor, to which
-/// the creditor can transfer the bond.
+/// `originator`, `creditor`, `borrower` and `other_fund` are the parties' own copies of their
+/// private account states, which [`commit_private`] keeps current. The other fund is a second
+/// creditor, to which the creditor can transfer the bond.
 struct TestSetup {
     originator: Account,
     creditor: Account,
     borrower: Account,
-    fund: Account,
+    other_fund: Account,
     nft_faucet: Account,
     stablecoin_asset_id: AssetId,
     terms: CreditTerms,
@@ -338,7 +338,7 @@ impl TestSetup {
                 FungibleAsset::new(stablecoin_faucet_id, interest.as_u64())?.into(),
             ],
         )?;
-        let fund = add_private_wallet(&mut builder, [fee_asset(INITIAL_FEE_BALANCE)?])?;
+        let other_fund = add_private_wallet(&mut builder, [fee_asset(INITIAL_FEE_BALANCE)?])?;
         let nft_faucet =
             create_nft_faucet(builder.rng_mut().random(), originator.id(), bond_send_policy)?;
         // the faucet is funded with the fee asset by a P2ID note, consumed when it is deployed
@@ -373,7 +373,7 @@ impl TestSetup {
             originator,
             creditor,
             borrower,
-            fund,
+            other_fund,
             nft_faucet,
             stablecoin_asset_id: AssetId::new_fungible(stablecoin_faucet_id),
             terms,
@@ -842,9 +842,9 @@ async fn issuer_tracks_private_stablecoin_transfers() -> anyhow::Result<()> {
 /// The NFT faucet's send policy attaches the details of every private note holding the bond that
 /// an account other than the faucet creates, encrypted to the originator's public key. The
 /// originator derives the issue note from the terms, but not the private note in which the
-/// creditor transfers the bond to the fund, e.g. after selling it to the fund. The originator
-/// decrypts that note's attachment, so it learns that the bond left the creditor, and computes the
-/// nullifier that appears on-chain once the fund takes the bond. The fund then collects the
+/// creditor transfers the bond to the other fund, e.g. after selling it. The originator decrypts
+/// that note's attachment, so it learns that the bond left the creditor, and computes the nullifier
+/// that appears on-chain once the other fund takes the bond. The other fund then collects the
 /// repayment and returns the bond to the faucet in the public BURN note.
 #[tokio::test]
 async fn issuer_tracks_private_bond_transfers() -> anyhow::Result<()> {
@@ -913,12 +913,12 @@ async fn issuer_tracks_private_bond_transfers() -> anyhow::Result<()> {
         .await?;
     commit_private(&mut mock_chain, &mut setup.borrower, &consume_loan_note_tx)?;
 
-    // STEP 3: the creditor transfers the bond to the fund in a private P2ID note
+    // STEP 3: the creditor transfers the bond to the other fund in a private P2ID note
     // --------------------------------------------------------------------------------------------
 
     let transfer_note: Note = P2idNote::builder()
         .sender(setup.creditor.id())
-        .target(setup.fund.id())
+        .target(setup.other_fund.id())
         .assets([bond])
         .note_type(NoteType::Private)
         .serial_number(rand::rng().random())
@@ -941,7 +941,7 @@ async fn issuer_tracks_private_bond_transfers() -> anyhow::Result<()> {
         .execute()
         .await?;
     // the creditor shares the note as the transaction created it, i.e. with the attachment, with
-    // the fund off-chain
+    // the other fund off-chain
     let [RawOutputNote::Full(transfer_note)] = non_fee_output_notes(&send_transfer_note_tx)[..]
     else {
         anyhow::bail!("the transaction must create exactly the full transfer note");
@@ -962,22 +962,22 @@ async fn issuer_tracks_private_bond_transfers() -> anyhow::Result<()> {
     let transfer_nullifier = transfer_details.nullifier(transfer_on_chain.metadata());
     assert!(mock_chain.is_note_unspent(&transfer_nullifier));
 
-    // STEP 5: the fund consumes the transfer note, revealing its nullifier
+    // STEP 5: the other fund consumes the transfer note, revealing its nullifier
     // --------------------------------------------------------------------------------------------
 
     let consume_transfer_note_tx = mock_chain
-        .build_transaction(setup.fund.clone())
+        .build_transaction(setup.other_fund.clone())
         .authenticated_input_note(transfer_note)
         .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(nft_faucet_id)?])
         .native_fee_auth_args()
         .build()?
         .execute()
         .await?;
-    commit_private(&mut mock_chain, &mut setup.fund, &consume_transfer_note_tx)?;
+    commit_private(&mut mock_chain, &mut setup.other_fund, &consume_transfer_note_tx)?;
 
     // the originator sees on-chain that the next holder took the bond
     assert!(mock_chain.is_note_consumed(&transfer_nullifier));
-    assert_eq!(setup.fund.vault().get(bond.id()), Some(bond));
+    assert_eq!(setup.other_fund.vault().get(bond.id()), Some(bond));
 
     // STEP 6: the borrower repays the loan with the private repayment SWAP note
     // --------------------------------------------------------------------------------------------
@@ -987,24 +987,24 @@ async fn issuer_tracks_private_bond_transfers() -> anyhow::Result<()> {
         send_note(&mock_chain, &setup.borrower, &repayment_note, nft_faucet_id).await?;
     commit_private(&mut mock_chain, &mut setup.borrower, &send_repayment_note_tx)?;
 
-    // STEP 7: the fund fills the repayment note, returning the bond in the public BURN note
+    // STEP 7: the other fund fills the repayment note, returning the bond in the public BURN note
     // --------------------------------------------------------------------------------------------
 
     // Creating the BURN network note asks the faucet for its fee and invokes its send policy, so
     // the faucet is a foreign account of this transaction.
     let consume_repayment_note_tx = mock_chain
-        .build_transaction(setup.fund.clone())
+        .build_transaction(setup.other_fund.clone())
         .authenticated_input_note(repayment_note)
         .foreign_accounts(vec![mock_chain.get_foreign_account_inputs(nft_faucet_id)?])
         .native_fee_auth_args()
         .build()?
         .execute()
         .await?;
-    commit_private(&mut mock_chain, &mut setup.fund, &consume_repayment_note_tx)?;
+    commit_private(&mut mock_chain, &mut setup.other_fund, &consume_repayment_note_tx)?;
 
-    assert_eq!(setup.fund.vault().get(bond.id()), None);
+    assert_eq!(setup.other_fund.vault().get(bond.id()), None);
     assert_eq!(
-        setup.fund.vault().get_balance(setup.stablecoin_asset_id)?,
+        setup.other_fund.vault().get_balance(setup.stablecoin_asset_id)?,
         setup.terms.repayment_amount()?
     );
 
@@ -1013,7 +1013,7 @@ async fn issuer_tracks_private_bond_transfers() -> anyhow::Result<()> {
     else {
         anyhow::bail!("filling the repayment note must create exactly the full BURN note");
     };
-    assert_eq!(burn_note.metadata().sender(), setup.fund.id());
+    assert_eq!(burn_note.metadata().sender(), setup.other_fund.id());
     assert_eq!(burn_note.assets(), &NoteAssets::new(vec![bond])?);
     assert_eq!(burn_note.attachments(), setup.terms.burn_note()?.attachments());
 
