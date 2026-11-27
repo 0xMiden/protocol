@@ -1,6 +1,5 @@
 use super::{CodeTreeRoot, CodeWitness, PRESENT_VALUE, validate_code_tree_entries};
 use crate::code::ProcedureRoot;
-use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::PartialSmt;
 use crate::errors::CodeTreeError;
 
@@ -104,17 +103,6 @@ impl PartialCodeTree {
     /// - the root of the witness does not match the root of the partial code tree. The tree stays
     ///   unchanged in this case.
     pub fn track_procedure(&mut self, witness: CodeWitness) -> Result<(), CodeTreeError> {
-        // TODO: See https://github.com/0xMiden/protocol/issues/4133.
-        // Check the root before adding the proof, because a partial SMT is left in an inconsistent
-        // state if adding a proof fails.
-        let witness_root = witness.proof().compute_root();
-        if witness_root != self.0.root() {
-            return Err(CodeTreeError::TreeRootConflict(MerkleError::ConflictingRoots {
-                expected_root: self.0.root(),
-                actual_root: witness_root,
-            }));
-        }
-
         self.0.add_proof(witness.into_proof()).map_err(CodeTreeError::TreeRootConflict)
     }
 

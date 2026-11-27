@@ -53,8 +53,8 @@ impl PartialNullifierTree {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - after the witness' merkle path was added, the partial nullifier tree has a different root
-    ///   than before it was added.
+    /// - the root of the witness does not match the root of the partial nullifier tree. The tree
+    ///   stays unchanged in this case.
     pub fn track_nullifier(&mut self, witness: NullifierWitness) -> Result<(), NullifierTreeError> {
         let (path, leaf) = witness.into_proof().into_parts();
         self.0.add_path(leaf, path).map_err(NullifierTreeError::TreeRootConflict)
