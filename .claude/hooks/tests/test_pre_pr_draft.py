@@ -141,6 +141,11 @@ DRAFT_CASES: list[tuple[str, bool]] = [
     # Short-form value-consuming flag shields its value.
     ("gh pr create -t --draft", False),
     ("gh pr create -t hello --draft", True),
+    # Inside a subshell; a `(` inside a word does not cut the args short.
+    ("(gh pr create --draft)", True),
+    ("(gh pr create)", False),
+    ("gh pr create --title $(git log -1 --format=%s) --draft", True),
+    ("gh pr create --body-file <(echo hi) --draft", True),
 ]
 
 

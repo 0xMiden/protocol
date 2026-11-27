@@ -439,23 +439,6 @@ impl From<NoteAttachmentScheme> for NoteAttachmentHeader {
     }
 }
 
-impl Serializable for NoteAttachmentHeader {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.scheme.write_into(target);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.scheme.get_size_hint()
-    }
-}
-
-impl Deserializable for NoteAttachmentHeader {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let scheme = Option::<NoteAttachmentScheme>::read_from(source)?;
-        Ok(Self::new_maybe(scheme))
-    }
-}
-
 // NOTE ATTACHMENTS
 // ================================================================================================
 

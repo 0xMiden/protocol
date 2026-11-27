@@ -1,15 +1,6 @@
-use alloc::string::ToString;
-
 use crate::Word;
 use crate::account::{AccountId, AccountUpdateDetails, validate_new_public_account};
 use crate::errors::BlockAccountUpdateError;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // BLOCK ACCOUNT UPDATE
 // ================================================================================================
@@ -96,25 +87,6 @@ impl BlockAccountUpdate {
     /// Returns `true` if the account update details are for private account.
     pub fn is_private(&self) -> bool {
         self.details.is_private()
-    }
-}
-
-impl Serializable for BlockAccountUpdate {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.account_id.write_into(target);
-        self.final_state_commitment.write_into(target);
-        self.details.write_into(target);
-    }
-}
-
-impl Deserializable for BlockAccountUpdate {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        Self::new(
-            AccountId::read_from(source)?,
-            Word::read_from(source)?,
-            AccountUpdateDetails::read_from(source)?,
-        )
-        .map_err(|error| DeserializationError::InvalidValue(error.to_string()))
     }
 }
 

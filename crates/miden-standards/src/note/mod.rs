@@ -12,6 +12,7 @@ use self::config::{
     AuthorityConfigNote,
     BlocklistConfigNote,
     ConstantFeePolicyConfigNote,
+    EncryptedAssetsIssuerKeyConfigNote,
     FaucetMetadataConfigNote,
     FaucetPolicyConfigNote,
     MinBurnAmountConfigNote,
@@ -94,6 +95,7 @@ pub enum StandardNote {
     FAUCET_POLICY_CONFIG,
     FAUCET_METADATA_CONFIG,
     MIN_BURN_AMOUNT_CONFIG,
+    ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG,
     ALLOWLIST_CONFIG,
     BLOCKLIST_CONFIG,
     PAUSE_CONFIG,
@@ -150,6 +152,9 @@ impl StandardNote {
         if root == MinBurnAmountConfigNote::script_root() {
             return Some(Self::MIN_BURN_AMOUNT_CONFIG);
         }
+        if root == EncryptedAssetsIssuerKeyConfigNote::script_root() {
+            return Some(Self::ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG);
+        }
         if root == AllowlistConfigNote::script_root() {
             return Some(Self::ALLOWLIST_CONFIG);
         }
@@ -203,6 +208,7 @@ impl StandardNote {
             Self::FAUCET_POLICY_CONFIG => "FAUCET_POLICY_CONFIG",
             Self::FAUCET_METADATA_CONFIG => "FAUCET_METADATA_CONFIG",
             Self::MIN_BURN_AMOUNT_CONFIG => "MIN_BURN_AMOUNT_CONFIG",
+            Self::ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG => "ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG",
             Self::ALLOWLIST_CONFIG => "ALLOWLIST_CONFIG",
             Self::BLOCKLIST_CONFIG => "BLOCKLIST_CONFIG",
             Self::PAUSE_CONFIG => "PAUSE_CONFIG",
@@ -235,6 +241,9 @@ impl StandardNote {
             Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::NUM_STORAGE_ITEMS,
             Self::MIN_BURN_AMOUNT_CONFIG => {
                 NumStorageItems::Exact(MinBurnAmountConfigNote::NUM_STORAGE_ITEMS)
+            },
+            Self::ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG => {
+                NumStorageItems::Exact(EncryptedAssetsIssuerKeyConfigNote::NUM_STORAGE_ITEMS)
             },
             Self::ALLOWLIST_CONFIG => {
                 NumStorageItems::Exact(AllowlistConfigNote::NUM_STORAGE_ITEMS)
@@ -271,6 +280,9 @@ impl StandardNote {
             Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::script(),
             Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::script(),
             Self::MIN_BURN_AMOUNT_CONFIG => MinBurnAmountConfigNote::script(),
+            Self::ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG => {
+                EncryptedAssetsIssuerKeyConfigNote::script()
+            },
             Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script(),
             Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script(),
             Self::PAUSE_CONFIG => PauseConfigNote::script(),
@@ -298,6 +310,9 @@ impl StandardNote {
             Self::FAUCET_POLICY_CONFIG => FaucetPolicyConfigNote::script_root(),
             Self::FAUCET_METADATA_CONFIG => FaucetMetadataConfigNote::script_root(),
             Self::MIN_BURN_AMOUNT_CONFIG => MinBurnAmountConfigNote::script_root(),
+            Self::ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG => {
+                EncryptedAssetsIssuerKeyConfigNote::script_root()
+            },
             Self::ALLOWLIST_CONFIG => AllowlistConfigNote::script_root(),
             Self::BLOCKLIST_CONFIG => BlocklistConfigNote::script_root(),
             Self::PAUSE_CONFIG => PauseConfigNote::script_root(),

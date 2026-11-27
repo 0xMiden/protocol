@@ -32,6 +32,7 @@ pub enum ExecutionBenchmark {
     ConsumeFaucetPolicyConfigNetwork,
     ConsumeFaucetMetadataConfigNetwork,
     ConsumeMinBurnAmountConfigNetwork,
+    ConsumeEncryptedAssetsIssuerKeyConfigNetwork,
     ConsumeAllowlistConfigNetwork,
     ConsumeBlocklistConfigNetwork,
     ConsumePauseConfigNetwork,
@@ -84,6 +85,7 @@ impl ExecutionBenchmark {
             ExecutionBenchmark::ConsumeFaucetPolicyConfigNetwork,
             ExecutionBenchmark::ConsumeFaucetMetadataConfigNetwork,
             ExecutionBenchmark::ConsumeMinBurnAmountConfigNetwork,
+            ExecutionBenchmark::ConsumeEncryptedAssetsIssuerKeyConfigNetwork,
             ExecutionBenchmark::ConsumeAllowlistConfigNetwork,
             ExecutionBenchmark::ConsumeBlocklistConfigNetwork,
             ExecutionBenchmark::ConsumePauseConfigNetwork,
@@ -188,6 +190,9 @@ impl fmt::Display for ExecutionBenchmark {
             },
             ExecutionBenchmark::ConsumeMinBurnAmountConfigNetwork => {
                 write!(f, "consume MIN_BURN_AMOUNT_CONFIG note (network account)")
+            },
+            ExecutionBenchmark::ConsumeEncryptedAssetsIssuerKeyConfigNetwork => {
+                write!(f, "consume ENCRYPTED_ASSETS_ISSUER_KEY_CONFIG note (network account)")
             },
             ExecutionBenchmark::ConsumeAllowlistConfigNetwork => {
                 write!(f, "consume ALLOWLIST_CONFIG note (network account)")
