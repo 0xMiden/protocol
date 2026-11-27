@@ -3,6 +3,7 @@ use {
     Asset,
     AssetValue,
     Bool,
+    InputNoteIndex,
     NoteAssetsCommitment,
     NoteAttachmentCommitment,
     NoteAttachmentScheme,
@@ -52,21 +53,21 @@ const ERR_INPUT_NOTE_INDEX_LOOKUP_INVALID = "input note index lookup result from
 #! each asset occupies two words. For more detailed information about the layout of each asset see
 #! the description of the `Asset` Rust type.
 #!
-#! Inputs:  [dest_ptr, note_index]
+#! Inputs:  [dest_ptr, note_idx]
 #! Outputs: [num_assets]
 #!
 #! Where:
 #! - dest_ptr is the memory address to write the assets.
-#! - note_index is the index of the input note whose initial assets should be written.
+#! - note_idx is the index of the input note whose initial assets should be written.
 #! - num_assets is the number of assets the note was created with.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_initial_assets(dest_ptr: ptr<Asset>, note_index: u16) -> u8
+pub proc get_initial_assets(dest_ptr: ptr<Asset>, note_idx: InputNoteIndex) -> u8
     swap push.0
-    # => [is_active_note = 0, note_index, dest_ptr]
+    # => [is_active_note = 0, note_idx, dest_ptr]
 
     exec.input_note_internal::get_initial_assets_raw
     # => [num_assets]
@@ -77,11 +78,11 @@ end
 #! The returned commitment and number of assets are the ones the note was created with; they do
 #! not change when assets are removed from the note during transaction execution.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [ASSETS_COMMITMENT, num_assets]
 #!
 #! Where:
-#! - note_index is the index of the input note whose assets info should be returned.
+#! - note_idx is the index of the input note whose assets info should be returned.
 #! - num_assets is the number of assets the note was created with.
 #! - ASSETS_COMMITMENT is a sequential hash of the assets the note was created with.
 #!
@@ -89,9 +90,9 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_initial_assets_info(note_index: u16) -> (NoteAssetsCommitment, u8)
+pub proc get_initial_assets_info(note_idx: InputNoteIndex) -> (NoteAssetsCommitment, u8)
     push.0
-    # => [is_active_note = 0, note_index]
+    # => [is_active_note = 0, note_idx]
 
     exec.input_note_internal::get_initial_assets_info_raw
     # => [ASSETS_COMMITMENT, num_assets]
@@ -102,18 +103,18 @@ end
 #! The returned number does not change when assets are removed from the note during transaction
 #! execution.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [num_assets]
 #!
 #! Where:
-#! - note_index is the index of the input note whose number of assets should be returned.
+#! - note_idx is the index of the input note whose number of assets should be returned.
 #! - num_assets is the number of assets the note was created with.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_initial_num_assets(note_index: u16) -> u8
+pub proc get_initial_num_assets(note_idx: InputNoteIndex) -> u8
     exec.get_initial_assets_info
     # => [ASSETS_COMMITMENT, num_assets]
 
@@ -126,12 +127,12 @@ end
 #! The asset is returned as it currently is: if it was removed from the note, the returned
 #! ASSET_ID and ASSET_VALUE are both the EMPTY_WORD.
 #!
-#! Inputs:  [asset_index, note_index]
+#! Inputs:  [asset_index, note_idx]
 #! Outputs: [ASSET_ID, ASSET_VALUE]
 #!
 #! Where:
 #! - asset_index is the index of the asset to return.
-#! - note_index is the index of the input note whose asset should be returned.
+#! - note_idx is the index of the input note whose asset should be returned.
 #! - ASSET_ID is the asset ID of the asset at the specified index.
 #! - ASSET_VALUE is the value of the asset at the specified index.
 #!
@@ -140,9 +141,9 @@ end
 #! - the asset index is greater or equal to the number of assets in the note.
 #!
 #! Invocation: exec
-pub proc get_asset(asset_index: u8, note_index: u16) -> Asset
+pub proc get_asset(asset_index: u8, note_idx: InputNoteIndex) -> Asset
     push.0
-    # => [is_active_note = 0, asset_index, note_index]
+    # => [is_active_note = 0, asset_index, note_idx]
 
     exec.input_note_internal::get_asset_raw
     # => [ASSET_ID, ASSET_VALUE]
@@ -157,13 +158,13 @@ end
 #! at the corresponding index becomes (EMPTY_WORD, EMPTY_WORD). This is always the case for
 #! non-composable assets.
 #!
-#! Inputs:  [ASSET_ID, ASSET_VALUE, note_index]
+#! Inputs:  [ASSET_ID, ASSET_VALUE, note_idx]
 #! Outputs: [FINAL_ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_ID is the asset ID of the asset to remove from the note.
 #! - ASSET_VALUE is the value of the asset to remove from the note.
-#! - note_index is the index of the input note from which the asset should be removed.
+#! - note_idx is the index of the input note from which the asset should be removed.
 #! - FINAL_ASSET_VALUE is the value of the asset remaining in the note after removal, which is
 #!   the EMPTY_WORD if the entire asset was removed.
 #!
@@ -178,9 +179,9 @@ end
 #! - the amount of the fungible asset in the note is less than the amount to be removed.
 #!
 #! Invocation: exec
-pub proc remove_asset(asset: Asset, note_index: u16) -> AssetValue
+pub proc remove_asset(asset: Asset, note_idx: InputNoteIndex) -> AssetValue
     push.0
-    # => [is_active_note = 0, ASSET_ID, ASSET_VALUE, note_index]
+    # => [is_active_note = 0, ASSET_ID, ASSET_VALUE, note_idx]
 
     exec.input_note_internal::remove_asset_raw
     # => [FINAL_ASSET_VALUE]
@@ -202,12 +203,12 @@ end
 #! [ASSET_0, ASSET_1, ..., ASSET_N], where each asset occupies two words. For more detailed
 #! information about the layout of each asset see the description of the `Asset` Rust type.
 #!
-#! Inputs:  [dest_ptr, note_index]
+#! Inputs:  [dest_ptr, note_idx]
 #! Outputs: [num_assets]
 #!
 #! Where:
 #! - dest_ptr is the memory address to write the assets.
-#! - note_index is the index of the input note from which the assets should be removed.
+#! - note_idx is the index of the input note from which the assets should be removed.
 #! - num_assets is the number of assets removed by this procedure.
 #!
 #! Panics if:
@@ -216,9 +217,9 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc remove_all_assets(dest_ptr: ptr<Asset>, note_index: u16) -> u8
+pub proc remove_all_assets(dest_ptr: ptr<Asset>, note_idx: InputNoteIndex) -> u8
     swap push.0
-    # => [is_active_note = 0, note_index, dest_ptr]
+    # => [is_active_note = 0, note_idx, dest_ptr]
 
     exec.input_note_internal::remove_all_assets_raw
     # => [num_assets]
@@ -226,20 +227,20 @@ end
 
 #! Returns the recipient of the input note with the specified index.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [RECIPIENT]
 #!
 #! Where:
-#! - note_index is the index of the input note whose recipient should be returned.
+#! - note_idx is the index of the input note whose recipient should be returned.
 #! - RECIPIENT is the commitment to the input note's script, storage, the serial number.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_recipient(note_index: u16) -> NoteRecipient
+pub proc get_recipient(note_idx: InputNoteIndex) -> NoteRecipient
     push.0
-    # => [is_active_note = 0, note_index]
+    # => [is_active_note = 0, note_idx]
 
     exec.input_note_internal::get_recipient_raw
     # => [RECIPIENT]
@@ -247,20 +248,20 @@ end
 
 #! Returns the ID of the input note with the specified index.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [NOTE_ID]
 #!
 #! Where:
-#! - note_index is the index of the input note whose ID should be returned.
+#! - note_idx is the index of the input note whose ID should be returned.
 #! - NOTE_ID is the ID of the specified input note, cached by the transaction prologue.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_note_id(note_index: u16) -> NoteId
+pub proc get_note_id(note_idx: InputNoteIndex) -> NoteId
     push.0
-    # => [is_active_note = 0, note_index]
+    # => [is_active_note = 0, note_idx]
 
     exec.input_note_internal::get_note_id_raw
     # => [NOTE_ID]
@@ -285,7 +286,7 @@ end
 #! - the host reports that NOTE_ID is absent when it is present among the input notes.
 #!
 #! Invocation: exec
-pub proc find_note(note_id: NoteId) -> (Bool, u16)
+pub proc find_note(note_id: NoteId) -> (Bool, InputNoteIndex)
     # Keep the target ID on the stack and emit a copy as the event payload.
     dupw emit.INPUT_NOTE_INDEX_LOOKUP_EVENT dropw
     # => [NOTE_ID]
@@ -343,20 +344,20 @@ end
 
 #! Returns the metadata of the input note with the specified index.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [METADATA]
 #!
 #! Where:
-#! - note_index is the index of the input note whose metadata should be returned.
+#! - note_idx is the index of the input note whose metadata should be returned.
 #! - METADATA is the metadata of the specified input note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_metadata(note_index: u16) -> NoteMetadata
+pub proc get_metadata(note_idx: InputNoteIndex) -> NoteMetadata
     push.0
-    # => [is_active_note = 0, note_index]
+    # => [is_active_note = 0, note_idx]
 
     exec.input_note_internal::get_metadata_raw
     # => [METADATA]
@@ -364,18 +365,18 @@ end
 
 #! Returns the sender of the input note with the specified index.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [sender_id_suffix, sender_id_prefix]
 #!
 #! Where:
-#! - note_index is the index of the input note whose sender should be returned.
+#! - note_idx is the index of the input note whose sender should be returned.
 #! - sender_{suffix,prefix} are the suffix and prefix felts of the specified note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_sender(note_index: u16) -> AccountId
+pub proc get_sender(note_idx: InputNoteIndex) -> AccountId
     exec.get_metadata
     # => [METADATA]
 
@@ -386,11 +387,11 @@ end
 
 #! Returns the inputs commitment and length of the input note with the specified index.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [NOTE_STORAGE_COMMITMENT, num_storage_items]
 #!
 #! Where:
-#! - note_index is the index of the input note whose data should be returned.
+#! - note_idx is the index of the input note whose data should be returned.
 #! - NOTE_STORAGE_COMMITMENT is the inputs commitment of the specified input note.
 #! - num_storage_items is the number of input values of the specified input note.
 #!
@@ -398,9 +399,9 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_storage_info(note_index: u16) -> (NoteStorageCommitment, u16)
+pub proc get_storage_info(note_idx: InputNoteIndex) -> (NoteStorageCommitment, u16)
     push.0
-    # => [is_active_note = 0, note_index]
+    # => [is_active_note = 0, note_idx]
 
     exec.input_note_internal::get_storage_info_raw
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items]
@@ -408,20 +409,20 @@ end
 
 #! Returns the script root of the input note with the specified index.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [SCRIPT_ROOT]
 #!
 #! Where:
-#! - note_index is the index of the input note whose script root should be returned.
+#! - note_idx is the index of the input note whose script root should be returned.
 #! - SCRIPT_ROOT is the script root of the specified input note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_script_root(note_index: u16) -> NoteScriptRoot
+pub proc get_script_root(note_idx: InputNoteIndex) -> NoteScriptRoot
     push.0
-    # => [is_active_note = 0, note_index]
+    # => [is_active_note = 0, note_idx]
 
     exec.input_note_internal::get_script_root_raw
     # => [SCRIPT_ROOT]
@@ -429,20 +430,20 @@ end
 
 #! Returns the serial number of the input note with the specified index.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [SERIAL_NUMBER]
 #!
 #! Where:
-#! - note_index is the index of the input note whose serial number should be returned.
+#! - note_idx is the index of the input note whose serial number should be returned.
 #! - SERIAL_NUMBER is the serial number of the specified input note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_serial_number(note_index: u16) -> NoteSerialNumber
+pub proc get_serial_number(note_idx: InputNoteIndex) -> NoteSerialNumber
     push.0
-    # => [is_active_note = 0, note_index]
+    # => [is_active_note = 0, note_idx]
 
     exec.input_note_internal::get_serial_number_raw
     # => [SERIAL_NUMBER]
@@ -453,11 +454,11 @@ end
 
 #! Returns the commitment over all attachments of the input note with the specified index.
 #!
-#! Inputs:  [note_index]
+#! Inputs:  [note_idx]
 #! Outputs: [ATTACHMENTS_COMMITMENT]
 #!
 #! Where:
-#! - note_index is the index of the input note whose attachments commitment should be returned.
+#! - note_idx is the index of the input note whose attachments commitment should be returned.
 #! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note. A note without
 #!   attachments uses the empty hash.
 #!
@@ -465,9 +466,9 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_attachments_commitment(note_index: u16) -> NoteAttachmentsCommitment
+pub proc get_attachments_commitment(note_idx: InputNoteIndex) -> NoteAttachmentsCommitment
     push.0
-    # => [is_active_note = 0, note_index]
+    # => [is_active_note = 0, note_idx]
 
     exec.input_note_internal::get_attachments_commitment_raw
     # => [ATTACHMENTS_COMMITMENT]
@@ -476,12 +477,12 @@ end
 #! Writes the attachment commitments of the input note with the specified index to the provided
 #! destination pointer.
 #!
-#! Inputs:  [dest_ptr, note_index]
+#! Inputs:  [dest_ptr, note_idx]
 #! Outputs: [num_attachments]
 #!
 #! Where:
 #! - dest_ptr is the memory address to which to write the attachment commitments.
-#! - note_index is the index of the input note.
+#! - note_idx is the index of the input note.
 #! - num_attachments is the number of attachments in the note.
 #!
 #! Panics if:
@@ -492,7 +493,7 @@ end
 #! Invocation: exec
 pub proc write_attachment_commitments_to_memory(
     dest_ptr: ptr<NoteAttachmentCommitment>,
-    note_index: u16
+    note_idx: InputNoteIndex
 ) -> u8
     swap exec.get_attachments_commitment
     # => [ATTACHMENTS_COMMITMENT, dest_ptr]
@@ -504,13 +505,13 @@ end
 #! Writes the attachment with the provided index from the input note with the specified index
 #! to the provided destination pointer.
 #!
-#! Inputs:  [dest_ptr, attachment_idx, note_index]
+#! Inputs:  [dest_ptr, attachment_idx, note_idx]
 #! Outputs: [num_words]
 #!
 #! Where:
 #! - dest_ptr is the memory address to which to write the attachment data.
 #! - attachment_idx is the index of the attachment to retrieve.
-#! - note_index is the index of the input note.
+#! - note_idx is the index of the input note.
 #! - num_words is the number of words in the attachment.
 #!
 #! Panics if:
@@ -524,13 +525,13 @@ end
 pub proc write_attachment_to_memory(
     dest_ptr: ptr<word>,
     attachment_idx: u8,
-    note_index: u16
+    note_idx: InputNoteIndex
 ) -> u16
     # set up call to write the attachment commitments to local memory
     # we allocate 16 elements of memory (max num attachments * WORD_SIZE) to store all
     # four attachment commitments
     movdn.2 swap locaddr.0
-    # => [attachment_commitments_ptr, note_index, attachment_idx, dest_ptr]
+    # => [attachment_commitments_ptr, note_idx, attachment_idx, dest_ptr]
 
     exec.write_attachment_commitments_to_memory
     # => [num_attachments, attachment_idx, dest_ptr]
@@ -545,12 +546,12 @@ end
 #! Searches the metadata of the input note with the specified index for the specified
 #! attachment scheme and returns the index of the first matching slot.
 #!
-#! Inputs:  [attachment_scheme, note_index]
+#! Inputs:  [attachment_scheme, note_idx]
 #! Outputs: [is_found, attachment_idx]
 #!
 #! Where:
 #! - attachment_scheme is the scheme of the attachment to find.
-#! - note_index is the index of the input note.
+#! - note_idx is the index of the input note.
 #! - is_found is 1 if the attachment with the provided scheme was found, 0 otherwise.
 #! - attachment_idx is the index (0-3) of the first matching slot, or undefined if not found.
 #!
@@ -558,7 +559,7 @@ end
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc find_attachment(attachment_scheme: NoteAttachmentScheme, note_index: u16) -> (Bool, u8)
+pub proc find_attachment(attachment_scheme: NoteAttachmentScheme, note_idx: InputNoteIndex) -> (Bool, u8)
     swap exec.get_metadata
     # => [METADATA, attachment_scheme]
 

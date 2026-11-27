@@ -1,4 +1,5 @@
-use {NoteRecipient, NoteSerialNumber, NoteTag, NoteType} from miden::protocol::types
+use {NoteRecipient, NoteSerialNumber, NoteTag, NoteType, OutputNoteIndex}
+    from miden::protocol::types
 use miden::protocol::active_note
 use miden::protocol::note
 use {NOTE_TYPE_PUBLIC} from miden::protocol::note
@@ -108,7 +109,7 @@ end
 #! - note_idx is the index of the created note.
 #!
 #! Invocation: exec
-pub proc create_output_note(serial_num: NoteSerialNumber) -> u16
+pub proc create_output_note(serial_num: NoteSerialNumber) -> OutputNoteIndex
     exec.prepare_note
     # => [tag, note_type, RECIPIENT]
 

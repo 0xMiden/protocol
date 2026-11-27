@@ -1,4 +1,4 @@
-use {Asset, AssetValue, NoteAssetsCommitment} from miden::protocol_utils::types
+use {Asset, AssetValue, InputNoteIndex, NoteAssetsCommitment} from miden::protocol_utils::types
 use {InputNoteData} from miden::tx_kernel_core::types
 use miden::core::crypto::hashes::eidos
 use miden::core::word
@@ -357,16 +357,16 @@ end
 
 #! Assert that the provided note index is less than the total number of input notes.
 #!
-#! Inputs:  [note_index]
-#! Outputs: [note_index]
-pub proc assert_note_index_in_bounds(note_index: u16) -> u16
+#! Inputs:  [note_idx]
+#! Outputs: [note_idx]
+pub proc assert_note_index_in_bounds(note_idx: InputNoteIndex) -> InputNoteIndex
     # assert that the provided note index is less than the total number of notes
     dup exec.memory::get_num_input_notes
-    # => [input_notes_num, note_index, note_index]
+    # => [input_notes_num, note_idx, note_idx]
 
     u32assert2.err=ERR_INPUT_NOTE_INDEX_OUT_OF_BOUNDS
     u32lt assert.err=ERR_INPUT_NOTE_INDEX_OUT_OF_BOUNDS
-    # => [note_index]
+    # => [note_idx]
 end
 
 #! Computes a pointer to the memory address at which the data associated with an input note with
